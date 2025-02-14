@@ -1,0 +1,1 @@
+c++ -O3 -Wall -shared -std=c++11 -fPIC $(python3 -m pybind11 --includes) -I ./include sigma7.cpp -L ./lib/release/lin-x86_64-gcc/ -L /usr/local/lib/ -ldhd -ldrd -lpthread -lusb-1.0 -lrt -ldl -o sigma7$(python3-config --extension-suffix)

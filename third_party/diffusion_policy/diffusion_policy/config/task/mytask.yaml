@@ -1,0 +1,32 @@
+name: mytask
+
+image_shape: [3, 480, 640]
+dataset_path: /mnt/workspace/DP/test
+
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    wrist_img:
+      shape: ${task.image_shape}
+      type: rgb
+    side_img:
+      shape: ${task.image_shape}
+      type: rgb
+    qpos:
+      shape: [7]
+      type: low_dim
+  action: 
+    shape: [8]
+
+env_runner:
+  _target_: diffusion_policy.env_runner.myrunner.MyRunner
+
+dataset:
+  _target_: diffusion_policy.dataset.mydataset.MyDataset
+  zarr_path: /mnt/workspace/DP/test/replay_buffer.zarr
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  seed: 42
+  val_ratio: 0.00
+  max_train_episodes: 100000

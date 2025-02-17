@@ -11,6 +11,7 @@ import numpy as np
 import dill
 import time
 from scipy.spatial.transform import Rotation as R
+import cv2
 
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.common.pytorch_util import dict_apply
@@ -95,8 +96,8 @@ def main(rank, eval_cfg, device_ids):
             for camera in cameras:
                 color_image, _ = camera.get_data()
                 cam_data.append(color_image)
-            img_0 = torch.from_numpy(cam_data[0]).permute(2, 0, 1) / 255.
-            img_1 = torch.from_numpy(cam_data[1]).permute(2, 0, 1) / 255.
+            img_0 = torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1) / 255.
+            img_1 = torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1) / 255.
             if j == 0:
                 for idx in range(state_history.shape[0]):
                     img_0_history[idx] = img_0

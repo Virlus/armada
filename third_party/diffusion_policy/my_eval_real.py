@@ -126,9 +126,10 @@ def main(rank, eval_cfg, device_ids):
                     start_time = time.time()
                 else:
                     print(f"Policy inference latency: {time.time() - start_time}")
-                target_pos = robot.init_pose[:3] + action_seq[step, :3]
-                target_rot = R.from_quat(robot.init_pose[3:]) * R.from_quat(action_seq[step, 3:7])
-                robot.send_tcp_pose(np.concatenate((target_pos, target_rot.as_quat()), 0))
+                # target_pos = robot.init_pose[:3] + action_seq[step, :3]
+                # target_rot = R.from_quat(robot.init_pose[3:]) * R.from_quat(action_seq[step, 3:7])
+                # robot.send_tcp_pose(np.concatenate((target_pos, target_rot.as_quat()), 0))
+                robot.send_tcp_pose(action_seq[step, :7])
                 gripper.move(action_seq[step, 7])
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1

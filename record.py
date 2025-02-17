@@ -104,6 +104,6 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0217_PnP')
+    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0217_stack_cups')
     args = parser.parse_args()
     main(args)

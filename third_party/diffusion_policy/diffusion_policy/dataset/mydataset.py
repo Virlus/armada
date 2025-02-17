@@ -1,3 +1,7 @@
+import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+
 from typing import Dict
 import torch
 import numpy as np
@@ -95,6 +99,9 @@ class MyDataset(BaseImageDataset):
 
 def test():
     import os
-    zarr_path = os.path.expanduser('/mnt/workspace/DP/test/replay_buffer.zarr')
+    zarr_path = os.path.expanduser('/mnt/workspace/DP/0217_PnP/replay_buffer.zarr')
     dataset = MyDataset(zarr_path, horizon=16)
+    import pdb; pdb.set_trace()
 
+if __name__ == '__main__':
+    test()

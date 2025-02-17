@@ -11,6 +11,7 @@ import numpy as np
 import dill
 import time
 from scipy.spatial.transform import Rotation as R
+import cv2
 
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.common.pytorch_util import dict_apply
@@ -95,8 +96,8 @@ def main(rank, eval_cfg, device_ids):
             for camera in cameras:
                 color_image, _ = camera.get_data()
                 cam_data.append(color_image)
-            img_0 = torch.from_numpy(cam_data[0]).permute(2, 0, 1) / 255.
-            img_1 = torch.from_numpy(cam_data[1]).permute(2, 0, 1) / 255.
+            img_0 = torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1) / 255.
+            img_1 = torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1) / 255.
             if j == 0:
                 for idx in range(state_history.shape[0]):
                     img_0_history[idx] = img_0
@@ -125,9 +126,10 @@ def main(rank, eval_cfg, device_ids):
                     start_time = time.time()
                 else:
                     print(f"Policy inference latency: {time.time() - start_time}")
-                target_pos = robot.init_pose[:3] + action_seq[step, :3]
-                target_rot = R.from_quat(robot.init_pose[3:]) * R.from_quat(action_seq[step, 3:7])
-                robot.send_tcp_pose(np.concatenate((target_pos, target_rot.as_quat()), 0))
+                # target_pos = robot.init_pose[:3] + action_seq[step, :3]
+                # target_rot = R.from_quat(robot.init_pose[3:]) * R.from_quat(action_seq[step, 3:7])
+                # robot.send_tcp_pose(np.concatenate((target_pos, target_rot.as_quat()), 0))
+                robot.send_tcp_pose(action_seq[step, :7])
                 gripper.move(action_seq[step, 7])
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1

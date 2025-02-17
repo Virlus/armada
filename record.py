@@ -63,8 +63,10 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         if not keyboard.start:
             continue
         cnt += 1
-        wrist_cam.append(cam_data[1][0])
-        side_cam.append(cam_data[0][0])
+        wrist_image = cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)
+        side_image = cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)
+        wrist_cam.append(wrist_image)
+        side_cam.append(side_image)
         tcp_pose.append(tcpPose)
         joint_pos.append(jointPose)
         action.append(np.concatenate((diff_p,diff_r.as_quat(), [gripper_width])))
@@ -96,11 +98,12 @@ def main(args):
     while not keyboard.quit:
         print("start recording...")
         record(replay_buffer, robot, gripper, camera, sigma, keyboard)
-        print("reset the environment...")
-        time.sleep(10)
+        if not keyboard.quit:
+            print("reset the environment...")
+            time.sleep(10)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/test')
+    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0217_stack_cups')
     args = parser.parse_args()
     main(args)

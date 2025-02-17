@@ -176,9 +176,10 @@ def live_application():
 
 if __name__ == "__main__":
     # live_application()
-    capture = CameraD400()
-    while True:
-        color_image, depth_image = capture.get_data()
-        print(color_image.shape)
+    camera_serial = ["038522063145", "104422070044"]
+    cameras = [CameraD400(s) for s in camera_serial]
+    for camera in cameras:
+        color_image, depth_image = camera.get_data()
+        print(color_image)
         cv2.imshow('color', color_image)
         cv2.waitKey(1)

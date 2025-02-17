@@ -1,7 +1,7 @@
 name: mytask
 
 image_shape: [3, 480, 640]
-dataset_path: /mnt/workspace/DP/test
+dataset_path: ???
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim

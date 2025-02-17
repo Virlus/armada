@@ -1,2 +1,5 @@
 tmp_*
 third_party/multi_gpu_dp
+
+*.png
+*.jpg

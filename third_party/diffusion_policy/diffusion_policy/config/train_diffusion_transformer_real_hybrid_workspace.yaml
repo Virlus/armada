@@ -41,7 +41,7 @@ policy:
   n_obs_steps: ${n_obs_steps}
   num_inference_steps: 8
 
-  crop_shape: [432, 576]
+  crop_shape: [216, 288]
   obs_encoder_group_norm: True
   eval_fixed_crop: True
 
@@ -67,15 +67,15 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 32
-  num_workers: 4
+  batch_size: 128
+  num_workers: 8
   shuffle: True
   pin_memory: True
   persistent_workers: True
 
 val_dataloader:
-  batch_size: 32
-  num_workers: 4
+  batch_size: 128
+  num_workers: 8
   shuffle: False
   pin_memory: True
   persistent_workers: True
@@ -103,7 +103,7 @@ training:
   # training loop control
   # in epochs
   rollout_every: 50
-  checkpoint_every: 10
+  checkpoint_every: 50
   val_every: 1
   sample_every: 5
   # steps per epoch

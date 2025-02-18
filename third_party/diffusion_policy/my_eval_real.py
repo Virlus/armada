@@ -1,6 +1,7 @@
 import pathlib
 import sys
 import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 # use line-buffering for both stdout and stderr
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
@@ -12,6 +13,8 @@ import dill
 import time
 from scipy.spatial.transform import Rotation as R
 import cv2
+from torchvision.transforms import Compose, Resize
+from torchvision.transforms import InterpolationMode
 
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.common.pytorch_util import dict_apply
@@ -33,13 +36,13 @@ def main(rank, eval_cfg, device_ids):
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
     # overwrite some config values according to evaluation config
-    cfg.output_dir = eval_cfg.output_dir
     cfg.policy.num_inference_steps = eval_cfg.policy.num_inference_steps
-    if rank == 0:
-        pathlib.Path(cfg.output_dir).mkdir(parents=True, exist_ok=True)
+    # if rank == 0:
+    #     pathlib.Path(cfg.output_dir).mkdir(parents=True, exist_ok=True)
 
     cls = hydra.utils.get_class(cfg._target_)
-    workspace = cls(cfg, rank, world_size, device_id, device)
+    # workspace = cls(cfg, rank, world_size, device_id, device)
+    workspace = cls(cfg)
     workspace: BaseWorkspace
     workspace.load_payload(payload, exclude_keys=None, include_keys=None)
 
@@ -52,10 +55,13 @@ def main(rank, eval_cfg, device_ids):
     policy.eval()
 
     # Extract some hyperparameters from the config
-    To = policy.module.n_obs_steps
-    Ta = policy.module.n_action_steps
-    img_shape = cfg.task['shape_meta']['obs']['wrist_cam']['shape']
+    To = policy.n_obs_steps
+    Ta = policy.n_action_steps
+    img_shape = cfg.task['shape_meta']['obs']['wrist_img']['shape']
     state_shape = cfg.task['shape_meta']['obs']['qpos']['shape']
+
+    BICUBIC = InterpolationMode.BICUBIC
+    image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
 
     # Overwritten by evaluation config specifically
     Ta = eval_cfg.Ta
@@ -72,32 +78,36 @@ def main(rank, eval_cfg, device_ids):
         if episode_idx not in episode_list:
             continue
         print(f"Evaluation episode: {episode_idx}")
-        if eval_cfg.num_episode > 1:
-            robot.send_tcp_pose(robot.init_pose)
-            gripper.move(gripper.max_width)
-        
-        done = False
+        keyboard.finish = False
+
         img_0_history = torch.zeros((To, *img_shape), device=device)
         img_1_history = torch.zeros((To, *img_shape), device=device)
         state_history = torch.zeros((To, *state_shape), device=device)
         action_seq = torch.zeros((Ta, 8), device=device)
 
+        last_p = robot.init_pose[:3]
+        last_r = R.from_quat(robot.init_pose[3:])
+
         # Policy inference
         j = 0
-        while not done and j < max_episode_length:
+        while j < max_episode_length:
             # 'f' to end the episode
             if keyboard.finish:
-                done = True
+                robot.send_tcp_pose(robot.init_pose)
+                time.sleep(1.5)
+                gripper.move(gripper.max_width)
+                time.sleep(0.5)
+                print("Reset!")
                 break
             start_time = time.time()
             _, state, _, _ = robot.get_robot_state()
-            state = torch.from_numpy(state)
+            state = torch.from_numpy(np.array(state))
             cam_data = []
             for camera in cameras:
                 color_image, _ = camera.get_data()
                 cam_data.append(color_image)
-            img_0 = torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1) / 255.
-            img_1 = torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1) / 255.
+            img_0 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+            img_1 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
             if j == 0:
                 for idx in range(state_history.shape[0]):
                     img_0_history[idx] = img_0
@@ -117,20 +127,23 @@ def main(rank, eval_cfg, device_ids):
                 'qpos': state_history.unsqueeze(0)
             }
             # Predict qpos actions
-            curr_action = policy.module.predict_action(curr_obs)
+            curr_action = policy.predict_action(curr_obs)
             np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
             action_seq = np_action_dict['action'][0]
 
             for step in range(Ta):
                 if step > 0:
                     start_time = time.time()
-                else:
-                    print(f"Policy inference latency: {time.time() - start_time}")
                 # target_pos = robot.init_pose[:3] + action_seq[step, :3]
                 # target_rot = R.from_quat(robot.init_pose[3:]) * R.from_quat(action_seq[step, 3:7])
                 # robot.send_tcp_pose(np.concatenate((target_pos, target_rot.as_quat()), 0))
-                robot.send_tcp_pose(action_seq[step, :7])
+                # robot.send_tcp_pose(action_seq[step, :7])
+                curr_p = last_p + action_seq[step, :3]
+                curr_r = last_r * R.from_quat(action_seq[step, 3:7])
+                robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat()), 0))
                 gripper.move(action_seq[step, 7])
+                last_p = curr_p
+                last_r = curr_r
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1
 

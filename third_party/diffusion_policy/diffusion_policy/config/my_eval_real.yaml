@@ -3,8 +3,8 @@ defaults:
   - task: mytask
 
 device_ids: '0'
-checkpoint_path: ???
-output_dir: eval_out/test
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/epoch=0050-train_loss=0.091.ckpt
+# output_dir: eval_out/test
 Ta: 8
 num_episode: 20
 

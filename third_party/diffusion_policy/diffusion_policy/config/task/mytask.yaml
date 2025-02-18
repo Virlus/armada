@@ -1,6 +1,6 @@
 name: mytask
 
-image_shape: [3, 480, 640]
+image_shape: [3, 240, 320]
 dataset_path: ???
 
 shape_meta: &shape_meta

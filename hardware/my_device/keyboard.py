@@ -111,5 +111,6 @@ if __name__ == '__main__':
         print("start", device.start)
         print("discard", device.discard)
         print("quit", device.quit)
+        print("continue", device.ctn)
         print("-----------------")
         time.sleep(1)

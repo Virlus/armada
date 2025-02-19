@@ -3,9 +3,9 @@ defaults:
   - task: mytask
 
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/epoch=0050-train_loss=0.091.ckpt
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/epoch=0200-train_loss=0.055.ckpt
 # output_dir: eval_out/test
-Ta: 8
+Ta: 6
 num_episode: 20
 
 name: train_diffusion_transformer_hybrid
@@ -47,7 +47,7 @@ policy:
   n_obs_steps: ${n_obs_steps}
   num_inference_steps: 8
 
-  crop_shape: [432, 576]
+  crop_shape: [216, 288]
   obs_encoder_group_norm: True
   eval_fixed_crop: True
 
@@ -73,14 +73,14 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 64
+  batch_size: 128
   num_workers: 8
   shuffle: True
   pin_memory: True
   persistent_workers: True
 
 val_dataloader:
-  batch_size: 64
+  batch_size: 128
   num_workers: 8
   shuffle: False
   pin_memory: True

@@ -42,6 +42,8 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
     
     # Relative ee pose as action space
     last_p, last_r, width = sigma.get_control()
+    base_p = last_p
+    base_r = last_r
 
     while not keyboard.quit and not keyboard.discard and not keyboard.finish:
         time.sleep(max(0.1 - (time.time() - start_time), 0))
@@ -51,21 +53,35 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
             color_image, depth_image = camera.get_data()
             cam_data.append((color_image, depth_image))
         tcpPose, jointPose, _, _ = robot.get_robot_state()
+        # gripper_state = gripper.get_gripper_state()
         
         diff_p, diff_r, width = sigma.get_control()
         curr_p_action = diff_p - last_p
         curr_r_action = last_r.inv() * diff_r
         last_p = diff_p
         last_r = diff_r
-        curr_p = diff_p + robot.init_pose[:3]
-        curr_r = R.from_quat(robot.init_pose[3:]) * diff_r
+        curr_p = diff_p - base_p + robot.init_pose[:3]
+        curr_r = R.from_quat(robot.init_pose[3:]) * base_r.inv() * diff_r
         # Send command.
         robot.send_tcp_pose(np.concatenate((curr_p,curr_r.as_quat()), 0))
         gripper.move_from_sigma(width)
-        gripper_width = gripper.max_width * width / 1000
+        # gripper_width = gripper.max_width * width / 1000
+        gripper_action = 1 if width < 500 else 0
         if not keyboard.start:
             continue
-        cnt += 1
+
+        # Initialize at the beginning of the episode
+        if cnt == 0:
+            robot.send_tcp_pose(robot.init_pose)
+            time.sleep(1.5)
+            gripper.move(gripper.max_width)
+            time.sleep(0.5)
+            base_p, base_r, _ = sigma.get_control()
+            last_p = base_p
+            last_r = base_r
+            cnt += 1
+            print("Episode start!")
+
         wrist_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
                                       permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
         side_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).\
@@ -74,7 +90,7 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         side_cam.append(side_image)
         tcp_pose.append(tcpPose)
         joint_pos.append(jointPose)
-        action.append(np.concatenate((curr_p_action, curr_r_action.as_quat(), [gripper_width])))
+        action.append(np.concatenate((curr_p_action, curr_r_action.as_quat(), [gripper_action])))
 
     if not keyboard.start or keyboard.quit or keyboard.discard:
         print('WARNING: discard the demo!')
@@ -113,7 +129,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0218_stack_cups')
+    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0219_PnP_fixed_init')
     parser.add_argument('-res', '--resolution', nargs='+', type=int)
     args = parser.parse_args()
     main(args)

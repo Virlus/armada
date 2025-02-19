@@ -257,7 +257,7 @@ class FlexivGripper:
         self.gripper = flexivrdk.Gripper(r.robot)
         self.gripper.getGripperStates(self.gripper_state)
         print(self.gripper_state.maxWidth)
-        self.max_width = 0.09
+        self.max_width = 0.085
     def move(self, width):
         # self.gripper.move(self.max_width * width / 1000, 0.1, 20)
         self.gripper.move(width, 0.1, 20)

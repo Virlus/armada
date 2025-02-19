@@ -79,6 +79,7 @@ def main(rank, eval_cfg, device_ids):
             continue
         print(f"Evaluation episode: {episode_idx}")
         keyboard.finish = False
+        time.sleep(5)
 
         img_0_history = torch.zeros((To, *img_shape), device=device)
         img_1_history = torch.zeros((To, *img_shape), device=device)

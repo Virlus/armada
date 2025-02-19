@@ -23,7 +23,7 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.mydataset.MyDataset
-  zarr_path: /mnt/workspace/DP/test/replay_buffer.zarr
+  zarr_path: /home/jinyang/yuwenye/human-in-the-loop/data/0219_PnP_fixed_init/replay_buffer.zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}

@@ -135,14 +135,11 @@ def main(rank, eval_cfg, device_ids):
             for step in range(Ta):
                 if step > 0:
                     start_time = time.time()
-                # target_pos = robot.init_pose[:3] + action_seq[step, :3]
-                # target_rot = R.from_quat(robot.init_pose[3:]) * R.from_quat(action_seq[step, 3:7])
-                # robot.send_tcp_pose(np.concatenate((target_pos, target_rot.as_quat()), 0))
-                # robot.send_tcp_pose(action_seq[step, :7])
                 curr_p = last_p + action_seq[step, :3]
                 curr_r = last_r * R.from_quat(action_seq[step, 3:7])
                 robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat()), 0))
-                gripper.move(action_seq[step, 7])
+                target_width = gripper.max_width if action_seq[step, 7] < 0.5 else 0 # Threshold could be adjusted at inference time
+                gripper.move(target_width)
                 last_p = curr_p
                 last_r = curr_r
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))

@@ -12,24 +12,44 @@ sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
 import hydra
 from omegaconf import OmegaConf
 import pathlib
+import os
+import torch
+import copy
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 
 # allows arbitrary python code execution in configs using the ${eval:''} resolver
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
-@hydra.main(
-    version_base=None,
-    config_path=str(pathlib.Path(__file__).parent.joinpath(
-        'diffusion_policy','config'))
-)
-def main(cfg: OmegaConf):
-    # resolve immediately so all the ${now:} resolvers
-    # will use the same time.
-    OmegaConf.resolve(cfg)
-
+def main(rank, cfg: OmegaConf, device_ids):
+    world_size = len(device_ids)
+    device_id = device_ids[rank]
+    device = f"cuda:{device_id}"
+    # torch.cuda.set_device(device)
+    torch.distributed.init_process_group("nccl", rank=rank, world_size=world_size)
     cls = hydra.utils.get_class(cfg._target_)
-    workspace: BaseWorkspace = cls(cfg)
-    workspace.run()
+    workspace: BaseWorkspace = cls(cfg, rank, world_size, device_id, device)
+    workspace.run(rank, world_size, device_id, device)
+    torch.distributed.destroy_process_group()
 
 if __name__ == "__main__":
-    main()
+    with hydra.initialize(config_path=str(pathlib.Path(__file__).parent.joinpath('diffusion_policy','config'))):
+        cfg = hydra.compose(config_name=sys.argv[1])
+
+    device_ids = [int(x) for x in cfg.device_ids.split(",")]
+    os.environ["MASTER_ADDR"] = "localhost"
+    port = 30003
+    import socket
+    while True:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('', port))
+                print(port)
+                break
+        except OSError:
+            port += 1
+    os.environ["MASTER_PORT"] = f"{port}"
+    if len(device_ids) == 1:
+        main(0, cfg, device_ids)
+    elif len(device_ids) > 1:
+        OmegaConf.resolve(cfg)
+        torch.multiprocessing.spawn(main, args=(cfg, device_ids), nprocs=len(device_ids), join=True)

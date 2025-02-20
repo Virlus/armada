@@ -1,7 +1,7 @@
 name: mytask
 
 image_shape: [3, 240, 320]
-dataset_path: ???
+dataset_path: /home/jinyang/yuwenye/human-in-the-loop/data/0219_PnP_fixed_init
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim

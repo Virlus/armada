@@ -383,3 +383,76 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
         loss = reduce(loss, 'b ... -> b (...)', 'mean')
         loss = loss.mean()
         return loss
+    
+    def forward(self, batch):
+        # normalize input
+        assert 'valid_mask' not in batch
+        nobs = self.normalizer.normalize(batch['obs'])
+        nactions = self.normalizer['action'].normalize(batch['action'])
+        batch_size = nactions.shape[0]
+        horizon = nactions.shape[1]
+        To = self.n_obs_steps
+
+        # handle different ways of passing observation
+        cond = None
+        trajectory = nactions
+        if self.obs_as_cond:
+            # reshape B, T, ... to B*T
+            this_nobs = dict_apply(nobs, 
+                lambda x: x[:,:To,...].reshape(-1,*x.shape[2:]))
+            nobs_features = self.obs_encoder(this_nobs)
+            # reshape back to B, T, Do
+            cond = nobs_features.reshape(batch_size, To, -1)
+            if self.pred_action_steps_only:
+                start = To - 1
+                end = start + self.n_action_steps
+                trajectory = nactions[:,start:end]
+        else:
+            # reshape B, T, ... to B*T
+            this_nobs = dict_apply(nobs, lambda x: x.reshape(-1, *x.shape[2:]))
+            nobs_features = self.obs_encoder(this_nobs)
+            # reshape back to B, T, Do
+            nobs_features = nobs_features.reshape(batch_size, horizon, -1)
+            trajectory = torch.cat([nactions, nobs_features], dim=-1).detach()
+
+        # generate impainting mask
+        if self.pred_action_steps_only:
+            condition_mask = torch.zeros_like(trajectory, dtype=torch.bool)
+        else:
+            condition_mask = self.mask_generator(trajectory.shape)
+
+        # Sample noise that we'll add to the images
+        noise = torch.randn(trajectory.shape, device=trajectory.device)
+        bsz = trajectory.shape[0]
+        # Sample a random timestep for each image
+        timesteps = torch.randint(
+            0, self.noise_scheduler.config.num_train_timesteps, 
+            (bsz,), device=trajectory.device
+        ).long()
+        # Add noise to the clean images according to the noise magnitude at each timestep
+        # (this is the forward diffusion process)
+        noisy_trajectory = self.noise_scheduler.add_noise(
+            trajectory, noise, timesteps)
+
+        # compute loss mask
+        loss_mask = ~condition_mask
+
+        # apply conditioning
+        noisy_trajectory[condition_mask] = trajectory[condition_mask]
+        
+        # Predict the noise residual
+        pred = self.model(noisy_trajectory, timesteps, cond)
+
+        pred_type = self.noise_scheduler.config.prediction_type 
+        if pred_type == 'epsilon':
+            target = noise
+        elif pred_type == 'sample':
+            target = trajectory
+        else:
+            raise ValueError(f"Unsupported prediction type {pred_type}")
+
+        loss = F.mse_loss(pred, target, reduction='none')
+        loss = loss * loss_mask.type(loss.dtype)
+        loss = reduce(loss, 'b ... -> b (...)', 'mean')
+        loss = loss.mean()
+        return loss

@@ -13,8 +13,8 @@ class Sigma7:
         self.width_scale = width_scale
         self.start_sigma()
         sig, px, py, pz, oa, ob, og, pg, matrix = sigma7.drdGetPositionAndOrientation()
-        self.init_p = np.array([py,-px,pz])
-        self.init_r = np.array([oa, ob, og])
+        self.init_p = np.array([px, py, pz])
+        self.init_r = np.array([-ob, oa, og])
 
     def start_sigma(self):
         sigma7.drdOpen()
@@ -28,8 +28,8 @@ class Sigma7:
     
     def get_control(self):
         sig, px, py, pz, oa, ob, og, pg, matrix = sigma7.drdGetPositionAndOrientation()
-        curr_p = np.array([py,-px,pz])
-        curr_r = np.array([oa, ob, og])
+        curr_p = np.array([px, py,pz])
+        curr_r = np.array([-ob, oa, og])
 
         diff_p = curr_p - self.init_p
         diff_r = curr_r - self.init_r

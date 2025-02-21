@@ -99,7 +99,7 @@ class MyDataset(BaseImageDataset):
 
 def test():
     import os
-    zarr_path = os.path.expanduser('/mnt/workspace/DP/0219_PnP/replay_buffer.zarr')
+    zarr_path = os.path.expanduser('/mnt/workspace/DP/0220_PnP_new_gripper/replay_buffer.zarr')
     dataset = MyDataset(zarr_path, horizon=16)
     import pdb; pdb.set_trace()
 

@@ -3,7 +3,7 @@ defaults:
   - task: mytask
 
 device_ids: '0,1'
-output_dir: /data/yuwenye/DP_output/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
 
 name: train_diffusion_transformer_hybrid_multi_gpu
 _target_: diffusion_policy.workspace.train_diffusion_transformer_hybrid_multi_gpu_workspace.TrainDiffusionTransformerHybridMultiGPUWorkspace
@@ -138,14 +138,14 @@ checkpoint:
   save_last_snapshot: False
 
 multi_run:
-  run_dir: /data/yuwenye/DP_output/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+  run_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
   wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
 
 hydra:
   job:
     override_dirname: ${name}
   run:
-    dir: /data/yuwenye/DP_output/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+    dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
   sweep:
-    dir: /data/yuwenye/DP_output/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+    dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
     subdir: ${hydra.job.num}

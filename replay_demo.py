@@ -10,7 +10,7 @@ def main(args):
     gripper = FlexivGripper(robot)
     replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action'])
 
-    for i in range(replay_buffer.n_episodes - 1, replay_buffer.n_episodes):
+    for i in range(replay_buffer.n_episodes-1, replay_buffer.n_episodes):
         robot.send_tcp_pose(robot.init_pose)
         gripper.move(gripper.max_width)
         last_p = robot.init_pose[:3]
@@ -32,6 +32,6 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0219_PnP_fixed_init/replay_buffer.zarr')
+    parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0221_test/replay_buffer.zarr')
     args = parser.parse_args()
     main(args)

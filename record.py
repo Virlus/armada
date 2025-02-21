@@ -9,11 +9,13 @@ import argparse
 import torch
 from torchvision.transforms import Compose, Resize
 from torchvision.transforms import InterpolationMode
+import pygame
 
 from hardware.my_device.camera import CameraD400
 from hardware.my_device.robot import FlexivRobot, FlexivGripper
 from hardware.my_device.sigma import Sigma7
 from hardware.my_device.keyboard import Keyboard
+from hardware.my_device.logitechG29_wheel import Controller
 
 from third_party.diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 
@@ -21,7 +23,7 @@ camera_serial = ["038522063145", "104422070044"]
 
 
 def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper, cameras:List[CameraD400], sigma:Sigma7, \
-           keyboard: Keyboard, image_processor: Compose):
+           keyboard: Keyboard, controller: Controller, image_processor: Compose):
     start_time = int(time.time() * 1000) # doesn't matter
     
     # color_image, depth_image = camera.get_data()
@@ -60,6 +62,17 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         curr_r_action = last_r.inv() * diff_r
         last_p = diff_p
         last_r = diff_r
+
+        # Get throttle pedal state
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                keyboard.quit = True
+        throttle = controller.get_throttle()
+        if throttle < 0:
+            base_p = curr_p_action + base_p
+            base_r = base_r * curr_r_action
+            continue
+
         curr_p = diff_p - base_p + robot.init_pose[:3]
         curr_r = R.from_quat(robot.init_pose[3:]) * base_r.inv() * diff_r
         # Send command.
@@ -114,6 +127,10 @@ def main(args):
     camera = [CameraD400(s) for s in camera_serial]
     sigma = Sigma7()
     keyboard = Keyboard()
+
+    pygame.init()
+    controller = Controller(0)
+
     zarr_path = os.path.join(args.output, 'replay_buffer.zarr')
     replay_buffer = ReplayBuffer.create_from_path(zarr_path, mode='a')
     # Image processing
@@ -122,14 +139,14 @@ def main(args):
     image_processor = Compose([Resize(img_res, interpolation=BICUBIC)])
     while not keyboard.quit:
         print("start recording...")
-        record(replay_buffer, robot, gripper, camera, sigma, keyboard, image_processor)
+        record(replay_buffer, robot, gripper, camera, sigma, keyboard, controller, image_processor)
         if not keyboard.quit:
             print("reset the environment...")
             time.sleep(10)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0219_PnP_fixed_init')
+    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0221_test')
     parser.add_argument('-res', '--resolution', nargs='+', type=int)
     args = parser.parse_args()
     main(args)

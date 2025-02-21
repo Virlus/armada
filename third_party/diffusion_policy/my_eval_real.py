@@ -37,19 +37,20 @@ def main(rank, eval_cfg, device_ids):
     cfg = payload['cfg']
     # overwrite some config values according to evaluation config
     cfg.policy.num_inference_steps = eval_cfg.policy.num_inference_steps
+    cfg.output_dir = eval_cfg.output_dir
     # if rank == 0:
     #     pathlib.Path(cfg.output_dir).mkdir(parents=True, exist_ok=True)
 
     cls = hydra.utils.get_class(cfg._target_)
-    # workspace = cls(cfg, rank, world_size, device_id, device)
-    workspace = cls(cfg)
+    workspace = cls(cfg, rank, world_size, device_id, device)
+    # workspace = cls(cfg)
     workspace: BaseWorkspace
     workspace.load_payload(payload, exclude_keys=None, include_keys=None)
 
     # get policy from workspace
-    policy = workspace.model
+    policy = workspace.model.module
     if cfg.training.use_ema:
-        policy = workspace.ema_model
+        policy = workspace.ema_model.module
 
     policy.to(device)
     policy.eval()

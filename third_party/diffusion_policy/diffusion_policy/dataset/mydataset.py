@@ -99,7 +99,7 @@ class MyDataset(BaseImageDataset):
                 action_sample[i, :3] = (curr_translate - base_translate) @ base_rot.as_matrix()
                 action_sample[i, 3:7] = (base_rot.inv() * curr_rot).as_quat()[[3,0,1,2]]
         else:
-            action_sample = sample['action'].copy()
+            action_sample = sample['action']
 
         data = {
             'obs': {
@@ -121,7 +121,7 @@ class MyDataset(BaseImageDataset):
 def test():
     import os
     zarr_path = os.path.expanduser('/home/jinyang/yuwenye/human-in-the-loop/data/0225_abs_PnP/replay_buffer.zarr')
-    dataset = MyDataset(zarr_path, horizon=16, rel_ee_pose=True, n_obs_steps=2)
+    dataset = MyDataset(zarr_path, horizon=16, rel_ee_pose=False, n_obs_steps=2)
     import pdb; pdb.set_trace()
 
 if __name__ == '__main__':

@@ -12,9 +12,9 @@ class Sigma7:
         self.pos_scale = pos_scale
         self.width_scale = width_scale
         self.start_sigma()
-        sig, px, py, pz, oa, ob, og, pg, matrix = sigma7.drdGetPositionAndOrientation()
-        self.init_p = np.array([px, py, pz])
-        self.init_r = np.array([-ob, oa, og])
+        init_p, init_r, _ = self.read_state()
+        self.init_p = init_p
+        self.init_r = init_r
 
     def start_sigma(self):
         sigma7.drdOpen()
@@ -25,19 +25,34 @@ class Sigma7:
         sigma7.drdRegulateRot(on = False)
         sigma7.drdRegulateGrip(on = False)
         print('sigma ready')
+
+    def read_state(self):
+        sig, px, py, pz, oa, ob, og, pg, matrix = sigma7.drdGetPositionAndOrientation()
+        pos = np.array([px, py,pz])
+        rot = np.array([-oa, ob, -og])
+        return pos, rot, pg
     
     def get_control(self):
-        sig, px, py, pz, oa, ob, og, pg, matrix = sigma7.drdGetPositionAndOrientation()
-        curr_p = np.array([px, py,pz])
-        curr_r = np.array([-ob, oa, og])
-
+        curr_p, curr_r, pg = self.read_state()
         diff_p = curr_p - self.init_p
         diff_r = curr_r - self.init_r
         diff_p = diff_p * self.pos_scale
         width = pg / -0.027 * self.width_scale
-        diff_r = R.from_euler('yzx',-diff_r,degrees=False)
-        # diff_p = np.array([-diff_p[1], diff_p[0], diff_p[2]])
+        diff_r = R.from_euler('xyz', diff_r,degrees=False)
         return diff_p, diff_r, width
+    
+    def detach(self):
+        prev_p, prev_r, _ = self.read_state()
+        self._prev_p = prev_p
+        self._prev_r = prev_r
+
+    def resume(self):
+        curr_p, curr_r, _ = self.read_state()
+        self.init_p = self.init_p + curr_p - self._prev_p
+        self.init_r = self.init_r + curr_r - self._prev_r
+
+    def reset(self):
+        self.init_p, self.init_r, _ = self.read_state()
     
 if __name__ == "__main__":
     sigma = Sigma7()

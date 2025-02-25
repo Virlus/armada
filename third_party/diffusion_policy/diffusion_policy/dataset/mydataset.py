@@ -13,6 +13,7 @@ from diffusion_policy.common.sampler import (
 from diffusion_policy.model.common.normalizer import LinearNormalizer
 from diffusion_policy.dataset.base_dataset import BaseImageDataset
 from diffusion_policy.common.normalize_util import get_image_range_normalizer
+from scipy.spatial.transform import Rotation as R
 
 class MyDataset(BaseImageDataset):
     def __init__(self,
@@ -22,7 +23,9 @@ class MyDataset(BaseImageDataset):
             pad_after=0,
             seed=42,
             val_ratio=0.0,
-            max_train_episodes=None
+            max_train_episodes=None,
+            rel_ee_pose=False,
+            n_obs_steps=1
             ):
         
         super().__init__()
@@ -48,6 +51,8 @@ class MyDataset(BaseImageDataset):
         self.horizon = horizon
         self.pad_before = pad_before
         self.pad_after = pad_after
+        self.rel_ee_pose = rel_ee_pose
+        self.n_obs_steps = n_obs_steps
 
     def get_validation_dataset(self):
         val_set = copy.copy(self)
@@ -80,13 +85,23 @@ class MyDataset(BaseImageDataset):
         wrist_img = np.moveaxis(sample['wrist_cam'],-1,1)/255
         side_img = np.moveaxis(sample['side_cam'],-1,1)/255
 
+        if self.rel_ee_pose:
+            action_sample = sample['action']
+            base_pose = action_sample[self.n_obs_steps-1, :7]
+            action_sample[:, :3] -= base_pose[:3]
+            for i in range(self.n_obs_steps-1, self.horizon):
+                rel_rot = R.from_quat(base_pose[[4,5,6,3]]).inv() * R.from_quat(action_sample[i, [4,5,6,3]])
+                action_sample[i, 3:7] = rel_rot.as_quat()[[3,0,1,2]]
+        else:
+            action_sample = sample['action']
+
         data = {
             'obs': {
                 'wrist_img': wrist_img, # T, 3, 480, 640
                 'side_img': side_img, # T, 3, 480, 640
                 'qpos': qpos, # T, 7
             },
-            'action': sample['action'].astype(np.float32) # T, 8
+            'action': action_sample.astype(np.float32) # T, 8
         }
         return data
     

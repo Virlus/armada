@@ -42,10 +42,7 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
     cnt = 0
     start_time = time.time()
     
-    # Relative ee pose as action space
-    last_p, last_r, width = sigma.get_control()
-    base_p = last_p
-    base_r = last_r
+    last_throttle = False
 
     while not keyboard.quit and not keyboard.discard and not keyboard.finish:
         time.sleep(max(0.1 - (time.time() - start_time), 0))
@@ -58,25 +55,28 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         # gripper_state = gripper.get_gripper_state()
         
         diff_p, diff_r, width = sigma.get_control()
-        curr_p_action = diff_p - last_p
-        curr_r_action = last_r.inv() * diff_r
-        last_p = diff_p
-        last_r = diff_r
+        diff_p = robot.init_pose[:3] + diff_p
+        diff_r = R.from_quat(robot.init_pose[3:][[1,2,3,0]]) * diff_r
 
         # Get throttle pedal state
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 keyboard.quit = True
         throttle = controller.get_throttle()
-        if throttle < 0:
-            base_p = curr_p_action + base_p
-            base_r = base_r * curr_r_action
+        # If throttle is activated, freeze the robot while adjusting the teleop device.
+        if throttle < -0.9:
+            if not last_throttle:
+                sigma.detach()
+                last_throttle = True
             continue
 
-        curr_p = diff_p - base_p + robot.init_pose[:3]
-        curr_r = R.from_quat(robot.init_pose[3:]) * base_r.inv() * diff_r
+        if last_throttle:
+            last_throttle = False
+            sigma.resume()
+            continue
+
         # Send command.
-        robot.send_tcp_pose(np.concatenate((curr_p,curr_r.as_quat()), 0))
+        robot.send_tcp_pose(np.concatenate((diff_p, diff_r.as_quat()[[3,0,1,2]]), 0))
         gripper.move_from_sigma(width)
         # gripper_width = gripper.max_width * width / 1000
         gripper_action = 1 if width < 500 else 0
@@ -89,11 +89,11 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
             time.sleep(1.5)
             gripper.move(gripper.max_width)
             time.sleep(0.5)
-            base_p, base_r, _ = sigma.get_control()
-            last_p = base_p
-            last_r = base_r
+            last_throttle = False
+            sigma.reset()
             cnt += 1
             print("Episode start!")
+            continue
 
         wrist_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
                                       permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
@@ -103,7 +103,7 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         side_cam.append(side_image)
         tcp_pose.append(tcpPose)
         joint_pos.append(jointPose)
-        action.append(np.concatenate((curr_p_action, curr_r_action.as_quat(), [gripper_action])))
+        action.append(np.concatenate((diff_p, diff_r.as_quat()[[3,0,1,2]], [gripper_action])))
 
     if not keyboard.start or keyboard.quit or keyboard.discard:
         print('WARNING: discard the demo!')
@@ -146,7 +146,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0221_test')
+    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0225_abs_PnP')
     parser.add_argument('-res', '--resolution', nargs='+', type=int)
     args = parser.parse_args()
     main(args)

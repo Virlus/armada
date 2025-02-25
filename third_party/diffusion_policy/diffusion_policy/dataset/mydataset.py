@@ -54,6 +54,9 @@ class MyDataset(BaseImageDataset):
         self.rel_ee_pose = rel_ee_pose
         self.n_obs_steps = n_obs_steps
 
+        # Currently we only support multiple observation steps
+        assert self.n_obs_steps > 1
+
     def get_validation_dataset(self):
         val_set = copy.copy(self)
         val_set.sampler = SequenceSampler(
@@ -87,7 +90,7 @@ class MyDataset(BaseImageDataset):
 
         if self.rel_ee_pose:
             action_sample = sample['action']
-            base_pose = action_sample[self.n_obs_steps-1, :7]
+            base_pose = action_sample[self.n_obs_steps-2, :7]
             action_sample[:, :3] -= base_pose[:3]
             for i in range(self.n_obs_steps-1, self.horizon):
                 rel_rot = R.from_quat(base_pose[[4,5,6,3]]).inv() * R.from_quat(action_sample[i, [4,5,6,3]])
@@ -114,8 +117,8 @@ class MyDataset(BaseImageDataset):
 
 def test():
     import os
-    zarr_path = os.path.expanduser('/mnt/workspace/DP/0220_PnP_new_gripper/replay_buffer.zarr')
-    dataset = MyDataset(zarr_path, horizon=16)
+    zarr_path = os.path.expanduser('/mnt/workspace/DP/0225_abs_PnP/replay_buffer.zarr')
+    dataset = MyDataset(zarr_path, horizon=16, rel_ee_pose=True, n_obs_steps=2)
     import pdb; pdb.set_trace()
 
 if __name__ == '__main__':

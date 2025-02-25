@@ -91,10 +91,13 @@ class MyDataset(BaseImageDataset):
         if self.rel_ee_pose:
             action_sample = sample['action']
             base_pose = action_sample[self.n_obs_steps-2, :7]
-            action_sample[:, :3] -= base_pose[:3]
+            base_rot = R.from_quat(base_pose[3:][[1,2,3,0]])
+            base_translate = base_pose[:3]
             for i in range(self.n_obs_steps-1, self.horizon):
-                rel_rot = R.from_quat(base_pose[[4,5,6,3]]).inv() * R.from_quat(action_sample[i, [4,5,6,3]])
-                action_sample[i, 3:7] = rel_rot.as_quat()[[3,0,1,2]]
+                curr_rot = R.from_quat(action_sample[i, [4,5,6,3]])
+                curr_translate = action_sample[i, :3]
+                action_sample[i, :3] = (curr_translate - base_translate) @ base_rot.as_matrix()
+                action_sample[i, 3:7] = (base_rot.inv() * curr_rot).as_quat()[[3,0,1,2]]
         else:
             action_sample = sample['action']
 

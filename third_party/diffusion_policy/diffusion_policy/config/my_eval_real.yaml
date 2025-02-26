@@ -3,7 +3,7 @@ defaults:
   - task: mytask
 
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/new_gripper/latest.ckpt
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/new_gripper/epoch=0200-train_loss=0.059.ckpt
 output_dir: outputs/
 
 Ta: 6

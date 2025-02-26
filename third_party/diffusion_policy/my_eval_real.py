@@ -35,6 +35,8 @@ def main(rank, eval_cfg, device_ids):
     # load checkpoint
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
+    rel_ee_pose = cfg.task.dataset.rel_ee_pose # Determines the action space
+
     # overwrite some config values according to evaluation config
     cfg.policy.num_inference_steps = eval_cfg.policy.num_inference_steps
     cfg.output_dir = eval_cfg.output_dir
@@ -88,7 +90,7 @@ def main(rank, eval_cfg, device_ids):
         action_seq = torch.zeros((Ta, 8), device=device)
 
         last_p = robot.init_pose[:3]
-        last_r = R.from_quat(robot.init_pose[3:])
+        last_r = R.from_quat(robot.init_pose[3:][[1,2,3,0]])
 
         # Policy inference
         j = 0
@@ -136,15 +138,29 @@ def main(rank, eval_cfg, device_ids):
             for step in range(Ta):
                 if step > 0:
                     start_time = time.time()
-                curr_p = last_p + action_seq[step, :3]
-                curr_r = last_r * R.from_quat(action_seq[step, 3:7])
-                robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat()), 0))
+                if not rel_ee_pose:
+                    curr_p = action_seq[step, :3]
+                    curr_r = R.from_quat(action_seq[step, [4,5,6,3]])
+                else:
+                    curr_p = last_p + action_seq[step, :3] @ last_r.as_matrix().T
+                    curr_r = last_r * R.from_quat(action_seq[step, [4,5,6,3]])
+                # curr_p = last_p + action_seq[step, :3]
+                # curr_r = last_r * R.from_quat(action_seq[step, 3:7])
+                robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat()[[3,0,1,2]]), 0))
                 target_width = gripper.max_width if action_seq[step, 7] < 0.5 else 0 # Threshold could be adjusted at inference time
                 gripper.move(target_width)
-                last_p = curr_p
-                last_r = curr_r
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1
+
+            last_p = curr_p
+            last_r = curr_r
+
+        if j == max_episode_length:
+            robot.send_tcp_pose(robot.init_pose)
+            time.sleep(1.5)
+            gripper.move(gripper.max_width)
+            time.sleep(0.5)
+            print("Reset!")
 
     torch.distributed.destroy_process_group()
 

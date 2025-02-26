@@ -16,7 +16,8 @@ class Keyboard:
         self.switch = False
         self.good = False
         self.bad = False
-        self.drop = False
+        self.help = False
+        self.infer = False
         # make a thread to listen to keyboard and register our callback functions
         self.listener = Listener(
             on_press=self.on_press, on_release=self.on_release)
@@ -48,7 +49,9 @@ class Keyboard:
         ##########
         print_command("g", "good")
         print_command("b", "bad")
-        print_command("h", "drop")
+        ###########
+        print_command("h", "human")
+        print_command("r", "robot")
         print("")
 
     def on_press(self, key):
@@ -71,9 +74,6 @@ class Keyboard:
             elif key.char == "b":
                 print('bad!')
                 self.bad = True
-            elif key.char == "h":
-                print('drop!')
-                self.drop = True
 
         except AttributeError as e:
             pass
@@ -99,6 +99,10 @@ class Keyboard:
                 self.fail = True
             elif key.char == "q":
                 self.quit = True
+            elif key.char == "h":
+                self.help = True
+            elif key.char == "r":
+                self.infer = True
         except AttributeError as e:
             pass
 
@@ -112,5 +116,7 @@ if __name__ == '__main__':
         print("discard", device.discard)
         print("quit", device.quit)
         print("continue", device.ctn)
+        print("human", device.help)
+        print("robot", device.infer)
         print("-----------------")
         time.sleep(1)

@@ -120,9 +120,13 @@ class MyDataset(BaseImageDataset):
 
 def test():
     import os
-    zarr_path = os.path.expanduser('/home/jinyang/yuwenye/human-in-the-loop/data/0225_abs_PnP/replay_buffer.zarr')
+    from PIL import Image
+    zarr_path = os.path.expanduser('/mnt/workspace/DP/0226_dagger/replay_buffer.zarr')
     dataset = MyDataset(zarr_path, horizon=16, rel_ee_pose=False, n_obs_steps=2)
-    import pdb; pdb.set_trace()
+    for i in range(len(dataset)):
+        img = (dataset[i]['obs']['side_img'][0].detach().cpu().numpy() * 255.0).astype(np.uint8)
+        img = np.moveaxis(img, 0, -1)
+        Image.fromarray(img).save('/home/yuwenye/Desktop/debug/{}.png'.format(i))
 
 if __name__ == '__main__':
     test()

@@ -3,8 +3,8 @@ defaults:
   - task: mytask
 
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/new_gripper/latest.ckpt
-save_buffer_path: 
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/fixed_abs_ee/epoch=0200-train_loss=0.056.ckpt
+save_buffer_path: /mnt/workspace/DP/0226_dagger
 output_dir: outputs/
 
 Ta: 6

@@ -53,6 +53,10 @@ class Sigma7:
 
     def reset(self):
         self.init_p, self.init_r, _ = self.read_state()
+
+    def transform_from_robot(self, translate, rotation):
+        self.init_p -= translate / self.pos_scale
+        self.init_r -= rotation.as_euler('xyz', degrees=False)
     
 if __name__ == "__main__":
     sigma = Sigma7()

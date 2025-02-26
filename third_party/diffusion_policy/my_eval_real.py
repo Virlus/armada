@@ -144,8 +144,7 @@ def main(rank, eval_cfg, device_ids):
                 else:
                     curr_p = last_p + action_seq[step, :3] @ last_r.as_matrix().T
                     curr_r = last_r * R.from_quat(action_seq[step, [4,5,6,3]])
-                # curr_p = last_p + action_seq[step, :3]
-                # curr_r = last_r * R.from_quat(action_seq[step, 3:7])
+
                 robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat()[[3,0,1,2]]), 0))
                 target_width = gripper.max_width if action_seq[step, 7] < 0.5 else 0 # Threshold could be adjusted at inference time
                 gripper.move(target_width)

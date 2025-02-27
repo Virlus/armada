@@ -43,6 +43,7 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
             time_as_cond=True,
             obs_as_cond=True,
             pred_action_steps_only=False,
+            rel_ee_pose=False,
             # parameters passed to step
             **kwargs):
         super().__init__()
@@ -174,6 +175,7 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
         self.n_obs_steps = n_obs_steps
         self.obs_as_cond = obs_as_cond
         self.pred_action_steps_only = pred_action_steps_only
+        self.rel_ee_pose = rel_ee_pose
         self.kwargs = kwargs
 
         if num_inference_steps is None:
@@ -347,6 +349,8 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
             condition_mask = torch.zeros_like(trajectory, dtype=torch.bool)
         else:
             condition_mask = self.mask_generator(trajectory.shape)
+            if self.rel_ee_pose:
+                condition_mask[:, :self.n_obs_steps-1, :] = True
 
         # Sample noise that we'll add to the images
         noise = torch.randn(trajectory.shape, device=trajectory.device)
@@ -420,6 +424,8 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
             condition_mask = torch.zeros_like(trajectory, dtype=torch.bool)
         else:
             condition_mask = self.mask_generator(trajectory.shape)
+            if self.rel_ee_pose:
+                condition_mask[:, :self.n_obs_steps-1, :] = True
 
         # Sample noise that we'll add to the images
         noise = torch.randn(trajectory.shape, device=trajectory.device)

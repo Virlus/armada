@@ -70,10 +70,32 @@ class MyDataset(BaseImageDataset):
         return val_set
 
     def get_normalizer(self, mode='limits', **kwargs):
-        data = {
-            'action': self.replay_buffer['action'],
-            'qpos': self.replay_buffer['joint_pos'][...,:7]
-        }
+        if self.rel_ee_pose:
+            rel_action_buffer = []
+            for episode_id in range(self.replay_buffer.n_episodes):
+                for step in range(0 if episode_id == 0 else self.replay_buffer.episode_ends[episode_id-1], \
+                                  self.replay_buffer.episode_ends[episode_id] - self.horizon + 1):
+                    base_pose = self.replay_buffer['action'][step, :7]
+                    base_rot = R.from_quat(base_pose[np.newaxis, [4,5,6,3]].repeat(self.horizon, axis=0))
+                    base_translate = base_pose[np.newaxis, :3].repeat(self.horizon, axis=0)
+                    curr_rot = R.from_quat(self.replay_buffer['action'][step:step+self.horizon, [4,5,6,3]])
+                    curr_translate = self.replay_buffer['action'][step:step+self.horizon, :3]
+                    rel_action = np.zeros((self.horizon, 8))
+                    rel_action[:, :3] = np.matmul(curr_translate - base_translate, base_rot[0].as_matrix())
+                    rel_action[:, 3:7] = (base_rot.inv() * curr_rot).as_quat()[:, [3,0,1,2]]
+                    rel_action[:, 7] = self.replay_buffer['action'][step:step+self.horizon, 7]
+                    rel_action_buffer.append(rel_action)
+            rel_action_dataset = np.concatenate(rel_action_buffer, axis=0)
+            import pdb; pdb.set_trace()
+            data = {
+                'action': rel_action_dataset,
+                'qpos': self.replay_buffer['joint_pos'][...,:7]
+            }
+        else:
+            data = {
+                'action': self.replay_buffer['action'],
+                'qpos': self.replay_buffer['joint_pos'][...,:7]
+            }
         normalizer = LinearNormalizer()
         normalizer.fit(data=data, last_n_dims=1, mode=mode, **kwargs)
         normalizer['wrist_img'] = get_image_range_normalizer()
@@ -91,13 +113,13 @@ class MyDataset(BaseImageDataset):
         if self.rel_ee_pose:
             action_sample = sample['action'].copy()
             base_pose = action_sample[self.n_obs_steps-2, :7]
-            base_rot = R.from_quat(base_pose[3:][[1,2,3,0]])
-            base_translate = base_pose[:3]
-            for i in range(self.n_obs_steps-1, self.horizon):
-                curr_rot = R.from_quat(action_sample[i, [4,5,6,3]])
-                curr_translate = action_sample[i, :3]
-                action_sample[i, :3] = (curr_translate - base_translate) @ base_rot.as_matrix()
-                action_sample[i, 3:7] = (base_rot.inv() * curr_rot).as_quat()[[3,0,1,2]]
+            base_rot = R.from_quat(base_pose[np.newaxis, [4,5,6,3]].repeat(self.horizon, axis=0))
+            base_translate = base_pose[np.newaxis, :3].repeat(self.horizon, axis=0)
+            # for i in range(self.n_obs_steps-1, self.horizon):
+            curr_rot = R.from_quat(action_sample[:, [4,5,6,3]])
+            curr_translate = action_sample[:, :3]
+            action_sample[:, :3] = np.matmul(curr_translate - base_translate, base_rot[0].as_matrix())
+            action_sample[:, 3:7] = (base_rot.inv() * curr_rot).as_quat()[:, [3,0,1,2]]
         else:
             action_sample = sample['action']
 
@@ -121,12 +143,9 @@ class MyDataset(BaseImageDataset):
 def test():
     import os
     from PIL import Image
-    zarr_path = os.path.expanduser('/mnt/workspace/DP/0226_dagger/replay_buffer.zarr')
-    dataset = MyDataset(zarr_path, horizon=16, rel_ee_pose=False, n_obs_steps=2)
-    for i in range(len(dataset)):
-        img = (dataset[i]['obs']['side_img'][0].detach().cpu().numpy() * 255.0).astype(np.uint8)
-        img = np.moveaxis(img, 0, -1)
-        Image.fromarray(img).save('/home/yuwenye/Desktop/debug/{}.png'.format(i))
+    zarr_path = os.path.expanduser('/mnt/workspace/DP/0225_abs_PnP/replay_buffer.zarr')
+    dataset = MyDataset(zarr_path, horizon=16, rel_ee_pose=True, n_obs_steps=2)
+    dataset.get_normalizer()
 
 if __name__ == '__main__':
     test()

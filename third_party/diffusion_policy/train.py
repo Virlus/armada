@@ -15,6 +15,8 @@ import pathlib
 import os
 import torch
 import copy
+from torch.multiprocessing import Process
+
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 
 # allows arbitrary python code execution in configs using the ${eval:''} resolver
@@ -52,4 +54,11 @@ if __name__ == "__main__":
         main(0, cfg, device_ids)
     elif len(device_ids) > 1:
         OmegaConf.resolve(cfg)
-        torch.multiprocessing.spawn(main, args=(cfg, device_ids), nprocs=len(device_ids), join=True)
+        processes = []
+        for rank in range(len(device_ids)):
+            p = Process(target=main, args=(rank, cfg, device_ids))
+            p.start()     
+            processes.append(p)
+        for p in processes:
+            p.join()
+        # torch.multiprocessing.spawn(main, args=(cfg, device_ids), nprocs=len(device_ids), join=True)

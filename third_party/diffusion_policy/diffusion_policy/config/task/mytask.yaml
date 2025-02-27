@@ -30,5 +30,5 @@ dataset:
   seed: 42
   val_ratio: 0.00
   max_train_episodes: 100000
-  rel_ee_pose: False
+  rel_ee_pose: True
   n_obs_steps: ${n_obs_steps}

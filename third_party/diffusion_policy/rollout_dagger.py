@@ -101,6 +101,7 @@ def main(rank, eval_cfg, device_ids):
         keyboard.finish = False
         keyboard.help = False
         keyboard.infer = False
+        keyboard.discard = False
         time.sleep(1)
 
         # Initialize episode buffers
@@ -155,8 +156,8 @@ def main(rank, eval_cfg, device_ids):
             # ===========================================================
             # Policy inference loop
             # ===========================================================
-            print("============================= Policy inference ==================================")
-            while not keyboard.finish and not keyboard.help:
+            print("=========== Policy inference ============")
+            while not keyboard.finish and not keyboard.discard and not keyboard.help:
                 if j >= max_episode_length:
                     break
 
@@ -237,11 +238,11 @@ def main(rank, eval_cfg, device_ids):
             rotation = detach_rot.inv() * resume_rot
             sigma.transform_from_robot(translate, rotation)
 
-            print("============================= Human intervention ==================================")
+            print("============ Human intervention =============")
             # ============================================================
             # Human intervention loop
             # ============================================================
-            while not keyboard.finish and not keyboard.infer:
+            while not keyboard.finish and not keyboard.discard and not keyboard.infer:
                 if j >= max_episode_length:
                     break
                 
@@ -311,7 +312,7 @@ def main(rank, eval_cfg, device_ids):
             detach_rot = R.from_quat(np.array(detach_tcp[3:])[[1,2,3,0]])
 
             # This episode fails to accomplish the task
-            if j >= max_episode_length:
+            if j >= max_episode_length or keyboard.discard:
                 break
 
             # Save the demonstrations to the replay buffer

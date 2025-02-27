@@ -265,10 +265,9 @@ class TrainDiffusionTransformerHybridMultiGPUWorkspace(BaseWorkspace):
 
                         # Neglect the action loss for obs steps when using relative ee pose as action 
                         # (because the original data is in abs ee format)
-                        if cfg.task.rel_ee_pose:
-                            start_timestep = cfg.n_obs_steps
-                            pred_action = pred_action[:, start_timestep:]
-                            gt_action = gt_action[:, start_timestep:]
+                        if cfg.task.dataset.rel_ee_pose:
+                            pred_action = pred_action[:, cfg.n_obs_steps-1:]
+                            gt_action = gt_action[:, cfg.n_obs_steps-1:]
 
                         mse = torch.nn.functional.mse_loss(pred_action, gt_action)
                         step_log['train_action_mse_error'] = mse.item()

@@ -2,7 +2,7 @@ defaults:
   - _self_
   - task: mytask
 
-device_ids: '0'
+device_ids: '0,1'
 output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
 
 name: train_diffusion_transformer_hybrid_multi_gpu

@@ -36,8 +36,17 @@ def main(args):
             side_img = replay_buffer['side_cam'][j]
             Image.fromarray(side_img).save(os.path.join(episode_path, f'side_img_{j}.png'))
 
+        while True:
+            key = input('Press "c" to continue, or "q" to quit: ')
+            if key == 'q':
+                exit(0)
+            elif key == 'c':
+                break
+            else:
+                continue
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0225_abs_PnP/replay_buffer.zarr')
+    parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0225_abs_PnP_deprecated/replay_buffer.zarr')
     args = parser.parse_args()
     main(args)

@@ -86,7 +86,6 @@ class MyDataset(BaseImageDataset):
                     rel_action[:, 7] = self.replay_buffer['action'][step:step+self.horizon, 7]
                     rel_action_buffer.append(rel_action)
             rel_action_dataset = np.concatenate(rel_action_buffer, axis=0)
-            import pdb; pdb.set_trace()
             data = {
                 'action': rel_action_dataset,
                 'qpos': self.replay_buffer['joint_pos'][...,:7]

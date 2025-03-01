@@ -12,7 +12,7 @@ task_name: ${task.name}
 shape_meta: ${task.shape_meta}
 exp_name: "default"
 
-horizon: 16
+horizon: 10
 n_obs_steps: 2
 n_action_steps: 8
 n_latency_steps: 0
@@ -71,7 +71,7 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 64
+  batch_size: 128
   num_workers: 8
   # shuffle: True
   pin_memory: True
@@ -80,7 +80,7 @@ dataloader:
   drop_last: False
 
 val_dataloader:
-  batch_size: 64
+  batch_size: 128
   num_workers: 8
   # shuffle: False
   pin_memory: True
@@ -123,7 +123,7 @@ training:
 logging:
   project: human-in-the-loop
   resume: True
-  mode: online
+  mode: offline
   name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
   tags: ["${name}", "${task_name}", "${exp_name}"]
   id: null

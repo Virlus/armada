@@ -30,7 +30,7 @@ class MyDataset(BaseImageDataset):
         
         super().__init__()
         self.replay_buffer = ReplayBuffer.copy_from_path(
-            zarr_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action'])
+            zarr_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose'])
         val_mask = get_val_mask(
             n_episodes=self.replay_buffer.n_episodes, 
             val_ratio=val_ratio,
@@ -72,23 +72,43 @@ class MyDataset(BaseImageDataset):
     def get_normalizer(self, mode='limits', **kwargs):
         if self.rel_ee_pose:
             rel_action_buffer = []
+            rel_obs_buffer = []
             for episode_id in range(self.replay_buffer.n_episodes):
                 for step in range(0 if episode_id == 0 else self.replay_buffer.episode_ends[episode_id-1], \
                                   self.replay_buffer.episode_ends[episode_id] - self.horizon + 1):
+                    # Relative action space
                     base_pose = self.replay_buffer['action'][step, :7]
-                    base_rot = R.from_quat(base_pose[np.newaxis, [4,5,6,3]].repeat(self.horizon, axis=0))
-                    base_translate = base_pose[np.newaxis, :3].repeat(self.horizon, axis=0)
-                    curr_rot = R.from_quat(self.replay_buffer['action'][step:step+self.horizon, [4,5,6,3]])
-                    curr_translate = self.replay_buffer['action'][step:step+self.horizon, :3]
-                    rel_action = np.zeros((self.horizon, 8))
+                    base_rot = R.from_quat(base_pose[np.newaxis, [4,5,6,3]].repeat(self.horizon-(self.n_obs_steps-1), axis=0))
+                    base_translate = base_pose[np.newaxis, :3].repeat(self.horizon-(self.n_obs_steps-1), axis=0)
+                    curr_rot = R.from_quat(self.replay_buffer['action'][step+self.n_obs_steps-1:step+self.horizon, [4,5,6,3]])
+                    curr_translate = self.replay_buffer['action'][step+self.n_obs_steps-1:step+self.horizon, :3]
+                    rel_action = np.zeros((self.horizon-(self.n_obs_steps-1), 10))
                     rel_action[:, :3] = np.matmul(curr_translate - base_translate, base_rot[0].as_matrix())
-                    rel_action[:, 3:7] = (base_rot.inv() * curr_rot).as_quat()[:, [3,0,1,2]]
-                    rel_action[:, 7] = self.replay_buffer['action'][step:step+self.horizon, 7]
+                    # rel_action[:, 3:7] = (base_rot.inv() * curr_rot).as_quat()[:, [3,0,1,2]]
+                    # rel_action[:, 3:6] = (base_rot.inv() * curr_rot).as_euler('zxy', degrees=False)
+                    rel_action[:, 3:9] = (base_rot.inv() * curr_rot).as_matrix()[:, :2, :].reshape((-1, 6))
+                    # rel_action[:, 6] = self.replay_buffer['action'][step:step+self.horizon, 7]
+                    rel_action[:, 9] = self.replay_buffer['action'][step+self.n_obs_steps-1:step+self.horizon, 7]
                     rel_action_buffer.append(rel_action)
+
+                    # Relative ee pose obs
+                    prev_timesteps = np.arange(self.n_obs_steps-1)
+                    curr_timesteps = np.arange(self.n_obs_steps-1) + 1
+                    prev_pose = self.replay_buffer['tcp_pose'][step+prev_timesteps, :]
+                    curr_pose = self.replay_buffer['tcp_pose'][step+curr_timesteps, :]
+                    prev_rot = R.from_quat(self.replay_buffer['tcp_pose'][step+prev_timesteps, :][:, [4,5,6,3]]) 
+                    curr_rot = R.from_quat(self.replay_buffer['tcp_pose'][step+curr_timesteps, :][:, [4,5,6,3]])
+                    rel_translate = np.matmul((curr_pose[:, :3] - prev_pose[:, :3])[:, np.newaxis, :], prev_rot.as_matrix()).squeeze(1)
+                    rel_rotation = prev_rot.inv() * curr_rot
+                    rel_rotation6d = rel_rotation.as_matrix()[:, :2, :].reshape(-1, 6)
+                    rel_ee_pose = np.concatenate((rel_translate, rel_rotation6d), axis=1)
+                    rel_obs_buffer.append(rel_ee_pose)
             rel_action_dataset = np.concatenate(rel_action_buffer, axis=0)
+            rel_obs_dataset = np.concatenate(rel_obs_buffer, axis=0)
             data = {
                 'action': rel_action_dataset,
-                'qpos': self.replay_buffer['joint_pos'][...,:7]
+                # 'qpos': self.replay_buffer['joint_pos'][...,:7]
+                'rel_ee_pose': rel_obs_dataset,
             }
         else:
             data = {
@@ -111,14 +131,35 @@ class MyDataset(BaseImageDataset):
 
         if self.rel_ee_pose:
             action_sample = sample['action'].copy()
+            ee_pose_sample = sample['tcp_pose'].copy()
+            # Compute the relative action between frames
+            rel_action = np.zeros((self.horizon, 10))
             base_pose = action_sample[self.n_obs_steps-2, :7]
             base_rot = R.from_quat(base_pose[np.newaxis, [4,5,6,3]].repeat(self.horizon, axis=0))
             base_translate = base_pose[np.newaxis, :3].repeat(self.horizon, axis=0)
-            # for i in range(self.n_obs_steps-1, self.horizon):
             curr_rot = R.from_quat(action_sample[:, [4,5,6,3]])
             curr_translate = action_sample[:, :3]
-            action_sample[:, :3] = np.matmul(curr_translate - base_translate, base_rot[0].as_matrix())
-            action_sample[:, 3:7] = (base_rot.inv() * curr_rot).as_quat()[:, [3,0,1,2]]
+            # action_sample[:, :3] = np.matmul(curr_translate - base_translate, base_rot[0].as_matrix())
+            # # action_sample[:, 3:7] = (base_rot.inv() * curr_rot).as_quat()[:, [3,0,1,2]]
+            # action_sample[:, 3:6] = (base_rot.inv() * curr_rot).as_euler('zxy', degrees=False)
+            # action_sample[:, 6] = action_sample[:, 7]
+            # action_sample = action_sample[:, :7]
+            rel_action[:, :3] = np.matmul(curr_translate - base_translate, base_rot[0].as_matrix())
+            rel_action[:, 3:9] = (base_rot.inv() * curr_rot).as_matrix()[:, :2, :].reshape((self.horizon, 6))
+            rel_action[:, 9] = action_sample[:, 7]
+            action_sample = rel_action
+            # Compute the relative ee pose as observations
+            prev_timesteps = np.arange(self.n_obs_steps-1)
+            curr_timesteps = np.arange(self.n_obs_steps-1) + 1
+            prev_pose = ee_pose_sample[prev_timesteps, :]
+            curr_pose = ee_pose_sample[curr_timesteps, :]
+            prev_rot = R.from_quat(ee_pose_sample[prev_timesteps, :][:, [4,5,6,3]]) 
+            curr_rot = R.from_quat(ee_pose_sample[curr_timesteps, :][:, [4,5,6,3]])
+            rel_translate = np.matmul((curr_pose[:, :3] - prev_pose[:, :3])[:, np.newaxis, :], prev_rot.as_matrix()).squeeze(1)
+            rel_rotation = prev_rot.inv() * curr_rot
+            rel_rotation6d = rel_rotation.as_matrix()[:, :2, :].reshape(-1, 6)
+            rel_ee_pose = np.concatenate((rel_translate, rel_rotation6d), axis=1)
+            rel_ee_pose = rel_ee_pose.reshape(-1)[np.newaxis, :].repeat(self.horizon, axis=0)
         else:
             action_sample = sample['action']
 
@@ -126,7 +167,8 @@ class MyDataset(BaseImageDataset):
             'obs': {
                 'wrist_img': wrist_img, # T, 3, 480, 640
                 'side_img': side_img, # T, 3, 480, 640
-                'qpos': qpos, # T, 7
+                # 'qpos': qpos, # T, 7
+                'rel_ee_pose': rel_ee_pose,  # T, 9
             },
             'action': action_sample.astype(np.float32) # T, 8
         }
@@ -142,7 +184,7 @@ class MyDataset(BaseImageDataset):
 def test():
     import os
     from PIL import Image
-    zarr_path = os.path.expanduser('/mnt/workspace/DP/0225_abs_PnP/replay_buffer.zarr')
+    zarr_path = os.path.expanduser('/home/jinyang/yuwenye/human-in-the-loop/data/0225_abs_PnP/replay_buffer.zarr')
     dataset = MyDataset(zarr_path, horizon=16, rel_ee_pose=True, n_obs_steps=2)
     dataset.get_normalizer()
 

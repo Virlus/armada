@@ -12,11 +12,15 @@ shape_meta: &shape_meta
     side_img:
       shape: ${task.image_shape}
       type: rgb
-    qpos:
-      shape: [7]
+    # qpos:
+    #   shape: [7]
+    #   type: low_dim
+    rel_ee_pose:
+      shape: 
+        - ${eval:'9*${n_obs_steps}-9'}
       type: low_dim
   action: 
-    shape: [8]
+    shape: [10]
 
 env_runner:
   _target_: diffusion_policy.env_runner.myrunner.MyRunner

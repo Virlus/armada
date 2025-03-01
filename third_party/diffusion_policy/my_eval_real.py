@@ -15,6 +15,7 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 from torchvision.transforms import Compose, Resize
 from torchvision.transforms import InterpolationMode
+import torch.nn.functional as F
 
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.common.pytorch_util import dict_apply
@@ -24,6 +25,29 @@ from hardware.my_device.camera import CameraD400
 from hardware.my_device.keyboard import Keyboard
 
 camera_serial = ["038522063145", "104422070044"]
+
+def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
+    """
+    Converts 6D rotation representation by Zhou et al. [1] to rotation matrix
+    using Gram--Schmidt orthogonalization per Section B of [1].
+    Args:
+        d6: 6D rotation representation, of size (*, 6)
+
+    Returns:
+        batch of rotation matrices of size (*, 3, 3)
+
+    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
+    On the Continuity of Rotation Representations in Neural Networks.
+    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
+    Retrieved from http://arxiv.org/abs/1812.07035
+    """
+
+    a1, a2 = d6[..., :3], d6[..., 3:]
+    b1 = F.normalize(a1, dim=-1)
+    b2 = a2 - (b1 * a2).sum(-1, keepdim=True) * b1
+    b2 = F.normalize(b2, dim=-1)
+    b3 = torch.cross(b1, b2, dim=-1)
+    return torch.stack((b1, b2, b3), dim=-2)
 
 def main(rank, eval_cfg, device_ids):
     fps = 10  # TODO
@@ -87,10 +111,10 @@ def main(rank, eval_cfg, device_ids):
         img_0_history = torch.zeros((To, *img_shape), device=device)
         img_1_history = torch.zeros((To, *img_shape), device=device)
         state_history = torch.zeros((To, *state_shape), device=device)
-        action_seq = torch.zeros((Ta, 8), device=device)
+        action_seq = torch.zeros((Ta, 10), device=device)
 
-        last_p = robot.init_pose[:3]
-        last_r = R.from_quat(robot.init_pose[3:][[1,2,3,0]])
+        last_p = robot.init_pose[np.newaxis, :3].repeat(Ta, axis=0)
+        last_r = R.from_quat(robot.init_pose[np.newaxis, [4,5,6,3]].repeat(Ta, axis=0))
 
         # Policy inference
         j = 0
@@ -133,20 +157,31 @@ def main(rank, eval_cfg, device_ids):
             # Predict qpos actions
             curr_action = policy.predict_action(curr_obs)
             np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
-            action_seq = np_action_dict['action'][0]
+            action_seq = np_action_dict['action'][0, :Ta]
+            # print(action_seq)
+
+            # Derive the action chunk
+            if not rel_ee_pose:
+                curr_p = action_seq[:, :3]
+                curr_r = R.from_quat(action_seq[:, [4,5,6,3]])
+            else:
+                curr_p = last_p + np.matmul(action_seq[:, np.newaxis, :3], np.transpose(last_r.as_matrix(), (0, 2, 1))).squeeze(1)
+                # curr_r = last_r * R.from_euler('zxy', action_seq[:, [3,4,5]], degrees=False)
+                # curr_r = last_r * R.from_quat(action_seq[:, [4,5,6,3]])
+                curr_r = last_r * R.from_matrix(rotation_6d_to_matrix(torch.from_numpy(action_seq[:, 3:9])).detach().cpu().numpy())
 
             for step in range(Ta):
                 if step > 0:
                     start_time = time.time()
-                if not rel_ee_pose:
-                    curr_p = action_seq[step, :3]
-                    curr_r = R.from_quat(action_seq[step, [4,5,6,3]])
-                else:
-                    curr_p = last_p + action_seq[step, :3] @ last_r.as_matrix().T
-                    curr_r = last_r * R.from_quat(action_seq[step, [4,5,6,3]])
+                # if not rel_ee_pose:
+                #     curr_p = action_seq[step, :3]
+                #     curr_r = R.from_quat(action_seq[step, [4,5,6,3]])
+                # else:
+                #     curr_p = last_p + action_seq[step, :3] @ last_r.as_matrix().T
+                #     curr_r = last_r * R.from_quat(action_seq[step, [4,5,6,3]])
 
-                robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat()[[3,0,1,2]]), 0))
-                target_width = gripper.max_width if action_seq[step, 7] < 0.5 else 0 # Threshold could be adjusted at inference time
+                robot.send_tcp_pose(np.concatenate((curr_p[step, :], curr_r[step].as_quat()[[3,0,1,2]]), 0))
+                target_width = gripper.max_width if action_seq[step, 9] < 0.5 else 0 # Threshold could be adjusted at inference time
                 gripper.move(target_width)
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1

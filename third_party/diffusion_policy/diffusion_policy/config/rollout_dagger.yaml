@@ -3,8 +3,8 @@ defaults:
   - task: mytask
 
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/fixed_abs_ee/epoch=0200-train_loss=0.056.ckpt
-save_buffer_path: /mnt/workspace/DP/0226_dagger
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/debug_0221/epoch=0150-train_loss=0.057.ckpt
+save_buffer_path: /mnt/workspace/DP/0303_dagger_test
 output_dir: outputs/
 
 Ta: 6
@@ -75,14 +75,14 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 128
+  batch_size: 64
   num_workers: 8
   shuffle: True
   pin_memory: True
   persistent_workers: True
 
 val_dataloader:
-  batch_size: 128
+  batch_size: 64
   num_workers: 8
   shuffle: False
   pin_memory: True

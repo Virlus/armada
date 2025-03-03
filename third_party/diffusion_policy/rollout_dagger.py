@@ -20,6 +20,7 @@ import pygame
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.pytorch_util import dict_apply
+from diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
 from hardware.my_device.robot import FlexivRobot, FlexivGripper
 from hardware.my_device.camera import CameraD400
@@ -40,6 +41,24 @@ def main(rank, eval_cfg, device_ids):
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
     rel_ee_pose = cfg.task.dataset.rel_ee_pose # Determines the action space
+    rel_ee_pose = True # Hacked, to evaluate the model trained on 0221 dataset, which uses relative ee pose but is given a False rel ee pose flag
+    cfg.shape_meta = eval_cfg.shape_meta # Hacked for the same reason as above
+
+    # rotation transformation for action space and observation space
+    action_dim = cfg.shape_meta['action']['shape'][0]
+    action_rot_transformer = None
+    obs_rot_transformer = None
+    # Check if there's need for transforming rotation representation
+    if 'rotation_rep' in cfg.shape_meta['action']:
+        action_rot_transformer = RotationTransformer(from_rep='quaternion', to_rep=cfg.shape_meta['action']['rotation_rep'])
+    if 'ee_pose' in cfg.shape_meta['obs']:
+        ee_pose_dim = cfg.shape_meta['obs']['ee_pose']['shape'][0]
+        state_type = 'ee_pose'
+        if 'rotation_rep' in cfg.shape_meta['obs']['ee_pose']:
+            obs_rot_transformer = RotationTransformer(from_rep='quaternion', to_rep=cfg.shape_meta['obs']['ee_pose']['rotation_rep'])
+    else:
+        ee_pose_dim = cfg.shape_meta['obs']['qpos']['shape'][0]
+        state_type = 'qpos'
 
     # overwrite some config values according to evaluation config
     cfg.policy.num_inference_steps = eval_cfg.policy.num_inference_steps
@@ -65,7 +84,10 @@ def main(rank, eval_cfg, device_ids):
     To = policy.n_obs_steps
     Ta = policy.n_action_steps
     img_shape = cfg.task['shape_meta']['obs']['wrist_img']['shape']
-    state_shape = cfg.task['shape_meta']['obs']['qpos']['shape']
+    if 'ee_pose' in cfg.shape_meta['obs']:
+        state_shape = cfg.task['shape_meta']['obs']['ee_pose']['shape']
+    else:
+        state_shape = cfg.task['shape_meta']['obs']['qpos']['shape']
 
     BICUBIC = InterpolationMode.BICUBIC
     image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
@@ -125,8 +147,18 @@ def main(rank, eval_cfg, device_ids):
         policy_img_1_history = torch.zeros((To, *img_shape), device=device)
         policy_state_history = torch.zeros((To, *state_shape), device=device)
 
-        _, state, _, _ = robot.get_robot_state()
-        state = torch.from_numpy(np.array(state))
+        if 'ee_pose' in cfg.shape_meta['obs']:
+            state = robot.get_robot_state()[0]
+        else:
+            state = robot.get_robot_state()[1]
+        state = np.array(state)
+
+        if obs_rot_transformer is not None:
+            tmp_state = np.zeros((ee_pose_dim,))
+            tmp_state[:3] = state[:3]
+            tmp_state[3:] = obs_rot_transformer.forward(state[3:])
+            state = tmp_state
+        state = torch.from_numpy(state)
         cam_data = []
         for camera in cameras:
             color_image, _ = camera.get_data()
@@ -143,7 +175,7 @@ def main(rank, eval_cfg, device_ids):
 
         # Keep track of pose from the last frame for relative action space
         last_p = robot.init_pose[:3]
-        last_r = R.from_quat(robot.init_pose[3:][[1,2,3,0]])
+        last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
         # Keep track of throttle usage for human intervention (Default to True because the teleop should follow up from arbitrary pose)
         last_throttle = True
         sigma.detach()
@@ -162,8 +194,18 @@ def main(rank, eval_cfg, device_ids):
                     break
 
                 start_time = time.time()
-                _, state, _, _ = robot.get_robot_state()
-                state = torch.from_numpy(np.array(state))
+                if 'ee_pose' in cfg.shape_meta['obs']:
+                    state = robot.get_robot_state()[0]
+                else:
+                    state = robot.get_robot_state()[1]
+                state = np.array(state)
+
+                if obs_rot_transformer is not None:
+                    tmp_state = np.zeros((ee_pose_dim,))
+                    tmp_state[:3] = state[:3]
+                    tmp_state[3:] = obs_rot_transformer.forward(state[3:])
+                    state = tmp_state
+                state = torch.from_numpy(state)
                 cam_data = []
                 for camera in cameras:
                     color_image, _ = camera.get_data()
@@ -181,23 +223,34 @@ def main(rank, eval_cfg, device_ids):
                 curr_obs = {
                     'side_img': policy_img_0_history.unsqueeze(0),
                     'wrist_img': policy_img_1_history.unsqueeze(0),
-                    'qpos': policy_state_history.unsqueeze(0)
+                    state_type: policy_state_history.unsqueeze(0)
                 }
 
                 # Predict qpos actions
                 curr_action = policy.predict_action(curr_obs)
                 np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
-                action_seq = np_action_dict['action'][0]
+                action_seq = np_action_dict['action'][0][:Ta]
+
+                # Derive the action chunk
+                if not rel_ee_pose:
+                    p_chunk = action_seq[:, :3]
+                    quat_chunk = action_rot_transformer.inverse(action_seq[:, 3:action_dim-1])
+                    r_chunk = R.from_quat(quat_chunk[:, [1,2,3,0]])
 
                 for step in range(Ta):
                     if step > 0:
                         start_time = time.time()
-                    if not rel_ee_pose:
-                        curr_p = action_seq[step, :3]
-                        curr_r = R.from_quat(action_seq[step, [4,5,6,3]])
+                    # Action calculation
+                    if rel_ee_pose:
+                        curr_p = last_p + action_seq[step, :3]
+                        curr_quat = action_rot_transformer.inverse(action_seq[step, 3:action_dim-1])
+                        action_rot = R.from_quat(curr_quat[[1,2,3,0]])
+                        curr_r = last_r * action_rot
+                        last_p = curr_p
+                        last_r = curr_r
                     else:
-                        curr_p = last_p + action_seq[step, :3] @ last_r.as_matrix().T
-                        curr_r = last_r * R.from_quat(action_seq[step, [4,5,6,3]])
+                        curr_p = p_chunk[step]
+                        curr_r = r_chunk[step]
 
                     # Record demo data
                     cam_data = []
@@ -224,9 +277,6 @@ def main(rank, eval_cfg, device_ids):
 
                     time.sleep(max(1 / fps - (time.time() - start_time), 0))
                     j += 1
-
-                last_p = curr_p
-                last_r = curr_r
 
             # Reset the signal of request for help 
             keyboard.help = False
@@ -255,7 +305,7 @@ def main(rank, eval_cfg, device_ids):
                 
                 diff_p, diff_r, width = sigma.get_control()
                 diff_p = robot.init_pose[:3] + diff_p
-                diff_r = R.from_quat(robot.init_pose[3:][[1,2,3,0]]) * diff_r
+                diff_r = R.from_quat(robot.init_pose[[4,5,6,3]]) * diff_r
 
                 # Get throttle pedal state
                 for event in pygame.event.get():
@@ -279,6 +329,19 @@ def main(rank, eval_cfg, device_ids):
                 gripper_action = 1 if width < 500 else 0
 
                 # Renew policy obs buffer for the next inference
+                if 'ee_pose' in cfg.shape_meta['obs']:
+                    state = tcpPose
+                else:
+                    state = jointPose
+                state = np.array(state)
+
+                if obs_rot_transformer is not None:
+                    tmp_state = np.zeros((ee_pose_dim,))
+                    tmp_state[:3] = state[:3]
+                    tmp_state[3:] = obs_rot_transformer.forward(state[3:])
+                    state = tmp_state
+                state = torch.from_numpy(state)
+
                 img_0 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
                 img_1 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
                 policy_img_0_history[:-1] = policy_img_0_history[1:]
@@ -286,7 +349,7 @@ def main(rank, eval_cfg, device_ids):
                 policy_img_1_history[:-1] = policy_img_1_history[1:]
                 policy_img_1_history[-1] = img_1
                 policy_state_history[:-1] = policy_state_history[1:]
-                policy_state_history[-1] = torch.from_numpy(np.array(jointPose))
+                policy_state_history[-1] = state
                 
                 # Save demonstrations to the buffer
                 wrist_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\

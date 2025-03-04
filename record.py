@@ -85,6 +85,9 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         if last_throttle:
             last_throttle = False
             sigma.resume()
+            last_p, last_r, _ = sigma.get_control()
+            last_p = last_p + robot.init_pose[:3]
+            last_r = R.from_quat(robot.init_pose[[4,5,6,3]]) * last_r
             continue
 
         # Send command.

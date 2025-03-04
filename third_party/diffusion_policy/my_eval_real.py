@@ -37,8 +37,8 @@ def main(rank, eval_cfg, device_ids):
     # load checkpoint
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
-    rel_ee_pose = cfg.task.dataset.rel_ee_pose # Determines the action space
-    # rel_ee_pose = True # Hacked, to evaluate the model trained on 0221 dataset, which uses relative ee pose but is given a False rel ee pose flag
+    # rel_ee_pose = cfg.task.dataset.rel_ee_pose # Determines the action space
+    rel_ee_pose = True # Hacked because currently the action space is always relative
     # cfg.shape_meta = eval_cfg.shape_meta # Hacked for the same reason as above
 
     # rotation transformation for action space and observation space
@@ -193,7 +193,8 @@ def main(rank, eval_cfg, device_ids):
                     curr_r = r_chunk[step]
 
                 robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat()[[3,0,1,2]]), 0))
-                target_width = gripper.max_width if action_seq[step, -1] < 0.5 else 0 # Threshold could be adjusted at inference time
+                # target_width = gripper.max_width if action_seq[step, -1] < 0.5 else 0 # Threshold could be adjusted at inference time
+                target_width = action_seq[step, -1]
                 gripper.move(target_width)
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1

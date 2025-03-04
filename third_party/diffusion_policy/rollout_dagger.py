@@ -40,8 +40,8 @@ def main(rank, eval_cfg, device_ids):
     # load checkpoint
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
-    rel_ee_pose = cfg.task.dataset.rel_ee_pose # Determines the action space
-    # rel_ee_pose = True # Hacked, to evaluate the model trained on 0221 dataset, which uses relative ee pose but is given a False rel ee pose flag
+    # rel_ee_pose = cfg.task.dataset.rel_ee_pose # Determines the action space
+    rel_ee_pose = True # Hacked because currently the action space is always relative
     # cfg.shape_meta = eval_cfg.shape_meta # Hacked for the same reason as above
 
     # rotation transformation for action space and observation space
@@ -242,9 +242,10 @@ def main(rank, eval_cfg, device_ids):
                         start_time = time.time()
                     # Action calculation
                     if rel_ee_pose:
-                        curr_p = last_p + action_seq[step, :3]
-                        curr_quat = action_rot_transformer.inverse(action_seq[step, 3:action_dim-1])
-                        action_rot = R.from_quat(curr_quat[[1,2,3,0]])
+                        curr_p_action = action_seq[step, :3]
+                        curr_p = last_p + curr_p_action
+                        curr_r_action = action_rot_transformer.inverse(action_seq[step, 3:action_dim-1])
+                        action_rot = R.from_quat(curr_r_action[[1,2,3,0]])
                         curr_r = last_r * action_rot
                         last_p = curr_p
                         last_r = curr_r
@@ -258,11 +259,12 @@ def main(rank, eval_cfg, device_ids):
                         color_image, depth_image = camera.get_data()
                         cam_data.append((color_image, depth_image))
                     tcpPose, jointPose, _, _ = robot.get_robot_state()
-                    demo_gripper_action = 1 if action_seq[step, 7] >= 0.5 else 0
+                    # demo_gripper_action = 1 if action_seq[step, 7] >= 0.5 else 0
+                    demo_gripper_action = action_seq[step, -1]
 
                     robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat()[[3,0,1,2]]), 0))
-                    target_width = gripper.max_width if action_seq[step, 7] < 0.5 else 0 # Threshold could be adjusted at inference time
-                    gripper.move(target_width)
+                    # target_width = gripper.max_width if action_seq[step, 7] < 0.5 else 0 # Threshold could be adjusted at inference time
+                    gripper.move(demo_gripper_action)
 
                     # Save demonstrations to the buffer
                     wrist_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
@@ -273,7 +275,7 @@ def main(rank, eval_cfg, device_ids):
                     side_cam.append(side_image)
                     tcp_pose.append(tcpPose)
                     joint_pos.append(jointPose)
-                    action.append(np.concatenate((curr_p, curr_r.as_quat()[[3,0,1,2]], [demo_gripper_action])))
+                    action.append(np.concatenate((curr_p_action, curr_r_action, [demo_gripper_action]), 0))
 
                     time.sleep(max(1 / fps - (time.time() - start_time), 0))
                     j += 1
@@ -306,6 +308,10 @@ def main(rank, eval_cfg, device_ids):
                 diff_p, diff_r, width = sigma.get_control()
                 diff_p = robot.init_pose[:3] + diff_p
                 diff_r = R.from_quat(robot.init_pose[[4,5,6,3]]) * diff_r
+                curr_p_action = diff_p - last_p
+                curr_r_action = last_r.inv() * diff_r
+                last_p = diff_p
+                last_r = diff_r
 
                 # Get throttle pedal state
                 for event in pygame.event.get():
@@ -321,12 +327,16 @@ def main(rank, eval_cfg, device_ids):
                 if last_throttle:
                     last_throttle = False
                     sigma.resume()
+                    last_p, last_r, _ = sigma.get_control()
+                    last_p = last_p + robot.init_pose[:3]
+                    last_r = R.from_quat(robot.init_pose[[4,5,6,3]]) * last_r
                     continue
 
                 # Send command.
                 robot.send_tcp_pose(np.concatenate((diff_p, diff_r.as_quat()[[3,0,1,2]]), 0))
                 gripper.move_from_sigma(width)
-                gripper_action = 1 if width < 500 else 0
+                gripper_action = gripper.max_width * width / 1000
+                # gripper_action = 1 if width < 500 else 0
 
                 # Renew policy obs buffer for the next inference
                 if 'ee_pose' in cfg.shape_meta['obs']:
@@ -360,7 +370,7 @@ def main(rank, eval_cfg, device_ids):
                 side_cam.append(side_image)
                 tcp_pose.append(tcpPose)
                 joint_pos.append(jointPose)
-                action.append(np.concatenate((diff_p, diff_r.as_quat()[[3,0,1,2]], [gripper_action])))
+                action.append(np.concatenate((curr_p_action, curr_r_action.as_quat()[[3,0,1,2]], [gripper_action])))
 
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1

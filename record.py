@@ -41,6 +41,12 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
     keyboard.finish = False
     cnt = 0
     start_time = time.time()
+
+    robot.send_tcp_pose(robot.init_pose)
+    time.sleep(1.5)
+    gripper.move(gripper.max_width)
+    time.sleep(0.5)
+    sigma.reset()
     
     last_throttle = False
     last_p = robot.init_pose[:3]
@@ -84,8 +90,8 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         # Send command.
         robot.send_tcp_pose(np.concatenate((diff_p, diff_r.as_quat()[[3,0,1,2]]), 0))
         gripper.move_from_sigma(width)
-        # gripper_width = gripper.max_width * width / 1000
-        gripper_action = 1 if width < 500 else 0
+        gripper_action = gripper.max_width * width / 1000
+        # gripper_action = 1 if width < 500 else 0
         if not keyboard.start:
             continue
 
@@ -115,7 +121,8 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
 
     if not keyboard.start or keyboard.quit or keyboard.discard:
         print('WARNING: discard the demo!')
-        time.sleep(5)
+        gripper.move(gripper.max_width)
+        time.sleep(0.5)
         return
     
     episode = dict()
@@ -127,6 +134,9 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
     replay_buffer.add_episode(episode, compressors='disk')
     episode_id = replay_buffer.n_episodes - 1
     print('Saved episode ', episode_id)
+
+    gripper.move(gripper.max_width)
+    time.sleep(0.5)
 
 
 def main(args):

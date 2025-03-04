@@ -11,7 +11,10 @@ import os
 def main(args):
     robot = FlexivRobot()
     gripper = FlexivGripper(robot)
-    replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action'])
+    replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=['wrist_cam', 'side_cam', 'tcp_pose', \
+                                                                      'joint_pos', 'action'])
+    zarr_path = os.path.join(args.output, 'replay_buffer.zarr')
+    save_buffer = ReplayBuffer.create_from_path(zarr_path, mode='a')
     image_save_path = os.path.join(os.path.dirname(args.demo_path), 'images')
     os.makedirs(image_save_path, exist_ok=True)
 
@@ -44,10 +47,13 @@ def main(args):
             Image.fromarray(side_img).save(os.path.join(episode_path, f'side_img_{j}.png'))
 
         while True:
-            key = input('Press "c" to continue, or "q" to quit: ')
+            key = input('Press "s" to save to filtered data, "c" to continue, or "q" to quit: ')
             if key == 'q':
                 exit(0)
             elif key == 'c':
+                break
+            elif key == 's':
+                save_buffer.add_episode(replay_buffer.get_episode(i, copy=True), compressors='disk')
                 break
             else:
                 continue
@@ -55,5 +61,6 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0304_pour/replay_buffer.zarr')
+    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0304_pour_filtered')
     args = parser.parse_args()
     main(args)

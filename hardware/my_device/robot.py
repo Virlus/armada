@@ -262,7 +262,7 @@ class FlexivGripper:
         # self.gripper.move(self.max_width * width / 1000, 0.1, 20)
         self.gripper.move(width, 0.1, 10)
     def move_from_sigma(self, width):
-        self.gripper.move(self.max_width * width / 1000, 0.1, 10)
+        self.gripper.move(self.max_width * width / 1000, 0.1, 5)
     def get_gripper_state(self):
         self.gripper.getGripperStates(self.gripper_state)
         return self.gripper_state.width 

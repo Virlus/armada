@@ -38,8 +38,8 @@ def main(rank, eval_cfg, device_ids):
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
     rel_ee_pose = cfg.task.dataset.rel_ee_pose # Determines the action space
-    rel_ee_pose = True # Hacked, to evaluate the model trained on 0221 dataset, which uses relative ee pose but is given a False rel ee pose flag
-    cfg.shape_meta = eval_cfg.shape_meta # Hacked for the same reason as above
+    # rel_ee_pose = True # Hacked, to evaluate the model trained on 0221 dataset, which uses relative ee pose but is given a False rel ee pose flag
+    # cfg.shape_meta = eval_cfg.shape_meta # Hacked for the same reason as above
 
     # rotation transformation for action space and observation space
     action_dim = cfg.shape_meta['action']['shape'][0]

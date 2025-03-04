@@ -43,6 +43,8 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
     start_time = time.time()
     
     last_throttle = False
+    last_p = robot.init_pose[:3]
+    last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
 
     while not keyboard.quit and not keyboard.discard and not keyboard.finish:
         time.sleep(max(0.1 - (time.time() - start_time), 0))
@@ -56,7 +58,11 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         
         diff_p, diff_r, width = sigma.get_control()
         diff_p = robot.init_pose[:3] + diff_p
-        diff_r = R.from_quat(robot.init_pose[3:][[1,2,3,0]]) * diff_r
+        diff_r = R.from_quat(robot.init_pose[[4,5,6,3]]) * diff_r
+        curr_p_action = diff_p - last_p
+        curr_r_action = last_r.inv() * diff_r
+        last_p = diff_p
+        last_r = diff_r
 
         # Get throttle pedal state
         for event in pygame.event.get():
@@ -92,6 +98,8 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
             last_throttle = False
             sigma.reset()
             cnt += 1
+            last_p = robot.init_pose[:3]
+            last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
             print("Episode start!")
             continue
 
@@ -103,7 +111,7 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         side_cam.append(side_image)
         tcp_pose.append(tcpPose)
         joint_pos.append(jointPose)
-        action.append(np.concatenate((diff_p, diff_r.as_quat()[[3,0,1,2]], [gripper_action])))
+        action.append(np.concatenate((curr_p_action, curr_r_action.as_quat()[[3,0,1,2]], [gripper_action])))
 
     if not keyboard.start or keyboard.quit or keyboard.discard:
         print('WARNING: discard the demo!')
@@ -146,7 +154,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0225_abs_PnP')
+    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0304_pour')
     parser.add_argument('-res', '--resolution', nargs='+', type=int)
     args = parser.parse_args()
     main(args)

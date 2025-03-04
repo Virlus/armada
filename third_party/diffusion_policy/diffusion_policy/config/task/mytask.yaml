@@ -1,7 +1,7 @@
-name: mytask
+name: pouring
 
 image_shape: [3, 240, 320]
-dataset_path: /home/jinyang/yuwenye/human-in-the-loop/data/0225_abs_PnP
+dataset_path: /home/jinyang/yuwenye/human-in-the-loop/data/0304_pour_filtered
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
@@ -32,13 +32,13 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.mydataset.MyDataset
-  zarr_path: /home/jinyang/yuwenye/human-in-the-loop/data/0225_abs_PnP/replay_buffer.zarr
+  zarr_path: /home/jinyang/yuwenye/human-in-the-loop/data/0304_pour_filtered/replay_buffer.zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}
   seed: 42
   val_ratio: 0.00
   max_train_episodes: 100000
-  rel_ee_pose: True
+  rel_ee_pose: False
   n_obs_steps: ${n_obs_steps}
   shape_meta: ${shape_meta}

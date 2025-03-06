@@ -30,12 +30,33 @@ from hardware.my_device.logitechG29_wheel import Controller
 
 camera_serial = ["038522063145", "104422070044"]
 
+# Sirius-specific macros
+HUMAN = 0
+ROBOT = 1
+PRE_INTV = 2
+INTV = 3
+INTV_STEPS = 15
+
+def postprocess_action_mode(action_mode: np.ndarray):
+    # Postprocessing for action mode identification
+    for i in range(1, len(action_mode)):
+        if action_mode[i] == INTV and action_mode[i-1] == ROBOT:
+            pre_intv_indices = np.arange(max(0, i-INTV_STEPS), i)
+            pre_intv_indices = pre_intv_indices[np.where(action_mode[pre_intv_indices] == INTV, False, True)]
+            action_mode[pre_intv_indices] = PRE_INTV
+
+    return action_mode
+
 def main(rank, eval_cfg, device_ids):
     fps = 10  # TODO
     world_size = len(device_ids)
     device_id = device_ids[rank]
     device = f"cuda:{device_id}"
     torch.distributed.init_process_group("nccl", rank=rank, world_size=world_size)
+
+    # Random seed 
+    seed = int(time.time())
+    np.random.seed(seed)
 
     # load checkpoint
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
@@ -107,7 +128,12 @@ def main(rank, eval_cfg, device_ids):
     # Initialize demonstration buffer
     zarr_path = os.path.join(eval_cfg.train_dataset_path, 'replay_buffer.zarr')
     dataset_keys = ['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose']
-    replay_buffer = ReplayBuffer.copy_from_path(zarr_path, keys=dataset_keys) # Because we want to start from original demos and append new ones
+    if 'sirius' in eval_cfg.train_dataset_path:
+        dataset_keys.append('action_mode')
+        replay_buffer = ReplayBuffer.copy_from_path(zarr_path, keys=dataset_keys)
+    else:
+        replay_buffer = ReplayBuffer.copy_from_path(zarr_path, keys=dataset_keys)
+        replay_buffer.data['action_mode'] = np.full((replay_buffer.n_steps, ), HUMAN)
 
     # Evaluation starts here
     max_episode_length = 600
@@ -131,21 +157,26 @@ def main(rank, eval_cfg, device_ids):
         tcp_pose = []
         joint_pos = []
         action = []
+        action_mode = []
         wrist_cam = []
         side_cam = []
 
-        # Reset the robot to home pose with some domain randomization
-        random_init_pose = robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
-        robot.send_tcp_pose(random_init_pose)
+        # Reset the robot to home pose
+        if eval_cfg.random_init:
+            random_init_pose = robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
+            robot.send_tcp_pose(random_init_pose)
+        else:
+            robot.send_tcp_pose(robot.init_pose)
         time.sleep(2)
         gripper.move(gripper.max_width)
         time.sleep(0.5)
         print("Reset!")
-        # Reset the sigma pose as well, and adjust its canonical pose according to the randomized robot pose
+        # Reset the sigma pose as well
         sigma.reset()
-        random_p_drift = random_init_pose[:3] - robot.init_pose[:3]
-        random_r_drift = R.from_quat(robot.init_pose[[4,5,6,3]]).inv() * R.from_quat(random_init_pose[[4,5,6,3]])
-        sigma.transform_from_robot(random_p_drift, random_r_drift)
+        if eval_cfg.random_init:
+            random_p_drift = random_init_pose[:3] - robot.init_pose[:3]
+            random_r_drift = R.from_quat(robot.init_pose[[4,5,6,3]]).inv() * R.from_quat(random_init_pose[[4,5,6,3]])
+            sigma.transform_from_robot(random_p_drift, random_r_drift)
 
         # Initialize obs history buffer
         policy_img_0_history = torch.zeros((To, *img_shape), device=device)
@@ -179,10 +210,13 @@ def main(rank, eval_cfg, device_ids):
             policy_state_history[idx] = state
 
         # Keep track of pose from the last frame for relative action space
-        # last_p = robot.init_pose[:3]
-        last_p = random_init_pose[:3]
-        # last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
-        last_r = R.from_quat(random_init_pose[[4,5,6,3]])
+        if eval_cfg.random_init:
+            last_p = random_init_pose[:3]
+            last_r = R.from_quat(random_init_pose[[4,5,6,3]])
+        else:
+            last_p = robot.init_pose[:3]
+            last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
+        
         # Keep track of throttle usage for human intervention (Default to True because the teleop should follow up from arbitrary pose)
         last_throttle = True
         sigma.detach()
@@ -193,7 +227,7 @@ def main(rank, eval_cfg, device_ids):
 
         while True:
             # ===========================================================
-            # Policy inference loop
+            #                   Policy inference loop
             # ===========================================================
             print("=========== Policy inference ============")
             while not keyboard.finish and not keyboard.discard and not keyboard.help:
@@ -283,6 +317,7 @@ def main(rank, eval_cfg, device_ids):
                     tcp_pose.append(tcpPose)
                     joint_pos.append(jointPose)
                     action.append(np.concatenate((curr_p_action, curr_r_action, [demo_gripper_action]), 0))
+                    action_mode.append(ROBOT)
 
                     time.sleep(max(1 / fps - (time.time() - start_time), 0))
                     j += 1
@@ -299,7 +334,7 @@ def main(rank, eval_cfg, device_ids):
 
             print("============ Human intervention =============")
             # ============================================================
-            # Human intervention loop
+            #                   Human intervention loop
             # ============================================================
             while not keyboard.finish and not keyboard.discard and not keyboard.infer:
                 if j >= max_episode_length:
@@ -378,6 +413,7 @@ def main(rank, eval_cfg, device_ids):
                 tcp_pose.append(tcpPose)
                 joint_pos.append(jointPose)
                 action.append(np.concatenate((curr_p_action, curr_r_action.as_quat()[[3,0,1,2]], [gripper_action])))
+                action_mode.append(INTV)
 
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1
@@ -403,6 +439,7 @@ def main(rank, eval_cfg, device_ids):
                 episode['tcp_pose'] = np.stack(tcp_pose, axis=0)
                 episode['joint_pos'] = np.stack(joint_pos, axis=0)
                 episode['action'] = np.stack(action, axis=0)
+                episode['action_mode'] = postprocess_action_mode(np.array(action_mode))
                 replay_buffer.add_episode(episode, compressors='disk')
                 episode_id = replay_buffer.n_episodes - 1
                 print('Saved episode ', episode_id)
@@ -416,7 +453,7 @@ def main(rank, eval_cfg, device_ids):
 
         # For task configuration reset
         time.sleep(5)
-
+    
     # Save the replay buffer to a new path
     save_zarr_path = os.path.join(eval_cfg.save_buffer_path, 'replay_buffer.zarr')
     replay_buffer.save_to_path(save_zarr_path)

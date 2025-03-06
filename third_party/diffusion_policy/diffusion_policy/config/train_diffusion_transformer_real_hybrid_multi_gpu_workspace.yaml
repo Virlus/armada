@@ -2,7 +2,7 @@ defaults:
   - _self_
   - task: mytask
 
-device_ids: '0,1'
+device_ids: '0,1,2,3'
 output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
 
 name: train_diffusion_transformer_hybrid_multi_gpu
@@ -72,7 +72,7 @@ ema:
 
 dataloader:
   batch_size: 64
-  num_workers: 8
+  num_workers: 4
   # shuffle: True
   pin_memory: True
   persistent_workers: True
@@ -81,7 +81,7 @@ dataloader:
 
 val_dataloader:
   batch_size: 64
-  num_workers: 8
+  num_workers: 4
   # shuffle: False
   pin_memory: True
   persistent_workers: True
@@ -99,6 +99,7 @@ training:
   seed: 42
   debug: False
   resume: True
+  resume_path: outputs/2025.03.05/14.10.45_train_diffusion_transformer_hybrid_multi_gpu_pouring
   # optimization
   lr_scheduler: cosine
   # Transformer needs LR warmup

@@ -71,7 +71,8 @@ class BaseWorkspace:
         return str(path.absolute())
     
     def get_checkpoint_path(self, tag='latest'):
-        return pathlib.Path(self.output_dir).joinpath('checkpoints', f'{tag}.ckpt')
+        # return pathlib.Path(self.output_dir).joinpath('checkpoints', f'{tag}.ckpt')
+        return pathlib.Path(self.cfg.training.resume_path).joinpath('checkpoints', f'{tag}.ckpt')
 
     def load_payload(self, payload, exclude_keys=None, include_keys=None, **kwargs):
         if exclude_keys is None:

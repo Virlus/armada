@@ -396,6 +396,11 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
         batch_size = nactions.shape[0]
         horizon = nactions.shape[1]
         To = self.n_obs_steps
+        
+        loss_weight = None
+        # If training data should be reweighed
+        if 'action_mode' in batch:
+            loss_weight = batch['action_mode']
 
         # handle different ways of passing observation
         cond = None
@@ -459,6 +464,8 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
 
         loss = F.mse_loss(pred, target, reduction='none')
         loss = loss * loss_mask.type(loss.dtype)
+        if loss_weight is not None:
+            loss = loss * loss_weight.unsqueeze(-1)
         loss = reduce(loss, 'b ... -> b (...)', 'mean')
         loss = loss.mean()
         return loss

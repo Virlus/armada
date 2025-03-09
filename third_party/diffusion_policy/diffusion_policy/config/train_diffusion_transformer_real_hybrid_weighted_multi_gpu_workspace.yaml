@@ -1,12 +1,12 @@
 defaults:
   - _self_
-  - task: mytask
+  - task: sirius_mytask
 
-device_ids: '0,1'
+device_ids: '0,1,2,3'
 output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
 
-name: train_diffusion_transformer_hybrid_multi_gpu
-_target_: diffusion_policy.workspace.train_diffusion_transformer_hybrid_multi_gpu_workspace.TrainDiffusionTransformerHybridMultiGPUWorkspace
+name: train_diffusion_transformer_hybrid_weighted_multi_gpu
+_target_: diffusion_policy.workspace.train_diffusion_transformer_hybrid_weighted_multi_gpu_workspace.TrainDiffusionTransformerHybridWeightedMultiGPUWorkspace
 
 task_name: ${task.name}
 shape_meta: ${task.shape_meta}
@@ -72,7 +72,7 @@ ema:
 
 dataloader:
   batch_size: 64
-  num_workers: 8
+  num_workers: 4
   # shuffle: True
   pin_memory: True
   persistent_workers: True
@@ -81,7 +81,7 @@ dataloader:
 
 val_dataloader:
   batch_size: 64
-  num_workers: 8
+  num_workers: 4
   # shuffle: False
   pin_memory: True
   persistent_workers: True

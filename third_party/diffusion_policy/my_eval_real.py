@@ -34,6 +34,10 @@ def main(rank, eval_cfg, device_ids):
     device = f"cuda:{device_id}"
     torch.distributed.init_process_group("nccl", rank=rank, world_size=world_size)
 
+    # Random seed 
+    seed = int(time.time())
+    np.random.seed(seed)
+
     # load checkpoint
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
@@ -112,10 +116,17 @@ def main(rank, eval_cfg, device_ids):
         state_history = torch.zeros((To, *state_shape), device=device)
         action_seq = torch.zeros((Ta, action_dim), device=device)
 
-        # last_p = robot.init_pose[np.newaxis, :3].repeat(Ta, axis=0)
-        # last_r = R.from_quat(robot.init_pose[np.newaxis, [4,5,6,3]].repeat(Ta, axis=0))
-        last_p = robot.init_pose[:3]
-        last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
+        if eval_cfg.random_init:
+            random_init_pose = robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
+            robot.send_tcp_pose(random_init_pose)
+            time.sleep(2)
+
+        if eval_cfg.random_init:
+            last_p = random_init_pose[:3]
+            last_r = R.from_quat(random_init_pose[[4,5,6,3]])
+        else:
+            last_p = robot.init_pose[:3]
+            last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
 
         # Policy inference
         j = 0

@@ -212,7 +212,7 @@ class SiriusMyDataset(BaseImageDataset):
                 'action': action_sample.astype(np.float32) # T, self.action_dim
             }
         else:
-            action_sample = sample['action'].copy()
+            action_sample = sample['action']
             action_processed = np.zeros((action_sample.shape[0], self.action_dim))
             action_processed[:, :3] = action_sample[:, :3]
             action_rotation = action_sample[:, 3:7]
@@ -223,7 +223,7 @@ class SiriusMyDataset(BaseImageDataset):
             action_processed[:, -1] = action_sample[:, 7]
 
             if 'ee_pose' in self.shape_meta['obs']:
-                tcp_pose_sample = sample['tcp_pose'].copy()
+                tcp_pose_sample = sample['tcp_pose']
                 ee_pose = np.zeros((tcp_pose_sample.shape[0], self.ee_pose_dim))
                 ee_pose[:, :3] = tcp_pose_sample[:, :3]
                 rel_ee_rot = tcp_pose_sample[:, 3:7]
@@ -234,7 +234,7 @@ class SiriusMyDataset(BaseImageDataset):
                     
             # Reweighing factor
             sample_action_mode = sample['action_mode']
-            sample_weight = sample_action_mode.copy()
+            sample_weight = sample_action_mode
             for mode, weight in self.reweigh_dict.items():
                 sample_weight = np.where(sample_action_mode == mode, weight, sample_weight)
             

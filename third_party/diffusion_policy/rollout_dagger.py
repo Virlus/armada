@@ -135,17 +135,21 @@ def main(rank, eval_cfg, device_ids):
         side_cam = []
 
         # Reset the robot to home pose with some domain randomization
-        random_init_pose = robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
-        robot.send_tcp_pose(random_init_pose)
+        if eval_cfg.random_init:
+            random_init_pose = robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
+            robot.send_tcp_pose(random_init_pose)
+        else:
+            robot.send_tcp_pose(robot.init_pose)
         time.sleep(2)
         gripper.move(gripper.max_width)
         time.sleep(0.5)
         print("Reset!")
         # Reset the sigma pose as well, and adjust its canonical pose according to the randomized robot pose
         sigma.reset()
-        random_p_drift = random_init_pose[:3] - robot.init_pose[:3]
-        random_r_drift = R.from_quat(robot.init_pose[[4,5,6,3]]).inv() * R.from_quat(random_init_pose[[4,5,6,3]])
-        sigma.transform_from_robot(random_p_drift, random_r_drift)
+        if eval_cfg.random_init:
+            random_p_drift = random_init_pose[:3] - robot.init_pose[:3]
+            random_r_drift = R.from_quat(robot.init_pose[[4,5,6,3]]).inv() * R.from_quat(random_init_pose[[4,5,6,3]])
+            sigma.transform_from_robot(random_p_drift, random_r_drift)
 
         # Initialize obs history buffer
         policy_img_0_history = torch.zeros((To, *img_shape), device=device)
@@ -179,10 +183,13 @@ def main(rank, eval_cfg, device_ids):
             policy_state_history[idx] = state
 
         # Keep track of pose from the last frame for relative action space
-        # last_p = robot.init_pose[:3]
-        last_p = random_init_pose[:3]
-        # last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
-        last_r = R.from_quat(random_init_pose[[4,5,6,3]])
+        if eval_cfg.random_init:
+            last_p = random_init_pose[:3]
+            last_r = R.from_quat(random_init_pose[[4,5,6,3]])
+        else:
+            last_p = robot.init_pose[:3]
+            last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
+
         # Keep track of throttle usage for human intervention (Default to True because the teleop should follow up from arbitrary pose)
         last_throttle = True
         sigma.detach()

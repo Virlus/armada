@@ -6,6 +6,7 @@ output_dir: outputs/
 
 Ta: 6
 num_episode: 30
+random_init: True
 
 policy:
   num_inference_steps: 8

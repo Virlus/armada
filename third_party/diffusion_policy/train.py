@@ -34,7 +34,8 @@ def main(rank, cfg: OmegaConf, device_ids):
     torch.distributed.destroy_process_group()
 
 if __name__ == "__main__":
-    with hydra.initialize(config_path=str(pathlib.Path(__file__).parent.joinpath('diffusion_policy','config'))):
+    # with hydra.initialize(config_path=str(pathlib.Path(__file__).parent.joinpath('diffusion_policy','config'))):
+    with hydra.initialize(config_path='./diffusion_policy/config'):
         cfg = hydra.compose(config_name=sys.argv[1])
 
     device_ids = [int(x) for x in cfg.device_ids.split(",")]

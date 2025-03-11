@@ -117,9 +117,9 @@ class SiriusMyDataset(BaseImageDataset):
                 base_translate = self.replay_buffer['action'][base_idx, :3]
                 curr_translate = self.replay_buffer['action'][curr_idx, :3]
                 rel_pos = curr_translate - base_translate
-                base_rot = R.from_quat(self.replay_buffer['action'][np.ix_(base_idx, [4,5,6,3])])
-                curr_rot = R.from_quat(self.replay_buffer['action'][np.ix_(curr_idx, [4,5,6,3])])
-                rel_rot = (base_rot.inv() * curr_rot).as_quat()[:, [3,0,1,2]]
+                base_rot = R.from_quat(self.replay_buffer['action'][base_idx, 3:7], scalar_first=True)
+                curr_rot = R.from_quat(self.replay_buffer['action'][curr_idx, 3:7], scalar_first=True)
+                rel_rot = (base_rot.inv() * curr_rot).as_quat(scalar_first=True)
                 if self.action_rot_transformer is not None:
                     rel_rot = self.action_rot_transformer.forward(rel_rot)
                 gripper_action = self.replay_buffer['action'][curr_idx, -1:]
@@ -187,9 +187,9 @@ class SiriusMyDataset(BaseImageDataset):
             rel_action = np.zeros((self.horizon, self.action_dim))
             prev_idx = np.concatenate((np.array([0]), np.arange(self.horizon-1)), 0)
             rel_action[:, :3] = action_sample[:, :3] - action_sample[prev_idx, :3]
-            prev_rot = R.from_quat(action_sample[np.ix_(prev_idx, [4,5,6,3])])
-            curr_rot = R.from_quat(action_sample[:, [4,5,6,3]])
-            rel_action_rot = (prev_rot.inv() * curr_rot).as_quat()[:, [3,0,1,2]]
+            prev_rot = R.from_quat(action_sample[prev_idx, 3:7], scalar_first=True)
+            curr_rot = R.from_quat(action_sample[:, 3:7], scalar_first=True)
+            rel_action_rot = (prev_rot.inv() * curr_rot).as_quat(scalar_first=True)
             if self.action_rot_transformer is not None:
                 rel_action_rot = self.action_rot_transformer.forward(rel_action_rot)
             rel_action[:, 3:self.action_dim-1] = rel_action_rot

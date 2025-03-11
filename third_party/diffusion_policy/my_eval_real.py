@@ -123,10 +123,10 @@ def main(rank, eval_cfg, device_ids):
 
         if eval_cfg.random_init:
             last_p = random_init_pose[:3]
-            last_r = R.from_quat(random_init_pose[[4,5,6,3]])
+            last_r = R.from_quat(random_init_pose[3:7], scalar_first=True)
         else:
             last_p = robot.init_pose[:3]
-            last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
+            last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
 
         # Policy inference
         j = 0
@@ -186,7 +186,7 @@ def main(rank, eval_cfg, device_ids):
             if not rel_ee_pose:
                 p_chunk = action_seq[:, :3]
                 quat_chunk = action_rot_transformer.inverse(action_seq[:, 3:action_dim-1])
-                r_chunk = R.from_quat(quat_chunk[:, [1,2,3,0]])
+                r_chunk = R.from_quat(quat_chunk, scalar_first=True)
 
             for step in range(Ta):
                 if step > 0:
@@ -195,7 +195,7 @@ def main(rank, eval_cfg, device_ids):
                 if rel_ee_pose:
                     curr_p = last_p + action_seq[step, :3]
                     curr_quat = action_rot_transformer.inverse(action_seq[step, 3:action_dim-1])
-                    action_rot = R.from_quat(curr_quat[[1,2,3,0]])
+                    action_rot = R.from_quat(curr_quat, scalar_first=True)
                     curr_r = last_r * action_rot
                     last_p = curr_p
                     last_r = curr_r
@@ -203,7 +203,7 @@ def main(rank, eval_cfg, device_ids):
                     curr_p = p_chunk[step]
                     curr_r = r_chunk[step]
 
-                robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat()[[3,0,1,2]]), 0))
+                robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat(scalar_first=True)), 0))
                 # target_width = gripper.max_width if action_seq[step, -1] < 0.5 else 0 # Threshold could be adjusted at inference time
                 target_width = action_seq[step, -1]
                 gripper.move(target_width)

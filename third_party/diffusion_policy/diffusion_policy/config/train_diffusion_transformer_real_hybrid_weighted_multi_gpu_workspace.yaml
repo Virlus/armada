@@ -71,8 +71,8 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 64
-  num_workers: 4
+  batch_size: 128
+  num_workers: 8
   # shuffle: True
   pin_memory: True
   persistent_workers: True
@@ -80,8 +80,8 @@ dataloader:
   drop_last: False
 
 val_dataloader:
-  batch_size: 64
-  num_workers: 4
+  batch_size: 128
+  num_workers: 8
   # shuffle: False
   pin_memory: True
   persistent_workers: True
@@ -91,7 +91,7 @@ val_dataloader:
 optimizer:
   transformer_weight_decay: 1.0e-3
   obs_encoder_weight_decay: 1.0e-6
-  learning_rate: 1.0e-4
+  learning_rate: 3.0e-5
   betas: [0.9, 0.95]
 
 training:

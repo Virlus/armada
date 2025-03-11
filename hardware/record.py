@@ -77,9 +77,9 @@ def record(robot:FlexivRobot, gripper:FlexivGripper, cameras:List[CameraD400], s
         diff_p, diff_r, width = sigma.get_control()
         # print(width)
         diff_p = diff_p + robot.init_pose[:3]
-        diff_r = R.from_quat(robot.init_pose[3:]) * diff_r
+        diff_r = R.from_quat(robot.init_pose[3:], scalar_first=True) * diff_r
         # Send command.
-        robot.send_tcp_pose(np.concatenate((diff_p,diff_r.as_quat()), 0))
+        robot.send_tcp_pose(np.concatenate((diff_p,diff_r.as_quat(scalar_first=True)), 0))
         gripper.move_from_sigma(width)
         gripper_width = gripper.max_width * width / 1000
         if not keyboard.start:
@@ -99,7 +99,7 @@ def record(robot:FlexivRobot, gripper:FlexivGripper, cameras:List[CameraD400], s
         np.save(os.path.join(joint_dir, f'{curr_time}.npy'), jointPose)
         # gripper width
         np.save(os.path.join(gripper_dir, f'{curr_time}.npy'), [gripper_width])
-        np.save(os.path.join(action_dir, f'{curr_time}.npy'), np.concatenate((diff_p,diff_r.as_quat())))
+        np.save(os.path.join(action_dir, f'{curr_time}.npy'), np.concatenate((diff_p,diff_r.as_quat(scalar_first=True))))
     if not keyboard.start or keyboard.quit or keyboard.discard:
         print('WARNING: discard the demo!')
         time.sleep(5)

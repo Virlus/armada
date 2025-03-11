@@ -50,7 +50,7 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
     
     last_throttle = False
     last_p = robot.init_pose[:3]
-    last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
+    last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
 
     while not keyboard.quit and not keyboard.discard and not keyboard.finish:
         time.sleep(max(0.1 - (time.time() - start_time), 0))
@@ -64,7 +64,7 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         
         diff_p, diff_r, width = sigma.get_control()
         diff_p = robot.init_pose[:3] + diff_p
-        diff_r = R.from_quat(robot.init_pose[[4,5,6,3]]) * diff_r
+        diff_r = R.from_quat(robot.init_pose[3:7], scalar_first=True) * diff_r
         curr_p_action = diff_p - last_p
         curr_r_action = last_r.inv() * diff_r
         last_p = diff_p
@@ -87,11 +87,11 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
             sigma.resume()
             last_p, last_r, _ = sigma.get_control()
             last_p = last_p + robot.init_pose[:3]
-            last_r = R.from_quat(robot.init_pose[[4,5,6,3]]) * last_r
+            last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True) * last_r
             continue
 
         # Send command.
-        robot.send_tcp_pose(np.concatenate((diff_p, diff_r.as_quat()[[3,0,1,2]]), 0))
+        robot.send_tcp_pose(np.concatenate((diff_p, diff_r.as_quat(scalar_first=True)), 0))
         gripper.move_from_sigma(width)
         gripper_action = gripper.max_width * width / 1000
         # gripper_action = 1 if width < 500 else 0
@@ -108,7 +108,7 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
             sigma.reset()
             cnt += 1
             last_p = robot.init_pose[:3]
-            last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
+            last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
             print("Episode start!")
             continue
 
@@ -120,7 +120,7 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
         side_cam.append(side_image)
         tcp_pose.append(tcpPose)
         joint_pos.append(jointPose)
-        action.append(np.concatenate((curr_p_action, curr_r_action.as_quat()[[3,0,1,2]], [gripper_action])))
+        action.append(np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])))
 
     if not keyboard.start or keyboard.quit or keyboard.discard:
         print('WARNING: discard the demo!')

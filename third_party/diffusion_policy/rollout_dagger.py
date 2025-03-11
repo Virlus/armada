@@ -148,7 +148,7 @@ def main(rank, eval_cfg, device_ids):
         sigma.reset()
         if eval_cfg.random_init:
             random_p_drift = random_init_pose[:3] - robot.init_pose[:3]
-            random_r_drift = R.from_quat(robot.init_pose[[4,5,6,3]]).inv() * R.from_quat(random_init_pose[[4,5,6,3]])
+            random_r_drift = R.from_quat(robot.init_pose[3:7], scalar_first=True).inv() * R.from_quat(random_init_pose[3:7], scalar_first=True)
             sigma.transform_from_robot(random_p_drift, random_r_drift)
 
         # Initialize obs history buffer
@@ -185,17 +185,17 @@ def main(rank, eval_cfg, device_ids):
         # Keep track of pose from the last frame for relative action space
         if eval_cfg.random_init:
             last_p = random_init_pose[:3]
-            last_r = R.from_quat(random_init_pose[[4,5,6,3]])
+            last_r = R.from_quat(random_init_pose[3:7], scalar_first=True)
         else:
             last_p = robot.init_pose[:3]
-            last_r = R.from_quat(robot.init_pose[[4,5,6,3]])
+            last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
 
         # Keep track of throttle usage for human intervention (Default to True because the teleop should follow up from arbitrary pose)
         last_throttle = True
         sigma.detach()
         detach_tcp, _, _, _ = robot.get_robot_state()
         detach_pos = np.array(detach_tcp[:3])
-        detach_rot = R.from_quat(np.array(detach_tcp[3:])[[1,2,3,0]])
+        detach_rot = R.from_quat(np.array(detach_tcp[3:]), scalar_first=True)
         j = 0 # Episode timestep
 
         while True:
@@ -249,7 +249,7 @@ def main(rank, eval_cfg, device_ids):
                 if not rel_ee_pose:
                     p_chunk = action_seq[:, :3]
                     quat_chunk = action_rot_transformer.inverse(action_seq[:, 3:action_dim-1])
-                    r_chunk = R.from_quat(quat_chunk[:, [1,2,3,0]])
+                    r_chunk = R.from_quat(quat_chunk, scalar_first=True)
 
                 for step in range(Ta):
                     if step > 0:
@@ -259,7 +259,7 @@ def main(rank, eval_cfg, device_ids):
                         curr_p_action = action_seq[step, :3]
                         curr_p = last_p + curr_p_action
                         curr_r_action = action_rot_transformer.inverse(action_seq[step, 3:action_dim-1])
-                        action_rot = R.from_quat(curr_r_action[[1,2,3,0]])
+                        action_rot = R.from_quat(curr_r_action, scalar_first=True)
                         curr_r = last_r * action_rot
                         last_p = curr_p
                         last_r = curr_r
@@ -276,7 +276,7 @@ def main(rank, eval_cfg, device_ids):
                     # demo_gripper_action = 1 if action_seq[step, 7] >= 0.5 else 0
                     demo_gripper_action = action_seq[step, -1]
 
-                    robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat()[[3,0,1,2]]), 0))
+                    robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat(scalar_first=True)), 0))
                     # target_width = gripper.max_width if action_seq[step, 7] < 0.5 else 0 # Threshold could be adjusted at inference time
                     gripper.move(demo_gripper_action)
 
@@ -299,7 +299,7 @@ def main(rank, eval_cfg, device_ids):
             # Compensate for the transformation of robot tcp pose during sigma detachment
             resume_tcp, _, _, _ = robot.get_robot_state()
             resume_pos = np.array(resume_tcp[:3])
-            resume_rot = R.from_quat(np.array(resume_tcp[3:])[[1,2,3,0]])
+            resume_rot = R.from_quat(np.array(resume_tcp[3:]), scalar_first=True)
             translate = resume_pos - detach_pos
             rotation = detach_rot.inv() * resume_rot
             sigma.transform_from_robot(translate, rotation)
@@ -321,7 +321,7 @@ def main(rank, eval_cfg, device_ids):
                 
                 diff_p, diff_r, width = sigma.get_control()
                 diff_p = robot.init_pose[:3] + diff_p
-                diff_r = R.from_quat(robot.init_pose[[4,5,6,3]]) * diff_r
+                diff_r = R.from_quat(robot.init_pose[3:7], scalar_first=True) * diff_r
                 curr_p_action = diff_p - last_p
                 curr_r_action = last_r.inv() * diff_r
                 last_p = diff_p
@@ -343,11 +343,11 @@ def main(rank, eval_cfg, device_ids):
                     sigma.resume()
                     last_p, last_r, _ = sigma.get_control()
                     last_p = last_p + robot.init_pose[:3]
-                    last_r = R.from_quat(robot.init_pose[[4,5,6,3]]) * last_r
+                    last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True) * last_r
                     continue
 
                 # Send command.
-                robot.send_tcp_pose(np.concatenate((diff_p, diff_r.as_quat()[[3,0,1,2]]), 0))
+                robot.send_tcp_pose(np.concatenate((diff_p, diff_r.as_quat(scalar_first=True)), 0))
                 gripper.move_from_sigma(width)
                 gripper_action = gripper.max_width * width / 1000
                 # gripper_action = 1 if width < 500 else 0
@@ -384,7 +384,7 @@ def main(rank, eval_cfg, device_ids):
                 side_cam.append(side_image)
                 tcp_pose.append(tcpPose)
                 joint_pos.append(jointPose)
-                action.append(np.concatenate((curr_p_action, curr_r_action.as_quat()[[3,0,1,2]], [gripper_action])))
+                action.append(np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])))
 
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1
@@ -396,7 +396,7 @@ def main(rank, eval_cfg, device_ids):
             last_throttle = True
             detach_tcp, _, _, _ = robot.get_robot_state()
             detach_pos = np.array(detach_tcp[:3])
-            detach_rot = R.from_quat(np.array(detach_tcp[3:])[[1,2,3,0]])
+            detach_rot = R.from_quat(np.array(detach_tcp[3:]), scalar_first=True)
 
             # This episode fails to accomplish the task
             if j >= max_episode_length or keyboard.discard:

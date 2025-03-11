@@ -1,5 +1,5 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0306_23.03.54_train_diffusion_transformer_hybrid_multi_gpu_pouring_dagger/checkpoints/epoch=0100-train_loss=0.025.ckpt
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/epoch=0300-train_loss=0.026.ckpt
 output_dir: outputs/
 
 Ta: 6

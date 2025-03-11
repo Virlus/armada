@@ -51,7 +51,7 @@ dependencies:
   # trick to force reinstall imagecodecs via pip
   - imagecodecs==2022.8.8
   - pip:
-    - ray[default,tune]==2.2.0
+    - ray==2.2.0
     # requires mujoco py dependencies libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
     - free-mujoco-py==2.1.6
     - pygame==2.1.2

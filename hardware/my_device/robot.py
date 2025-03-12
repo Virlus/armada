@@ -30,7 +30,7 @@ class FlexivRobot:
         self.mode = flexivrdk.Mode
         self.robot = flexivrdk.Robot(robot_ip_address, pc_ip_address)
         self.default_pose = default_pose
-        # self.home_pose = [0.6,0,0.2,0,0,1,0]
+        self.home_pose = [0.6,0,0.2,0,0,1,0]
         self.init_robot()
         self.init_pose = self.get_tcp_pose()
     
@@ -61,10 +61,10 @@ class FlexivRobot:
 
         log.info("Robot is now operational")
 
-        # # Move robot to home pose
-        # log.info("Moving to home pose")
-        # self.send_tcp_pose(self.home_pose)
-        # time.sleep(4)
+        # Move robot to home pose
+        log.info("Moving to home pose")
+        self.send_tcp_pose(self.home_pose)
+        time.sleep(4)
         # self.send_tcp_pose((0.6,0,0.2,0,0,1,0))
         # self.send_tcp_pose((0.6,0,0.2,0,0.5**0.5,0.5**0.5,0))
         # self.send_tcp_pose([0.6, 0, 0.2, 0, -0.5**0.5, 0.5**0.5, 0])

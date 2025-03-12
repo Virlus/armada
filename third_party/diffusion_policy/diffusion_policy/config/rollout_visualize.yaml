@@ -1,0 +1,11 @@
+device_ids: '0'
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0311_15.57.40_train_diffusion_transformer_hybrid_weighted_multi_gpu_pouring_sirius/checkpoints/epoch=0300-train_loss=0.025.ckpt
+output_dir: outputs/visual/0311_15.57.40_train_diffusion_transformer_hybrid_weighted_multi_gpu_pouring_sirius_multiple
+
+Ta: 8
+num_episode: 20
+random_init: True
+num_action_samples: 5
+
+policy:
+  num_inference_steps: 8

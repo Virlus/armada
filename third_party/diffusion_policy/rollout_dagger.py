@@ -415,6 +415,8 @@ def main(rank, eval_cfg, device_ids):
                 print('Saved episode ', episode_id)
                 break
 
+        robot.send_joint_pose(robot.home_joint_pos)
+        time.sleep(2)
         robot.send_tcp_pose(robot.init_pose)
         time.sleep(2)
         gripper.move(gripper.max_width)

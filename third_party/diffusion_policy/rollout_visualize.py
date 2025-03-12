@@ -117,6 +117,7 @@ def main(rank, eval_cfg, device_ids):
     for episode_idx in range(eval_cfg.num_episode):
         if episode_idx not in episode_list:
             continue
+        os.makedirs(f"{eval_cfg.output_dir}/episode_{episode_idx}", exist_ok=True)
         print(f"Evaluation episode: {episode_idx}")
         keyboard.finish = False
         time.sleep(5)
@@ -143,6 +144,8 @@ def main(rank, eval_cfg, device_ids):
         while j < max_episode_length:
             # 'f' to end the episode
             if keyboard.finish:
+                robot.send_joint_pose(robot.home_joint_pos)
+                time.sleep(1.5)
                 robot.send_tcp_pose(robot.init_pose)
                 time.sleep(1.5)
                 gripper.move(gripper.max_width)
@@ -240,10 +243,12 @@ def main(rank, eval_cfg, device_ids):
             last_r = R.from_quat(np.expand_dims(last_r[0].as_quat(scalar_first=True), axis=0).repeat(num_action_samples, axis=0), scalar_first=True)
 
             # Save the annotated image
-            cv2.imwrite(f"{eval_cfg.output_dir}/episode_{episode_idx}_step_{j}.png", side_vis)
+            cv2.imwrite(f"{eval_cfg.output_dir}/episode_{episode_idx}/step_{j}.png", side_vis)
 
 
         if j == max_episode_length:
+            robot.send_joint_pose(robot.home_joint_pos)
+            time.sleep(1.5)
             robot.send_tcp_pose(robot.init_pose)
             time.sleep(1.5)
             gripper.move(gripper.max_width)

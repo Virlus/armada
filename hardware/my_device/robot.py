@@ -31,6 +31,7 @@ class FlexivRobot:
         self.robot = flexivrdk.Robot(robot_ip_address, pc_ip_address)
         self.default_pose = default_pose
         self.home_pose = [0.6,0,0.2,0,0,1,0]
+        self.home_joint_pos = [0.21771033108234406, -0.3984721302986145, -0.03492163121700287, 1.8705854415893555, 0.0208751130849123, 0.6941397190093994, 0.1695701628923416]
         self.init_robot()
         self.init_pose = self.get_tcp_pose()
     
@@ -63,8 +64,12 @@ class FlexivRobot:
 
         # Move robot to home pose
         log.info("Moving to home pose")
-        self.send_tcp_pose(self.home_pose)
+        # self.send_tcp_pose(self.home_pose)
+        # time.sleep(4)
+        self.send_joint_pose(self.home_joint_pos)
         time.sleep(4)
+        self.send_tcp_pose(self.home_pose)
+        time.sleep(1)
         # self.send_tcp_pose((0.6,0,0.2,0,0,1,0))
         # self.send_tcp_pose((0.6,0,0.2,0,0.5**0.5,0.5**0.5,0))
         # self.send_tcp_pose([0.6, 0, 0.2, 0, -0.5**0.5, 0.5**0.5, 0])
@@ -239,8 +244,8 @@ class FlexivRobot:
         DOF = len(q)
         target_vel = [0.0] * DOF
         target_acc = [0.0] * DOF
-        MAX_VEL = [0.2] * DOF
-        MAX_ACC = [0.2] * DOF
+        MAX_VEL = [1] * DOF
+        MAX_ACC = [1] * DOF
         self.robot.sendJointPosition(np.array(q), target_vel, target_acc, MAX_VEL, MAX_ACC)
 
     def get_robot_state(self):

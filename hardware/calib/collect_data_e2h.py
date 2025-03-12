@@ -12,13 +12,30 @@ import cv2
 from scipy.spatial.transform.rotation import Rotation as R
 from my_device.keyboard import Keyboard
 from calib.utils import checkChessboard
+
+
+def get_interpolated_array(num, start, end):
+    weight = np.linspace(0, 1, num=num, endpoint=False)
+    return np.array([start + w * (end - start) for w in weight])
+
+
 if __name__ == '__main__':
     robot = FlexivRobot()
-    robot.robot.setMode(robot.mode.NRT_PLAN_EXECUTION)
-    robot.robot.executePlan("PLAN-FreeDriveAuto")
+    # robot.robot.setMode(robot.mode.NRT_PLAN_EXECUTION)
+    # robot.robot.executePlan("PLAN-FreeDriveAuto")
 
-    cam_hand = CameraD400('135122079702', is_calib=True)
-    cam_side = CameraD400('242322072982')
+    key_poses = np.array([
+        [0.6,0,0.2,0,0,1,0],
+        [0.43033236265182495, 0.07971877604722977, 0.42104658484458923, -0.029554568231105804, -0.282661497592926, 0.9364845752716064, -0.20548869669437408],
+        [0.39390870928764343, -0.09365829825401306, 0.28368425369262695, 0.21174144744873047, -0.1830323487520218, 0.9599466919898987, 0.012924541719257832],
+        [0.6481845378875732, -0.13726219534873962, 0.33488303422927856, -0.04586920887231827, -0.29011276364326477, 0.9538244605064392, -0.0628449097275734]
+    ])
+
+    all_poses = [get_interpolated_array(10, key_poses[i], key_poses[i+1]) for i in range(len(key_poses)-1)]
+    all_poses = np.concatenate(all_poses, axis=0)
+
+    cam_hand = CameraD400("104422070044", is_calib=True)
+    cam_side = CameraD400("038522063145")
     dir = os.path.join("./workspace/flexiv/calib/out","cali_side")
     os.makedirs(dir)
     dir_hand = os.path.join(dir, 'hand')
@@ -27,6 +44,8 @@ if __name__ == '__main__':
     os.mkdir(dir_side)
     k = Keyboard()
     for i in range(30):
+        robot.send_tcp_pose(all_poses[i])
+        time.sleep(2)
         # time.sleep(0.1)
         while True:
             k.finish = False

@@ -30,7 +30,7 @@ class FlexivRobot:
         self.mode = flexivrdk.Mode
         self.robot = flexivrdk.Robot(robot_ip_address, pc_ip_address)
         self.default_pose = default_pose
-        self.home_pose = [0.6,0,0.2,0,0,1,0]
+        # self.home_pose = [0.6,0,0.2,0,0,1,0]
         self.init_robot()
         self.init_pose = self.get_tcp_pose()
     
@@ -61,10 +61,10 @@ class FlexivRobot:
 
         log.info("Robot is now operational")
 
-        # Move robot to home pose
-        log.info("Moving to home pose")
-        self.send_tcp_pose(self.home_pose)
-        time.sleep(4)
+        # # Move robot to home pose
+        # log.info("Moving to home pose")
+        # self.send_tcp_pose(self.home_pose)
+        # time.sleep(4)
         # self.send_tcp_pose((0.6,0,0.2,0,0,1,0))
         # self.send_tcp_pose((0.6,0,0.2,0,0.5**0.5,0.5**0.5,0))
         # self.send_tcp_pose([0.6, 0, 0.2, 0, -0.5**0.5, 0.5**0.5, 0])
@@ -239,8 +239,8 @@ class FlexivRobot:
         DOF = len(q)
         target_vel = [0.0] * DOF
         target_acc = [0.0] * DOF
-        MAX_VEL = [1.0] * DOF
-        MAX_ACC = [1.0] * DOF
+        MAX_VEL = [0.2] * DOF
+        MAX_ACC = [0.2] * DOF
         self.robot.sendJointPosition(np.array(q), target_vel, target_acc, MAX_VEL, MAX_ACC)
 
     def get_robot_state(self):
@@ -274,3 +274,6 @@ if __name__ == "__main__":
         width = float(input("Enter gripper width: "))
         gripper.move(width)
         time.sleep(0.5)
+        tcp_pose, joint_pos, _, _ = robot.get_robot_state()
+        print(tcp_pose)
+        print(joint_pos)

@@ -532,16 +532,16 @@ class calibration():
 
 
 if __name__ == "__main__":
-    # cam = CameraD400('135122075425')
+    side_cam = CameraD400("038522063145")
     # cam = CameraD400('242322072982')
  
     physicsClient = p.connect(p.GUI)
     rob = p.loadURDF("../flexiv_rdk/resources/flexiv_rizon4_kinematics.urdf")
-    # intr = cam.getIntrinsics()
+    side_intr = side_cam.getIntrinsics()
     intr = np.load('./workspace/flexiv/calib/out/cali_hand/intrinsic.npy')
 
     pattern_size = (11, 8)
-    calib = calibration(intr, pattern_size, 10)
+    calib = calibration(side_intr, pattern_size, 10)
     calib_wrist = calibration(intr, pattern_size, 10)
     dirName = 'cali_side'
     flangeposList = glob.glob(f"./workspace/flexiv/calib/out/{dirName}/*.txt")

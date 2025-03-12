@@ -532,12 +532,12 @@ class calibration():
             Hc2m = XYZRodrigues_to_Hmatrix(final_pose[:6])
             camT = Hc2m
    
-        q_gt = np.array([0.07717, 0, 0.0365, 0.7071068, 0, 0, 0.7071067])
-        camT_gt = np.eye(4)
-        camT_gt[:3,:3] = transforms3d.quaternions.quat2mat(q_gt[3:]).T
-        camT_gt[:3,3] = q_gt[:3]
-        print("========== camgt ===================")
-        print(camT_gt)
+        # q_gt = np.array([0.07717, 0, 0.0365, 0.7071068, 0, 0, 0.7071067])
+        # camT_gt = np.eye(4)
+        # camT_gt[:3,:3] = transforms3d.quaternions.quat2mat(q_gt[3:]).T
+        # camT_gt[:3,3] = q_gt[:3]
+        # print("========== camgt ===================")
+        # print(camT_gt)
   
         for i in range(len(pose_list)):
             ppp = pose_list[i] @ camT @ Hg2c[i]
@@ -552,7 +552,7 @@ class calibration():
 
 
 if __name__ == "__main__":
-    cam = CameraD400(serial="135122079702")
+    cam = CameraD400(serial="104422070044")
     physicsClient = p.connect(p.GUI)
     rob = p.loadURDF("../flexiv_rdk/resources/flexiv_rizon4_kinematics.urdf")
     # flexiv = FlexivRobot(robot_ip_address="192.168.2.100",

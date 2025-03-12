@@ -2,7 +2,7 @@ defaults:
   - _self_
   - task: mytask
 
-device_ids: '0,1'
+device_ids: '0,1,2,3'
 output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
 
 name: train_diffusion_transformer_hybrid_multi_gpu
@@ -71,7 +71,7 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 64
+  batch_size: 128
   num_workers: 8
   # shuffle: True
   pin_memory: True
@@ -80,7 +80,7 @@ dataloader:
   drop_last: False
 
 val_dataloader:
-  batch_size: 64
+  batch_size: 128
   num_workers: 8
   # shuffle: False
   pin_memory: True
@@ -91,7 +91,7 @@ val_dataloader:
 optimizer:
   transformer_weight_decay: 1.0e-3
   obs_encoder_weight_decay: 1.0e-6
-  learning_rate: 1.0e-4
+  learning_rate: 3.0e-5
   betas: [0.9, 0.95]
 
 training:

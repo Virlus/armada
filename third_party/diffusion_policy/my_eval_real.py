@@ -34,10 +34,6 @@ def main(rank, eval_cfg, device_ids):
     device = f"cuda:{device_id}"
     torch.distributed.init_process_group("nccl", rank=rank, world_size=world_size)
 
-    # Random seed 
-    seed = int(time.time())
-    np.random.seed(seed)
-
     # load checkpoint
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
@@ -94,6 +90,8 @@ def main(rank, eval_cfg, device_ids):
     image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
 
     # Overwritten by evaluation config specifically
+    seed = int(time.time())
+    np.random.seed(seed)
     Ta = eval_cfg.Ta
 
     # run evaluation

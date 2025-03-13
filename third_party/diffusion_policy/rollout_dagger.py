@@ -93,6 +93,8 @@ def main(rank, eval_cfg, device_ids):
     image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
 
     # Overwritten by evaluation config specifically
+    seed = int(time.time())
+    np.random.seed(seed)
     Ta = eval_cfg.Ta
 
     # Initialize hardware

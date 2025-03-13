@@ -36,10 +36,6 @@ def main(rank, eval_cfg, device_ids):
     device = f"cuda:{device_id}"
     torch.distributed.init_process_group("nccl", rank=rank, world_size=world_size)
 
-    # Random seed 
-    seed = int(time.time())
-    np.random.seed(seed)
-
     # load extrinsic matrix and intrinsic matrix
     base2cam_T = np.load(base2cam_T_path)
     cam2base_T = np.linalg.inv(base2cam_T)
@@ -104,6 +100,8 @@ def main(rank, eval_cfg, device_ids):
     image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
 
     # Overwritten by evaluation config specifically
+    seed = int(time.time())
+    np.random.seed(seed)
     Ta = eval_cfg.Ta
 
     # run evaluation

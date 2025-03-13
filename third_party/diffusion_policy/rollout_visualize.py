@@ -186,26 +186,21 @@ def main(rank, eval_cfg, device_ids):
                 state_history[:-1] = state_history[1:]
                 state_history[-1] = state
             curr_obs = {
-                'side_img': img_0_history.unsqueeze(0),
-                'wrist_img': img_1_history.unsqueeze(0),
-                state_type: state_history.unsqueeze(0)
+                'side_img': img_0_history.unsqueeze(0).repeat(num_action_samples, 1, 1, 1, 1),
+                'wrist_img': img_1_history.unsqueeze(0).repeat(num_action_samples, 1, 1, 1, 1),
+                state_type: state_history.unsqueeze(0).repeat(num_action_samples, 1, 1)
             }
 
             # Fetch current RGB observation
             side_vis = cam_data[0].copy()
 
             # Predict qpos actions
-            for i in range(eval_cfg.num_action_samples):
-                curr_action = policy.predict_action(curr_obs)
-                np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
-                action_seq = np_action_dict['action'][0, :Ta]
-                action_samples[i] = action_seq
-
-            # Derive the action chunk
-            if not rel_ee_pose:
-                p_chunk = action_seq[:, :3]
-                quat_chunk = action_rot_transformer.inverse(action_seq[:, 3:action_dim-1])
-                r_chunk = R.from_quat(quat_chunk, scalar_first=True)
+            # for i in range(eval_cfg.num_action_samples):
+            curr_action = policy.predict_action(curr_obs)
+            np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
+            # action_seq = np_action_dict['action'][0, :Ta]
+            action_samples = np_action_dict['action'][:, :Ta]
+            # action_samples[i] = action_seq
 
             for step in range(Ta):
                 if step > 0:
@@ -218,9 +213,6 @@ def main(rank, eval_cfg, device_ids):
                     curr_r = last_r * action_rot
                     last_p = curr_p
                     last_r = curr_r
-                else:
-                    curr_p = p_chunk[step]
-                    curr_r = r_chunk[step]
 
                 # Annotate on the side image
                 cam_R,_ = cv2.Rodrigues(cam2base_T[:3, :3])
@@ -234,7 +226,7 @@ def main(rank, eval_cfg, device_ids):
 
                 robot.send_tcp_pose(np.concatenate((curr_p[0], curr_r[0].as_quat(scalar_first=True)), 0))
                 # target_width = gripper.max_width if action_seq[step, -1] < 0.5 else 0 # Threshold could be adjusted at inference time
-                target_width = action_seq[step, -1]
+                target_width = action_samples[0, step, -1]
                 gripper.move(target_width)
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1

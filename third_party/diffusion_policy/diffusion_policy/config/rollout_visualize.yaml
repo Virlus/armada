@@ -1,6 +1,6 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0311_15.57.40_train_diffusion_transformer_hybrid_weighted_multi_gpu_pouring_sirius/checkpoints/epoch=0450-train_loss=0.026.ckpt
-output_dir: outputs/visual/0311_15.57.40_train_diffusion_transformer_hybrid_weighted_multi_gpu_pouring_sirius_multiple
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0312_12.02.43_train_diffusion_transformer_hybrid_multi_gpu_pouring_dagger/checkpoints/epoch=0300-train_loss=0.020.ckpt
+output_dir: outputs/visual/0312_12.02.43_train_diffusion_transformer_hybrid_multi_gpu_pouring_dagger
 
 Ta: 6
 num_episode: 20

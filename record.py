@@ -42,6 +42,8 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
     cnt = 0
     start_time = time.time()
 
+    robot.send_joint_pose(robot.home_joint_pos)
+    time.sleep(2)
     robot.send_tcp_pose(robot.init_pose)
     time.sleep(1.5)
     gripper.move(gripper.max_width)

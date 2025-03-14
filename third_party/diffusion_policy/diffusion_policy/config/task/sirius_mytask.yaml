@@ -42,3 +42,4 @@ dataset:
   rel_ee_pose: False
   n_obs_steps: ${n_obs_steps}
   shape_meta: ${shape_meta}
+  max_n_episodes: 150

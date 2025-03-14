@@ -35,11 +35,14 @@ class SiriusMyDataset(BaseImageDataset):
             rel_ee_pose=False,
             n_obs_steps=1,
             shape_meta=None,
+            max_n_episodes=150
             ):
         
         super().__init__()
         self.replay_buffer = ReplayBuffer.copy_from_path(
             zarr_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose', 'action_mode'])
+        # Memory reduction mechanism from Sirius
+        self._prune_episodes(original_zarr_path=zarr_path, max_n_episodes=max_n_episodes)
         val_mask = get_val_mask(
             n_episodes=self.replay_buffer.n_episodes, 
             val_ratio=val_ratio,
@@ -103,6 +106,33 @@ class SiriusMyDataset(BaseImageDataset):
         self.reweigh_dict[INTV] = OPT_INTV / self._count_frequency(INTV)
         self.reweigh_dict[ROBOT] = ((1. - OPT_INTV - self._count_frequency(HUMAN)) / self._count_frequency(ROBOT)).clip(0., 1.)
         
+    def _prune_episode_indices(self, max_n_episodes):
+        human_demo_indices = []
+        intv_indices = []
+        for i in range(self.replay_buffer.n_episodes):
+            episode_start = self.replay_buffer.episode_ends[i-1] if i > 0 else 0
+            if np.any(self.replay_buffer.data['action_mode'][episode_start: self.replay_buffer.episode_ends[i]] == HUMAN):
+                human_demo_indices.append(i)
+            elif np.any(self.replay_buffer.data['action_mode'][episode_start: self.replay_buffer.episode_ends[i]] == INTV):
+                intv_indices.append(i)
+        # LFI implementation
+        intv_indices = intv_indices[-int(max_n_episodes-len(human_demo_indices)):]
+        human_demo_indices.extend(intv_indices)
+        return human_demo_indices
+        
+    def _prune_episodes(self, original_zarr_path, max_n_episodes):
+        if self.replay_buffer.n_episodes <= max_n_episodes:
+            return
+        parent_dir = os.path.dirname(original_zarr_path)
+        new_zarr_path = os.path.join(os.path.dirname(parent_dir), \
+            os.path.basename(parent_dir)+'_pruned', 'replay_buffer.zarr')
+        pruned_replay_buffer = ReplayBuffer.create_from_path(new_zarr_path, mode='w') # Overwrite existing zarr database
+        preserved_indices = self._prune_episode_indices(max_n_episodes)
+        assert len(preserved_indices) == max_n_episodes
+        for idx in preserved_indices:
+            pruned_replay_buffer.add_episode(self.replay_buffer.get_episode(idx))
+        self.replay_buffer = pruned_replay_buffer
+    
     def get_normalizer(self, mode='limits', **kwargs):
         if self.rel_ee_pose:
             rel_action_buffer = []

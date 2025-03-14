@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
 
+import re
 import hydra
 import torch
 import numpy as np
@@ -117,7 +118,12 @@ def main(rank, eval_cfg, device_ids):
     seed = int(time.time())
     np.random.seed(seed)
     Ta = eval_cfg.Ta
-
+    
+    # Inspect the current round (Sirius-specific)
+    match_round = re.search('round', eval_cfg.save_buffer_path)
+    assert match_round
+    num_round = int(match_round.group(1))
+    
     # Initialize hardware
     robot = FlexivRobot()
     gripper = FlexivGripper(robot)
@@ -138,14 +144,16 @@ def main(rank, eval_cfg, device_ids):
         replay_buffer.data['action_mode'] = np.full((replay_buffer.n_steps, ), HUMAN)
 
     # Evaluation starts here
+    episode_idx = 0
     max_episode_length = 600
-    episode_list = [x for x in range(eval_cfg.num_episode) if (x + 1) % world_size == rank]
+    # episode_list = [x for x in range(eval_cfg.num_episode) if (x + 1) % world_size == rank]
 
-    for episode_idx in range(eval_cfg.num_episode):
+    # for episode_idx in range(eval_cfg.num_episode):
+    while True: 
         if keyboard.quit:
             break
-        if episode_idx not in episode_list:
-            continue
+        # if episode_idx not in episode_list:
+        #     continue
         print(f"Rollout episode: {episode_idx}")
 
         # Reset keyboard states
@@ -454,6 +462,12 @@ def main(rank, eval_cfg, device_ids):
         gripper.move(gripper.max_width)
         time.sleep(0.5)
         print("Reset!")
+        
+        episode_idx += 1
+        
+        # Sirius rollout halts if human intervention samples exceed 1 / 3 of original human demonstration
+        if np.sum(replay_buffer.data['action_mode'] == INTV) * 3 / num_round >= np.sum(replay_buffer.data['action_mode'] == HUMAN):
+            break
 
         # For task configuration reset
         time.sleep(5)

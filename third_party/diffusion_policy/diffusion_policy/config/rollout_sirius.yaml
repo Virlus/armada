@@ -1,7 +1,7 @@
 device_ids: '0'
 checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0305_14.10.45_train_diffusion_transformer_hybrid_multi_gpu_pouring/checkpoints/epoch=0350-train_loss=0.035.ckpt
-train_dataset_path: /mnt/workspace/DP/0305_pour_sirius_round1
-save_buffer_path: /mnt/workspace/DP/0305_pour_sirius_round2
+train_dataset_path: /mnt/workspace/DP/0305_pour_filtered
+save_buffer_path: /mnt/workspace/DP/0305_pour_sirius_round1_1
 output_dir: outputs/
 
 Ta: 6

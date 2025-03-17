@@ -42,7 +42,7 @@ class SiriusMyDataset(BaseImageDataset):
         self.replay_buffer = ReplayBuffer.copy_from_path(
             zarr_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose', 'action_mode'])
         # Memory reduction mechanism from Sirius
-        self._prune_episodes(original_zarr_path=zarr_path, max_n_episodes=max_n_episodes)
+        self._prune_episodes(max_n_episodes=max_n_episodes)
         val_mask = get_val_mask(
             n_episodes=self.replay_buffer.n_episodes, 
             val_ratio=val_ratio,
@@ -120,17 +120,14 @@ class SiriusMyDataset(BaseImageDataset):
         human_demo_indices.extend(intv_indices)
         return human_demo_indices
         
-    def _prune_episodes(self, original_zarr_path, max_n_episodes):
+    def _prune_episodes(self, max_n_episodes):
         if self.replay_buffer.n_episodes <= max_n_episodes:
             return
-        parent_dir = os.path.dirname(original_zarr_path)
-        new_zarr_path = os.path.join(os.path.dirname(parent_dir), \
-            os.path.basename(parent_dir)+'_pruned', 'replay_buffer.zarr')
-        pruned_replay_buffer = ReplayBuffer.create_from_path(new_zarr_path, mode='w') # Overwrite existing zarr database
+        pruned_replay_buffer = ReplayBuffer.create_empty_numpy()
         preserved_indices = self._prune_episode_indices(max_n_episodes)
         assert len(preserved_indices) == max_n_episodes
         for idx in preserved_indices:
-            pruned_replay_buffer.add_episode(self.replay_buffer.get_episode(idx))
+            pruned_replay_buffer.add_episode(self.replay_buffer.get_episode(idx), compressors='disk')
         self.replay_buffer = pruned_replay_buffer
     
     def get_normalizer(self, mode='limits', **kwargs):
@@ -293,7 +290,7 @@ class SiriusMyDataset(BaseImageDataset):
 def test():
     import os
     from PIL import Image
-    zarr_path = os.path.expanduser('/home/jinyang/yuwenye/human-in-the-loop/data/0305_pour_sirius_filtered/replay_buffer.zarr')
+    zarr_path = os.path.expanduser('/mnt/workspace/DP/0305_pour_sirius_round1_4/replay_buffer.zarr')
     shape_meta = {
         'obs':{
             'wrist_img':{
@@ -315,8 +312,9 @@ def test():
             'rotation_rep': 'rotation_6d'
         }
     }
-    dataset = SiriusMyDataset(zarr_path, horizon=16, rel_ee_pose=False, n_obs_steps=2, shape_meta=shape_meta)
+    dataset = SiriusMyDataset(zarr_path, horizon=16, rel_ee_pose=False, n_obs_steps=2, shape_meta=shape_meta, max_n_episodes=100)
     dataset.get_normalizer()
+    import pdb; pdb.set_trace()
 
 if __name__ == '__main__':
     test()

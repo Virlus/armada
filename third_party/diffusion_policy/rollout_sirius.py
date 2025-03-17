@@ -120,7 +120,7 @@ def main(rank, eval_cfg, device_ids):
     Ta = eval_cfg.Ta
     
     # Inspect the current round (Sirius-specific)
-    match_round = re.search('round', eval_cfg.save_buffer_path)
+    match_round = re.search(r'round(\d)', eval_cfg.save_buffer_path)
     assert match_round
     num_round = int(match_round.group(1))
     

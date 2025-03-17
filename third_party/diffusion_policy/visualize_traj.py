@@ -25,7 +25,7 @@ def create_video(input_folder, output_file, fps=30, codec='libx264'):
         height, width, _ = first_image.shape
 
         # every prediction lasts 1/6 seconds
-        frames_per_image = fps // 6
+        frames_per_image = fps // 3
 
         for img_name in images:
             img_path = os.path.join(episode_folder, img_name)
@@ -44,7 +44,7 @@ def create_video(input_folder, output_file, fps=30, codec='libx264'):
 
 
 if __name__ == "__main__":
-    input_folder = "./outputs/visual/0312_12.02.43_train_diffusion_transformer_hybrid_multi_gpu_pouring_dagger"
+    input_folder = "./outputs/visual/0313_14.25.32_train_diffusion_transformer_hybrid_weighted_multi_gpu_pouring_sirius"
     output_file = os.path.join(input_folder, "video.mp4")
     
     create_video(input_folder, output_file)

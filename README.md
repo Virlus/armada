@@ -7,6 +7,12 @@ cd third_party/diffusion_policy
 conda env create -f conda_environment.yaml
 ```
 
+If you'd like to test on real robot, execute the following command:
+
+```
+conda env create -f conda_environment_real.yaml
+```
+
 ## 🦾 Demo collection, Training, and Evaluation on Real Robot
 
 ```

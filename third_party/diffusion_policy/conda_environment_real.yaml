@@ -1,19 +1,19 @@
-name: robodiff
+name: human_dp
 channels:
   - pytorch
   - pytorch3d
   - nvidia
   - conda-forge
 dependencies:
-  - python=3.9
-  - pip=22.2.2
-  - cudatoolkit=11.6
-  - pytorch=1.12.1
-  - torchvision=0.13.1
-  - pytorch3d=0.7.0
-  - numpy=1.23.3
+  - python=3.10
+  - pip=24.2
+  - pytorch-cuda=12.1
+  - pytorch=2.1.0
+  - torchvision=0.16.0
+  - pytorch3d=0.7.5
+  - numpy=1.23.5
   - numba==0.56.4
-  - scipy==1.9.1
+  - scipy==1.14.0
   - py-opencv=4.6.0
   - cffi=1.15.1
   - ipykernel=6.16
@@ -21,7 +21,7 @@ dependencies:
   - zarr=2.12.0
   - numcodecs=0.10.2
   - h5py=3.7.0
-  - hydra-core=1.2.0
+  - hydra-core=1.3.2
   - einops=0.4.1
   - tqdm=4.64.1
   - dill=0.3.5.1
@@ -51,23 +51,19 @@ dependencies:
   # trick to force reinstall imagecodecs via pip
   - imagecodecs==2022.8.8
   - pip:
-    - ray[default,tune]==2.2.0
+    - ray==2.2.0
     # requires mujoco py dependencies libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
     - free-mujoco-py==2.1.6
     - pygame==2.1.2
     - pybullet-svl==3.1.6.4
-    - robosuite @ https://github.com/cheng-chi/robosuite/archive/277ab9588ad7a4f4b55cf75508b44aa67ec171f0.tar.gz
+    # - robosuite @ https://github.com/cheng-chi/robosuite/archive/277ab9588ad7a4f4b55cf75508b44aa67ec171f0.tar.gz
+    - robosuite==1.5.1
     - robomimic==0.2.0
     - pytorchvideo==0.1.5
-    # requires librealsense https://github.com/IntelRealSense/librealsense/blob/master/doc/distribution_linux.md
-    - pyrealsense2==2.51.1.4348
-    # requires apt install libspnav-dev spacenavd; systemctl start spacenavd
-    - spnav @ https://github.com/cheng-chi/spnav/archive/c1c938ebe3cc542db4685e0d13850ff1abfdb943.tar.gz
-    - ur-rtde==1.5.5
-    - atomics==1.0.2
     # pip package required for jpeg-xl
     - imagecodecs==2022.9.26
-    - r3m @ https://github.com/facebookresearch/r3m/archive/b2334e726887fa0206962d7984c69c5fb09cceab.tar.gz
+    # - r3m @ https://github.com/facebookresearch/r3m/archive/b2334e726887fa0206962d7984c69c5fb09cceab.tar.gz
     - dm-control==1.0.9
-    - pynput==1.7.6
-  
+    - transforms3d==0.4.2
+    - pyrealsense2==2.55.1.6486
+    - open3d==0.19.0

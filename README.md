@@ -1,5 +1,14 @@
 # Human-in-the-loop learning with Diffusion Policy
 
+## ⚙️ Installation
+
+```
+cd third_party/diffusion_policy
+conda env create -f conda_environment.yaml
+```
+
+## 🦾 Demo collection, Training, and Evaluation on Real Robot
+
 ```
 # Teleoperation w/ sigma7
 python record.py -o /path/to/data -res {Desired image resolution}

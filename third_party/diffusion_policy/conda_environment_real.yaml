@@ -64,6 +64,7 @@ dependencies:
     - imagecodecs==2022.9.26
     # - r3m @ https://github.com/facebookresearch/r3m/archive/b2334e726887fa0206962d7984c69c5fb09cceab.tar.gz
     - dm-control==1.0.9
+    - POT==0.9.5
     - transforms3d==0.4.2
     - pyrealsense2==2.55.1.6486
     - open3d==0.19.0

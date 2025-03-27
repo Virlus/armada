@@ -1,5 +1,7 @@
 __pycache__
 data/
+visual/
+
 data
 tmp_*
 third_party/multi_gpu_dp

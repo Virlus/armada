@@ -6,6 +6,7 @@ import hydra
 import tqdm
 import os
 import sys
+from PIL import Image
 
 sys.path.append(os.path.join(os.path.dirname((__file__)), 'third_party/diffusion_policy'))
 
@@ -22,6 +23,7 @@ PRE_INTV = 2
 INTV = 3
 
 def main(args):
+    os.makedirs('visual/ot_test', exist_ok=True)
     replay_buffer = ReplayBuffer.copy_from_path(args.dataset_path, keys=['wrist_cam', 'side_cam', \
         'joint_pos', 'action', 'tcp_pose', 'action_mode'])
     
@@ -69,14 +71,14 @@ def main(args):
             rollout_indices.append(i)
             
     for i in tqdm.tqdm(human_demo_indices, desc="Obtaining latent for human demo"):
-        rollout_episode = replay_buffer.get_episode(i)
-        eps_side_img = (torch.from_numpy(rollout_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-        eps_wrist_img = (torch.from_numpy(rollout_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-        eps_state = np.zeros((rollout_episode['tcp_pose'].shape[0], ee_pose_dim))
-        eps_state[:, :3] = rollout_episode['tcp_pose'][:, :3]
-        eps_state[:, 3:] = obs_rot_transformer.forward(rollout_episode['tcp_pose'][:, 3:])
+        human_episode = replay_buffer.get_episode(i)
+        eps_side_img = (torch.from_numpy(human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
+        eps_wrist_img = (torch.from_numpy(human_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
+        eps_state = np.zeros((human_episode['tcp_pose'].shape[0], ee_pose_dim))
+        eps_state[:, :3] = human_episode['tcp_pose'][:, :3]
+        eps_state[:, 3:] = obs_rot_transformer.forward(human_episode['tcp_pose'][:, 3:])
         eps_state = (torch.from_numpy(eps_state)).to(device)
-        rollout_len = rollout_episode['action'].shape[0]
+        rollout_len = human_episode['action'].shape[0]
         human_latent = torch.zeros((rollout_len, int(To*obs_feature_dim)), device=device)
         
         for idx in range(rollout_len):
@@ -97,7 +99,8 @@ def main(args):
             obs_features = policy.extract_latent(obs_dict)
             human_latent[idx] = obs_features.squeeze(0).reshape(-1)
             
-        for j in tqdm.tqdm(rollout_indices, desc="Obtaining latent for rollouts"):
+        # for j in tqdm.tqdm(rollout_indices, desc="Obtaining latent for rollouts"):
+        for j in rollout_indices:
             rollout_episode = replay_buffer.get_episode(j)
             eps_side_img = (torch.from_numpy(rollout_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
             eps_wrist_img = (torch.from_numpy(rollout_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
@@ -129,6 +132,26 @@ def main(args):
             dist_mat = euclidean_distance(human_latent, rollout_latent)
             dist_mat = dist_mat.to(device).detach()
             ot_res = optimal_transport_plan(human_latent, rollout_latent, dist_mat)
+            # ot_cost = (ot_res * dist_mat).sum(-1)
+            
+            # Visualization
+            os.makedirs(f'visual/ot_test/{i}/{j}', exist_ok=True)
+            human_corr_indices = torch.argmax(ot_res, dim=0)
+            for k, human_corr_idx in enumerate(human_corr_indices):
+                human_array = human_episode['side_cam'][human_corr_idx]
+                rollout_array = rollout_episode['side_cam'][k]
+                human_img = Image.fromarray(human_array)
+                rollout_img = Image.fromarray(rollout_array)
+                
+                new_width = human_array.shape[1] + rollout_array.shape[1]
+                new_height = human_array.shape[0]
+                
+                combined_image = Image.new('RGB', (new_width, new_height))
+                combined_image.paste(human_img, (0, 0))
+                combined_image.paste(rollout_img, (human_array.shape[1], 0))
+                
+                combined_image.save(f'visual/ot_test/{i}/{j}/{k}.png')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

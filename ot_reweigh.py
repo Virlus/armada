@@ -127,10 +127,8 @@ def main(args):
                 rollout_latent[idx] = obs_features.squeeze(0).reshape(-1)
                 
             dist_mat = euclidean_distance(human_latent, rollout_latent)
-            dist_mat = dist_mat.to(device)
+            dist_mat = dist_mat.to(device).detach()
             ot_res = optimal_transport_plan(human_latent, rollout_latent, dist_mat)
-            del dist_mat
-        
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

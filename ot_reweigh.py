@@ -4,11 +4,16 @@ import argparse
 import dill
 import hydra
 import tqdm
+import os
+import sys
+
+sys.path.append(os.path.join(os.path.dirname((__file__)), 'third_party/diffusion_policy'))
 
 from util.ot_util import *
 from third_party.diffusion_policy.diffusion_policy.workspace.base_workspace import BaseWorkspace
 from third_party.diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from third_party.diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
+from third_party.diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
 
 HUMAN = 0
@@ -45,7 +50,13 @@ def main(args):
     
     # Load some key attributes from the config
     To = cfg.n_obs_steps
+    shape_meta = cfg.shape_meta
     obs_feature_dim = policy.obs_feature_dim
+    
+    if 'ee_pose' in shape_meta['obs']:
+        ee_pose_dim = shape_meta['obs']['ee_pose']['shape'][0]
+        if 'rotation_rep' in shape_meta['obs']['ee_pose']:
+            obs_rot_transformer = RotationTransformer(from_rep='quaternion', to_rep=shape_meta['obs']['ee_pose']['rotation_rep'])
     
     # Distinguish original human demonstrations from rollouts with human intervention
     human_demo_indices = []
@@ -61,7 +72,10 @@ def main(args):
         rollout_episode = replay_buffer.get_episode(i)
         eps_side_img = (torch.from_numpy(rollout_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
         eps_wrist_img = (torch.from_numpy(rollout_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-        eps_state = (torch.from_numpy(rollout_episode['tcp_pose'])).to(device)
+        eps_state = np.zeros((rollout_episode['tcp_pose'].shape[0], ee_pose_dim))
+        eps_state[:, :3] = rollout_episode['tcp_pose'][:, :3]
+        eps_state[:, 3:] = obs_rot_transformer.forward(rollout_episode['tcp_pose'][:, 3:])
+        eps_state = (torch.from_numpy(eps_state)).to(device)
         rollout_len = rollout_episode['action'].shape[0]
         human_latent = torch.zeros((rollout_len, int(To*obs_feature_dim)), device=device)
         
@@ -87,7 +101,10 @@ def main(args):
         rollout_episode = replay_buffer.get_episode(j)
         eps_side_img = (torch.from_numpy(rollout_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
         eps_wrist_img = (torch.from_numpy(rollout_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-        eps_state = (torch.from_numpy(rollout_episode['tcp_pose'])).to(device)
+        eps_state = np.zeros((rollout_episode['tcp_pose'].shape[0], ee_pose_dim))
+        eps_state[:, :3] = rollout_episode['tcp_pose'][:, :3]
+        eps_state[:, 3:] = obs_rot_transformer.forward(rollout_episode['tcp_pose'][:, 3:])
+        eps_state = (torch.from_numpy(eps_state)).to(device)
         rollout_len = rollout_episode['action'].shape[0]
         rollout_latent = torch.zeros((rollout_len, int(To*obs_feature_dim)), device=device)
         
@@ -117,5 +134,18 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--dataset_path', type=str, required=True)
     parser.add_argument('-ckpt', '--checkpoint_path', type=str, required=True)
     args = parser.parse_args()
+    
+    os.environ["MASTER_ADDR"] = "localhost"
+    port = 29999
+    import socket
+    while True:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('', port))
+                print(port)
+                break
+        except OSError:
+            port += 1
+    os.environ["MASTER_PORT"] = f"{port}"
     
     main(args)

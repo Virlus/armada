@@ -135,9 +135,11 @@ def main(args):
             # ot_cost = (ot_res * dist_mat).sum(-1)
             
             # Visualization
-            os.makedirs(f'visual/ot_test/{i}/{j}', exist_ok=True)
+            os.makedirs(f'visual/ot_test_intv/{i}/{j}', exist_ok=True)
             human_corr_indices = torch.argmax(ot_res, dim=0)
             for k, human_corr_idx in enumerate(human_corr_indices):
+                if rollout_episode['action_mode'][k] != INTV:
+                    continue
                 human_array = human_episode['side_cam'][human_corr_idx]
                 rollout_array = rollout_episode['side_cam'][k]
                 human_img = Image.fromarray(human_array)
@@ -150,7 +152,7 @@ def main(args):
                 combined_image.paste(human_img, (0, 0))
                 combined_image.paste(rollout_img, (human_array.shape[1], 0))
                 
-                combined_image.save(f'visual/ot_test/{i}/{j}/{k}.png')
+                combined_image.save(f'visual/ot_test_intv/{i}/{j}/{k}.png')
 
 
 if __name__ == '__main__':

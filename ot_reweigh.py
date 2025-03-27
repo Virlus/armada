@@ -97,35 +97,39 @@ def main(args):
             obs_features = policy.extract_latent(obs_dict)
             human_latent[idx] = obs_features.squeeze(0).reshape(-1)
             
-    for j in tqdm.tqdm(rollout_indices, desc="Obtaining latent for rollouts"):
-        rollout_episode = replay_buffer.get_episode(j)
-        eps_side_img = (torch.from_numpy(rollout_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-        eps_wrist_img = (torch.from_numpy(rollout_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-        eps_state = np.zeros((rollout_episode['tcp_pose'].shape[0], ee_pose_dim))
-        eps_state[:, :3] = rollout_episode['tcp_pose'][:, :3]
-        eps_state[:, 3:] = obs_rot_transformer.forward(rollout_episode['tcp_pose'][:, 3:])
-        eps_state = (torch.from_numpy(eps_state)).to(device)
-        rollout_len = rollout_episode['action'].shape[0]
-        rollout_latent = torch.zeros((rollout_len, int(To*obs_feature_dim)), device=device)
-        
-        for idx in range(rollout_len):
-            if idx < To - 1:
-                indices = [0] * (To-1-idx) + list(range(idx+1))
-                obs_dict = {
-                    'side_img': eps_side_img[indices, :].unsqueeze(0),
-                    'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
-                    'ee_pose': eps_state[indices, :].unsqueeze(0)
-                }
-            else:
-                obs_dict = {
-                    'side_img': eps_side_img[idx-To+1: idx+1, :].unsqueeze(0),
-                    'wrist_img': eps_wrist_img[idx-To+1: idx+1, :].unsqueeze(0), 
-                    'ee_pose': eps_state[idx-To+1: idx+1, :].unsqueeze(0)
-                }
-
-            obs_features = policy.extract_latent(obs_dict)
-            rollout_latent[idx] = obs_features.squeeze(0).reshape(-1)
+        for j in tqdm.tqdm(rollout_indices, desc="Obtaining latent for rollouts"):
+            rollout_episode = replay_buffer.get_episode(j)
+            eps_side_img = (torch.from_numpy(rollout_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
+            eps_wrist_img = (torch.from_numpy(rollout_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
+            eps_state = np.zeros((rollout_episode['tcp_pose'].shape[0], ee_pose_dim))
+            eps_state[:, :3] = rollout_episode['tcp_pose'][:, :3]
+            eps_state[:, 3:] = obs_rot_transformer.forward(rollout_episode['tcp_pose'][:, 3:])
+            eps_state = (torch.from_numpy(eps_state)).to(device)
+            rollout_len = rollout_episode['action'].shape[0]
+            rollout_latent = torch.zeros((rollout_len, int(To*obs_feature_dim)), device=device)
             
+            for idx in range(rollout_len):
+                if idx < To - 1:
+                    indices = [0] * (To-1-idx) + list(range(idx+1))
+                    obs_dict = {
+                        'side_img': eps_side_img[indices, :].unsqueeze(0),
+                        'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
+                        'ee_pose': eps_state[indices, :].unsqueeze(0)
+                    }
+                else:
+                    obs_dict = {
+                        'side_img': eps_side_img[idx-To+1: idx+1, :].unsqueeze(0),
+                        'wrist_img': eps_wrist_img[idx-To+1: idx+1, :].unsqueeze(0), 
+                        'ee_pose': eps_state[idx-To+1: idx+1, :].unsqueeze(0)
+                    }
+
+                obs_features = policy.extract_latent(obs_dict)
+                rollout_latent[idx] = obs_features.squeeze(0).reshape(-1)
+                
+            dist_mat = euclidean_distance(human_latent, rollout_latent)
+            dist_mat = dist_mat.to(device)
+            ot_res = optimal_transport_plan(human_latent, rollout_latent, dist_mat)
+            del dist_mat
         
 
 if __name__ == '__main__':

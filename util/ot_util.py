@@ -5,9 +5,8 @@ import ot
 def optimal_transport_plan(X,
                            Y,
                            cost_matrix,
-                           method='sinkhorn_gpu',
-                           niter=500,
-                           epsilon=0.01):
+                           niter=1000,
+                           epsilon=0.1):
     X_pot = np.ones(X.shape[0]) * (1 / X.shape[0])
     Y_pot = np.ones(Y.shape[0]) * (1 / Y.shape[0])
     c_m = cost_matrix.data.detach().cpu().numpy()

@@ -23,7 +23,6 @@ PRE_INTV = 2
 INTV = 3
 
 def main(args):
-    os.makedirs('visual/ot_test', exist_ok=True)
     replay_buffer = ReplayBuffer.copy_from_path(args.dataset_path, keys=['wrist_cam', 'side_cam', \
         'joint_pos', 'action', 'tcp_pose', 'action_mode'])
     
@@ -54,6 +53,7 @@ def main(args):
     To = cfg.n_obs_steps
     shape_meta = cfg.shape_meta
     obs_feature_dim = policy.obs_feature_dim
+    n_skip_frame = args.skip_frame
     
     if 'ee_pose' in shape_meta['obs']:
         ee_pose_dim = shape_meta['obs']['ee_pose']['shape'][0]
@@ -79,11 +79,12 @@ def main(args):
         eps_state[:, 3:] = obs_rot_transformer.forward(human_episode['tcp_pose'][:, 3:])
         eps_state = (torch.from_numpy(eps_state)).to(device)
         rollout_len = human_episode['action'].shape[0]
-        human_latent = torch.zeros((rollout_len, int(To*obs_feature_dim)), device=device)
+        human_latent = torch.zeros((rollout_len // n_skip_frame, int(To*obs_feature_dim)), device=device)
         
-        for idx in range(rollout_len):
-            if idx < To - 1:
-                indices = [0] * (To-1-idx) + list(range(idx+1))
+        for idx in range(rollout_len // n_skip_frame):
+            episode_idx = idx * n_skip_frame
+            if episode_idx < To - 1:
+                indices = [0] * (To-1-episode_idx) + list(range(episode_idx+1))
                 obs_dict = {
                     'side_img': eps_side_img[indices, :].unsqueeze(0),
                     'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
@@ -91,9 +92,9 @@ def main(args):
                 }
             else:
                 obs_dict = {
-                    'side_img': eps_side_img[idx-To+1: idx+1, :].unsqueeze(0),
-                    'wrist_img': eps_wrist_img[idx-To+1: idx+1, :].unsqueeze(0), 
-                    'ee_pose': eps_state[idx-To+1: idx+1, :].unsqueeze(0)
+                    'side_img': eps_side_img[episode_idx-To+1: episode_idx+1, :].unsqueeze(0),
+                    'wrist_img': eps_wrist_img[episode_idx-To+1: episode_idx+1, :].unsqueeze(0), 
+                    'ee_pose': eps_state[episode_idx-To+1: episode_idx+1, :].unsqueeze(0)
                 }
 
             obs_features = policy.extract_latent(obs_dict)
@@ -109,11 +110,12 @@ def main(args):
             eps_state[:, 3:] = obs_rot_transformer.forward(rollout_episode['tcp_pose'][:, 3:])
             eps_state = (torch.from_numpy(eps_state)).to(device)
             rollout_len = rollout_episode['action'].shape[0]
-            rollout_latent = torch.zeros((rollout_len, int(To*obs_feature_dim)), device=device)
+            rollout_latent = torch.zeros((rollout_len // n_skip_frame, int(To*obs_feature_dim)), device=device)
             
-            for idx in range(rollout_len):
+            for idx in range(rollout_len // n_skip_frame):
+                episode_idx = idx * n_skip_frame
                 if idx < To - 1:
-                    indices = [0] * (To-1-idx) + list(range(idx+1))
+                    indices = [0] * (To-1-episode_idx) + list(range(episode_idx+1))
                     obs_dict = {
                         'side_img': eps_side_img[indices, :].unsqueeze(0),
                         'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
@@ -121,9 +123,9 @@ def main(args):
                     }
                 else:
                     obs_dict = {
-                        'side_img': eps_side_img[idx-To+1: idx+1, :].unsqueeze(0),
-                        'wrist_img': eps_wrist_img[idx-To+1: idx+1, :].unsqueeze(0), 
-                        'ee_pose': eps_state[idx-To+1: idx+1, :].unsqueeze(0)
+                        'side_img': eps_side_img[episode_idx-To+1: episode_idx+1, :].unsqueeze(0),
+                        'wrist_img': eps_wrist_img[episode_idx-To+1: episode_idx+1, :].unsqueeze(0), 
+                        'ee_pose': eps_state[episode_idx-To+1: episode_idx+1, :].unsqueeze(0)
                     }
 
                 obs_features = policy.extract_latent(obs_dict)
@@ -138,10 +140,10 @@ def main(args):
             os.makedirs(f'visual/ot_test_intv/{i}/{j}', exist_ok=True)
             human_corr_indices = torch.argmax(ot_res, dim=0)
             for k, human_corr_idx in enumerate(human_corr_indices):
-                if rollout_episode['action_mode'][k] != INTV:
+                if rollout_episode['action_mode'][int(k * n_skip_frame)] != INTV:
                     continue
-                human_array = human_episode['side_cam'][human_corr_idx]
-                rollout_array = rollout_episode['side_cam'][k]
+                human_array = human_episode['side_cam'][int(human_corr_idx * n_skip_frame)]
+                rollout_array = rollout_episode['side_cam'][int(k * n_skip_frame)]
                 human_img = Image.fromarray(human_array)
                 rollout_img = Image.fromarray(rollout_array)
                 
@@ -160,6 +162,7 @@ if __name__ == '__main__':
     parser.add_argument('-temp', '--temperature', type=float, default=1.0)
     parser.add_argument('-p', '--dataset_path', type=str, required=True)
     parser.add_argument('-ckpt', '--checkpoint_path', type=str, required=True)
+    parser.add_argument('-skip', '--skip_frame', type=int, required=True)
     args = parser.parse_args()
     
     os.environ["MASTER_ADDR"] = "localhost"

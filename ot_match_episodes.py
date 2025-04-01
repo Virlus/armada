@@ -120,7 +120,7 @@ def main(args):
     # human_corr_indices = torch.argmax(ot_res, dim=0)
     for k, human_corr_idx in enumerate(human_corr_indices):
         human_episode = replay_buffer.get_episode(human_corr_idx)
-        rollout_episode = replay_buffer.get_episode(k)
+        rollout_episode = replay_buffer.get_episode(rollout_indices[k])
         
         human_array = human_episode['side_cam'][0]
         rollout_array = rollout_episode['side_cam'][0]

@@ -7,6 +7,9 @@ import tqdm
 import os
 import sys
 from PIL import Image
+import matplotlib.pyplot as plt
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from matplotlib.transforms import BlendedGenericTransform
 
 sys.path.append(os.path.join(os.path.dirname((__file__)), 'third_party/diffusion_policy'))
 
@@ -21,6 +24,21 @@ HUMAN = 0
 ROBOT = 1
 PRE_INTV = 2
 INTV = 3
+
+
+def process_image(array, size, highlight=False):
+    img = Image.fromarray(array).convert('RGBA')
+    img = img.resize(size)
+    if highlight:
+        border_width = 15
+        arr = np.array(img)
+        arr[:border_width, :] = [255, 0, 0, 255]
+        arr[-border_width:, :] = [255, 0, 0, 255]
+        arr[:, :border_width] = [255, 0, 0, 255]
+        arr[:, -border_width:] = [255, 0, 0, 255]
+        return Image.fromarray(arr)
+    return img
+
 
 def main(args):
     replay_buffer = ReplayBuffer.copy_from_path(args.dataset_path, keys=['wrist_cam', 'side_cam', \
@@ -137,24 +155,51 @@ def main(args):
             # ot_cost = (ot_res * dist_mat).sum(-1)
             
             # Visualization
-            os.makedirs(f'visual/ot_test_intv/{i}/{j}', exist_ok=True)
-            human_corr_indices = torch.argmax(ot_res, dim=0)
-            for k, human_corr_idx in enumerate(human_corr_indices):
-                if rollout_episode['action_mode'][int(k * n_skip_frame)] != INTV:
-                    continue
-                human_array = human_episode['side_cam'][int(human_corr_idx * n_skip_frame)]
-                rollout_array = rollout_episode['side_cam'][int(k * n_skip_frame)]
-                human_img = Image.fromarray(human_array)
-                rollout_img = Image.fromarray(rollout_array)
-                
-                new_width = human_array.shape[1] + rollout_array.shape[1]
-                new_height = human_array.shape[0]
-                
-                combined_image = Image.new('RGB', (new_width, new_height))
-                combined_image.paste(human_img, (0, 0))
-                combined_image.paste(rollout_img, (human_array.shape[1], 0))
-                
-                combined_image.save(f'visual/ot_test_intv/{i}/{j}/{k}.png')
+            cell_size = 1
+            os.makedirs(f'visual/ot_test_intv', exist_ok=True)
+            # fig, ax = plt.subplots(figsize=(10, 8))
+            fig = plt.figure(figsize=(rollout_latent.shape[0]*cell_size, human_latent.shape[0]*cell_size))
+            ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])
+            im = ax.imshow(ot_res.detach().cpu().numpy(), cmap='viridis', aspect='auto')
+            plt.colorbar(im, ax=ax, shrink=0.8)
+            ax.set_xticks(np.arange(human_latent.shape[0]))
+            ax.set_yticks(np.arange(rollout_latent.shape[0]))
+            ax.set_xticklabels([''] * human_latent.shape[0])
+            ax.set_yticklabels([''] * rollout_latent.shape[0])
+            ax.tick_params(axis='both', which='both', length=0)
+
+            for y in range(human_latent.shape[0]):
+                human_array = human_episode['side_cam'][int(y * n_skip_frame)]
+                img = process_image(human_array, (100, 100), highlight=False)
+                img = np.array(img)
+                imagebox = OffsetImage(img, zoom=1)
+                trans = BlendedGenericTransform(ax.transAxes, ax.transData)
+                box_alignment = (1.0, 0.5)
+                ab = AnnotationBbox(imagebox, (-0.05, y), xycoords=trans, frameon=False, 
+                                    # xycoords='data', boxcoords="offset points",
+                                    box_alignment=box_alignment,
+                                    pad=0)
+                ax.add_artist(ab)
+
+            for x in range(rollout_latent.shape[0]):
+                rollout_array = rollout_episode['side_cam'][int(x * n_skip_frame)]
+                if rollout_episode['action_mode'][int(x * n_skip_frame)] == INTV:
+                    img = process_image(rollout_array, (100, 100), highlight=True)
+                else:
+                    img = process_image(rollout_array, (100, 100), highlight=False)
+                img = np.array(img)
+                imagebox = OffsetImage(img, zoom=1)
+                trans = BlendedGenericTransform(ax.transData, ax.transAxes)
+                box_alignment = (0.5, 1.0)
+                ab = AnnotationBbox(imagebox, (x, -0.05), xycoords=trans, frameon=False, 
+                                    # xycoords='data', boxcoords="offset points",
+                                    box_alignment=box_alignment,
+                                    pad=0)
+                ax.add_artist(ab)
+
+            ax.set_xlim(-0.5, rollout_latent.shape[0]-0.5)
+            ax.set_ylim(human_latent.shape[0]-0.5, -0.5)
+            plt.savefig(f'visual/ot_test_intv/{i}_{j}_ot.png', bbox_inches='tight')
 
 
 if __name__ == '__main__':

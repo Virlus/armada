@@ -356,7 +356,7 @@ def main(rank, eval_cfg, device_ids):
                     color_image, depth_image = camera.get_data()
                     cam_data.append((color_image, depth_image))
                 tcpPose, jointPose, _, _ = robot.get_robot_state()
-                
+
                 diff_p, diff_r, width = sigma.get_control()
                 diff_p = robot.init_pose[:3] + diff_p
                 diff_r = R.from_quat(robot.init_pose[3:7], scalar_first=True) * diff_r
@@ -468,6 +468,8 @@ def main(rank, eval_cfg, device_ids):
         # Sirius rollout halts if human intervention samples exceed 1 / 3 of original human demonstration
         if np.sum(replay_buffer.data['action_mode'] == INTV) * 3 / num_round >= np.sum(replay_buffer.data['action_mode'] == HUMAN):
             break
+
+        print(f"Current progress: {np.sum(replay_buffer.data['action_mode'] == INTV) * 300 / num_round / np.sum(replay_buffer.data['action_mode'] == HUMAN)} %")
 
         # For task configuration reset
         time.sleep(5)

@@ -1,5 +1,5 @@
 #!/bin/bash
-source "/root/miniforge3/etc/profile.d/conda.sh"; conda activate human_dp
+source "/data/yuwenye/miniconda3/etc/profile.d/conda.sh"; conda activate human_dp
 export WANDB_API_KEY=956bd553be1193c6fdfce758ad1eded5190eac56
 export HYDRA_FULL_ERROR=1
 export CUDA_VISIBLE_DEVICES=0,1,2,3

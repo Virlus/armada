@@ -99,7 +99,7 @@ training:
   seed: 42
   debug: False
   resume: True
-  resume_path: outputs/2025.03.05/14.10.45_train_diffusion_transformer_hybrid_multi_gpu_pouring
+  resume_path: outputs/0305_14.10.45_train_diffusion_transformer_hybrid_multi_gpu_pouring
   # optimization
   lr_scheduler: cosine
   # Transformer needs LR warmup

@@ -16,14 +16,8 @@ from diffusion_policy.common.normalize_util import get_image_range_normalizer
 from diffusion_policy.model.common.rotation_transformer import RotationTransformer
 from scipy.spatial.transform import Rotation as R
 
-HUMAN = 0
-ROBOT = 1
-PRE_INTV = 2
-INTV = 3
 
-OPT_INTV = 1/2
-
-class SiriusMyDataset(BaseImageDataset):
+class WeightedMyDataset(BaseImageDataset):
     def __init__(self,
             zarr_path, 
             horizon=1,
@@ -34,15 +28,12 @@ class SiriusMyDataset(BaseImageDataset):
             max_train_episodes=None,
             rel_ee_pose=False,
             n_obs_steps=1,
-            shape_meta=None,
-            max_n_episodes=150
+            shape_meta=None
             ):
         
         super().__init__()
         self.replay_buffer = ReplayBuffer.copy_from_path(
-            zarr_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose', 'action_mode'])
-        # Memory reduction mechanism from Sirius
-        self._prune_episodes(max_n_episodes=max_n_episodes)
+            zarr_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose', 'action_weight'])
         val_mask = get_val_mask(
             n_episodes=self.replay_buffer.n_episodes, 
             val_ratio=val_ratio,
@@ -80,9 +71,6 @@ class SiriusMyDataset(BaseImageDataset):
 
         # Currently we only support multiple observation steps
         assert self.n_obs_steps > 1
-        
-        # Sirius-specific data post-processing
-        self._get_reweigh_factor()
 
     def get_validation_dataset(self):
         val_set = copy.copy(self)
@@ -95,40 +83,6 @@ class SiriusMyDataset(BaseImageDataset):
             )
         val_set.train_mask = ~self.train_mask
         return val_set
-    
-    def _count_frequency(self, mode):
-        return np.sum(self.replay_buffer.data['action_mode'] == mode) / len(self.replay_buffer.data['action_mode'])
-    
-    def _get_reweigh_factor(self):
-        self.reweigh_dict = {}
-        self.reweigh_dict[HUMAN] = 1.
-        self.reweigh_dict[PRE_INTV] = 0.
-        self.reweigh_dict[INTV] = OPT_INTV / self._count_frequency(INTV)
-        self.reweigh_dict[ROBOT] = ((1. - OPT_INTV - self._count_frequency(HUMAN)) / self._count_frequency(ROBOT)).clip(0., 1.)
-        
-    def _prune_episode_indices(self, max_n_episodes):
-        human_demo_indices = []
-        intv_indices = []
-        for i in range(self.replay_buffer.n_episodes):
-            episode_start = self.replay_buffer.episode_ends[i-1] if i > 0 else 0
-            if np.any(self.replay_buffer.data['action_mode'][episode_start: self.replay_buffer.episode_ends[i]] == HUMAN):
-                human_demo_indices.append(i)
-            elif np.any(self.replay_buffer.data['action_mode'][episode_start: self.replay_buffer.episode_ends[i]] == INTV):
-                intv_indices.append(i)
-        # LFI implementation
-        intv_indices = intv_indices[-int(max_n_episodes-len(human_demo_indices)):]
-        human_demo_indices.extend(intv_indices)
-        return human_demo_indices
-        
-    def _prune_episodes(self, max_n_episodes):
-        if self.replay_buffer.n_episodes <= max_n_episodes:
-            return
-        pruned_replay_buffer = ReplayBuffer.create_empty_numpy()
-        preserved_indices = self._prune_episode_indices(max_n_episodes)
-        assert len(preserved_indices) == max_n_episodes
-        for idx in preserved_indices:
-            pruned_replay_buffer.add_episode(self.replay_buffer.get_episode(idx), compressors='disk')
-        self.replay_buffer = pruned_replay_buffer
     
     def get_normalizer(self, mode='limits', **kwargs):
         if self.rel_ee_pose:
@@ -258,12 +212,9 @@ class SiriusMyDataset(BaseImageDataset):
                     ee_pose[:, 3:self.ee_pose_dim] = self.obs_rot_transformer.forward(rel_ee_rot)
                 else:
                     ee_pose[:, 3:7] = rel_ee_rot
-                    
+            
             # Reweighing factor
-            sample_action_mode = sample['action_mode']
-            sample_weight = sample_action_mode
-            for mode, weight in self.reweigh_dict.items():
-                sample_weight = np.where(sample_action_mode == mode, weight, sample_weight)
+            sample_weight = sample['action_weight']
             
             data = {
                 'obs': {
@@ -312,7 +263,7 @@ def test():
             'rotation_rep': 'rotation_6d'
         }
     }
-    dataset = SiriusMyDataset(zarr_path, horizon=16, rel_ee_pose=False, n_obs_steps=2, shape_meta=shape_meta, max_n_episodes=100)
+    dataset = WeightedMyDataset(zarr_path, horizon=16, rel_ee_pose=False, n_obs_steps=2, shape_meta=shape_meta, max_n_episodes=100)
     dataset.get_normalizer()
     import pdb; pdb.set_trace()
 

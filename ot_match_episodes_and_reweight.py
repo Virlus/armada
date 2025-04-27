@@ -109,7 +109,7 @@ def main(args):
         obs_features = policy.extract_latent(obs_dict)
         human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
             
-    for j, rollout_idx in tqdm.tqdm(enumerate(rollout_indices), desc="Obtaining latent for rollouts"):
+    for j, rollout_idx in enumerate(tqdm.tqdm(rollout_indices, desc="Obtaining latent for rollouts")):
         rollout_episode = replay_buffer.get_episode(rollout_idx)
         eps_side_img = (torch.from_numpy(rollout_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
         eps_wrist_img = (torch.from_numpy(rollout_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
@@ -136,7 +136,7 @@ def main(args):
     human_corr_indices = torch.argmin(dist_mat, dim=0)
     
     # Carry out optimal transport between corresponding episodes
-    for k, human_corr_idx in tqdm.tqdm(enumerate(human_corr_indices), desc="OT matching between corresponding episodes"):
+    for k, human_corr_idx in enumerate(tqdm.tqdm(human_corr_indices, desc="OT matching between corresponding episodes")):
         human_episode = replay_buffer.get_episode(human_corr_idx)
         rollout_episode = replay_buffer.get_episode(rollout_indices[k])
         

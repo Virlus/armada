@@ -408,8 +408,8 @@ class DiffusionTransformerHybridImagePolicy(BaseImagePolicy):
         
         loss_weight = None
         # If training data should be reweighed
-        if 'action_mode' in batch:
-            loss_weight = batch['action_mode']
+        if 'action_weight' in batch:
+            loss_weight = batch['action_weight']
 
         # handle different ways of passing observation
         cond = None

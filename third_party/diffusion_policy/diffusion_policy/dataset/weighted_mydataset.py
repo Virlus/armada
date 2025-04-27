@@ -28,7 +28,8 @@ class WeightedMyDataset(BaseImageDataset):
             max_train_episodes=None,
             rel_ee_pose=False,
             n_obs_steps=1,
-            shape_meta=None
+            shape_meta=None,
+            max_n_episodes=150
             ):
         
         super().__init__()

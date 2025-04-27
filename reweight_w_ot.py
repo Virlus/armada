@@ -95,6 +95,9 @@ def main(args):
         }
         obs_features = policy.extract_latent(obs_dict)
         human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
+        
+        human_episode['action_weight'] = np.ones(human_episode['action'].shape[0])
+        save_buffer.add_episode(human_episode)
             
     for j, rollout_idx in enumerate(tqdm.tqdm(rollout_indices, desc="Obtaining latent for rollouts")):
         rollout_episode = replay_buffer.get_episode(rollout_idx)
@@ -184,11 +187,15 @@ def main(args):
         dist_mat = dist_mat.to(device).detach()
         ot_res = optimal_transport_plan(human_latent, rollout_latent, dist_mat)
         ot_cost = torch.sum(ot_res * dist_mat, dim=0)
+        ot_cost = ot_cost.detach().cpu().numpy()
+        ot_cost = np.concatenate((np.repeat(ot_cost, n_skip_frame), np.ones(rollout_len - len(ot_cost) * n_skip_frame) * ot_cost[-1]), axis=0) 
+        ot_cost = np.where(rollout_episode['action_mode'] == INTV, ot_cost, -ot_cost)
         
         # Compute the target weight (need to think over this)
-        target_weight = torch.zeros((rollout_latent.shape[0],), device=device) # Assume this is derived already
+        target_weight = (ot_cost - ot_cost.mean()) / ot_cost.std()
+        target_weight = np.exp(target_weight / args.temperature)
         original_rollout_eps = replay_buffer.get_episode(rollout_indices[k])
-        original_rollout_eps['action_weight'] = target_weight.detach().cpu().numpy()
+        original_rollout_eps['action_weight'] = target_weight
         save_buffer.add_episode(original_rollout_eps)
         
     save_buffer.save_to_path(args.save_path)

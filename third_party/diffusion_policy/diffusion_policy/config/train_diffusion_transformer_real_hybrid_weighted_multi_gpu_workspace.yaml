@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - task: sirius_mytask
+  - task: weighted_mytask
 
 device_ids: '0,1,2,3'
 output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}

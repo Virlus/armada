@@ -1,7 +1,7 @@
 name: pouring_ot
 
 image_shape: [3, 240, 320]
-dataset_path: /data/yuwenye/human-in-the-loop/data/0305_pour_sirius_round1_4
+dataset_path: /data/yuwenye/human-in-the-loop/data/0305_pour_sirius_round1_4_ot_reweighted
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
@@ -32,7 +32,7 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.weighted_mydataset.WeightedMyDataset
-  zarr_path: /data/yuwenye/human-in-the-loop/data/0305_pour_sirius_round1_4/replay_buffer.zarr
+  zarr_path: /data/yuwenye/human-in-the-loop/data/0305_pour_sirius_round1_4_ot_reweighted/replay_buffer.zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}

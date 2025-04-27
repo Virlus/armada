@@ -1,4 +1,4 @@
-name: test_env
+name: pouring
 
 image_shape: [3, 240, 320]
 dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0305_pour_sirius_round1_4

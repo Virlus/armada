@@ -149,14 +149,14 @@ def main(args):
                 obs_features = policy.extract_latent(obs_dict)
                 rollout_latent[idx] = obs_features.squeeze(0).reshape(-1)
                 
-            dist_mat = euclidean_distance(human_latent, rollout_latent)
+            dist_mat = cosine_distance(human_latent, rollout_latent)
             dist_mat = dist_mat.to(device).detach()
             ot_res = optimal_transport_plan(human_latent, rollout_latent, dist_mat)
             # ot_cost = (ot_res * dist_mat).sum(-1)
             
             # Visualization
             cell_size = 1
-            os.makedirs(f'visual/ot_test_intv', exist_ok=True)
+            os.makedirs(f'visual/ot_test_intv_cosine', exist_ok=True)
             # fig, ax = plt.subplots(figsize=(10, 8))
             fig = plt.figure(figsize=(rollout_latent.shape[0]*cell_size, human_latent.shape[0]*cell_size))
             ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])
@@ -199,7 +199,7 @@ def main(args):
 
             ax.set_xlim(-0.5, rollout_latent.shape[0]-0.5)
             ax.set_ylim(human_latent.shape[0]-0.5, -0.5)
-            plt.savefig(f'visual/ot_test_intv/{i}_{j}_ot.png', bbox_inches='tight')
+            plt.savefig(f'visual/ot_test_intv_cosine/{i}_{j}_ot.png', bbox_inches='tight')
 
 
 if __name__ == '__main__':

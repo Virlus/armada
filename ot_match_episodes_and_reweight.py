@@ -132,7 +132,7 @@ def main(args):
     dist_mat = dist_mat.to(device).detach()
     
     # Visualization
-    os.makedirs(f'visual/ot_matched_euclidean', exist_ok=True)
+    os.makedirs(f'visual/ot_matched_full', exist_ok=True)
     human_corr_indices = torch.argmin(dist_mat, dim=0)
     
     # Carry out optimal transport between corresponding episodes
@@ -199,31 +199,43 @@ def main(args):
         dist_mat = euclidean_distance(human_latent, rollout_latent)
         dist_mat = dist_mat.to(device).detach()
         ot_res = optimal_transport_plan(human_latent, rollout_latent, dist_mat)
+        ot_cost = torch.sum(ot_res * dist_mat, dim=0)
         
         # Visualization
         cell_size = 1
-        fig = plt.figure(figsize=(rollout_latent.shape[0]*cell_size, human_latent.shape[0]*cell_size))
-        ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])
-        im = ax.imshow(ot_res.detach().cpu().numpy(), cmap='viridis', aspect='auto')
-        plt.colorbar(im, ax=ax, shrink=0.8)
-        ax.set_xticks(np.arange(human_latent.shape[0]))
-        ax.set_yticks(np.arange(rollout_latent.shape[0]))
-        ax.set_xticklabels([''] * human_latent.shape[0])
-        ax.set_yticklabels([''] * rollout_latent.shape[0])
-        ax.tick_params(axis='both', which='both', length=0)
+        fig = plt.figure(figsize=(rollout_latent.shape[0]*cell_size, human_latent.shape[0]*cell_size + 1))
+
+        gs = plt.GridSpec(2, 1, height_ratios=[0.1, 0.9], hspace=0.05)
+
+        cost_ax = fig.add_subplot(gs[0])
+        main_ax = fig.add_subplot(gs[1])
+
+        cost_array = ot_cost.detach().cpu().numpy()
+        cost_im = cost_ax.imshow(cost_array.reshape(1, -1), 
+                                cmap='plasma', 
+                                aspect='auto')
+        cost_ax.set_xticks([])
+        cost_ax.set_yticks([])
+        plt.colorbar(cost_im, ax=cost_ax, shrink=0.9)
+
+        im = main_ax.imshow(ot_res.detach().cpu().numpy(), cmap='viridis', aspect='auto')
+        plt.colorbar(im, ax=main_ax, shrink=0.8)
+        main_ax.set_xticks(np.arange(human_latent.shape[0]))
+        main_ax.set_yticks(np.arange(rollout_latent.shape[0]))
+        main_ax.set_xticklabels([''] * human_latent.shape[0])
+        main_ax.set_yticklabels([''] * rollout_latent.shape[0])
+        main_ax.tick_params(axis='both', which='both', length=0)
 
         for y in range(human_latent.shape[0]):
             human_array = human_episode['side_cam'][int(y * n_skip_frame)]
             img = process_image(human_array, (100, 100), highlight=False)
             img = np.array(img)
             imagebox = OffsetImage(img, zoom=1)
-            trans = BlendedGenericTransform(ax.transAxes, ax.transData)
+            trans = BlendedGenericTransform(main_ax.transAxes, main_ax.transData)
             box_alignment = (1.0, 0.5)
-            ab = AnnotationBbox(imagebox, (-0.05, y), xycoords=trans, frameon=False, 
-                                # xycoords='data', boxcoords="offset points",
-                                box_alignment=box_alignment,
-                                pad=0)
-            ax.add_artist(ab)
+            ab = AnnotationBbox(imagebox, (-0.05, y), xycoords=trans, frameon=False,
+                                box_alignment=box_alignment, pad=0)
+            main_ax.add_artist(ab)
 
         for x in range(rollout_latent.shape[0]):
             rollout_array = rollout_episode['side_cam'][int(x * n_skip_frame)]
@@ -233,17 +245,17 @@ def main(args):
                 img = process_image(rollout_array, (100, 100), highlight=False)
             img = np.array(img)
             imagebox = OffsetImage(img, zoom=1)
-            trans = BlendedGenericTransform(ax.transData, ax.transAxes)
+            trans = BlendedGenericTransform(main_ax.transData, main_ax.transAxes)
             box_alignment = (0.5, 1.0)
-            ab = AnnotationBbox(imagebox, (x, -0.05), xycoords=trans, frameon=False, 
-                                # xycoords='data', boxcoords="offset points",
-                                box_alignment=box_alignment,
-                                pad=0)
-            ax.add_artist(ab)
+            ab = AnnotationBbox(imagebox, (x, -0.05), xycoords=trans, frameon=False,
+                                box_alignment=box_alignment, pad=0)
+            main_ax.add_artist(ab)
 
-        ax.set_xlim(-0.5, rollout_latent.shape[0]-0.5)
-        ax.set_ylim(human_latent.shape[0]-0.5, -0.5)
-        plt.savefig(f'visual/ot_matched_euclidean/{human_corr_idx}_{rollout_indices[k]}_ot.png', bbox_inches='tight')
+        # Set coordinate limits
+        main_ax.set_xlim(-0.5, rollout_latent.shape[0]-0.5)
+        main_ax.set_ylim(human_latent.shape[0]-0.5, -0.5)
+
+        plt.savefig(f'visual/ot_matched_full/{human_corr_idx}_{rollout_indices[k]}_ot.png', bbox_inches='tight')
 
 
 if __name__ == '__main__':

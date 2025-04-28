@@ -7,6 +7,8 @@ data_local
 .vscode
 _wandb
 
+mytest.sh
+
 **/.DS_Store
 
 fuse.cfg

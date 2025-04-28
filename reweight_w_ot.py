@@ -192,8 +192,8 @@ def main(args):
         ot_cost = np.where(rollout_episode['action_mode'] == INTV, ot_cost, -ot_cost)
         
         # Compute the target weight (need to think over this)
-        target_weight = (ot_cost - ot_cost.mean()) / ot_cost.std()
-        target_weight = np.exp(target_weight / args.temperature)
+        target_weight = np.exp(ot_cost / args.temperature)
+        target_weight = target_weight / np.mean(target_weight) # Ensures a valid target distribution
         original_rollout_eps = replay_buffer.get_episode(rollout_indices[k])
         original_rollout_eps['action_weight'] = target_weight
         save_buffer.add_episode(original_rollout_eps)

@@ -193,6 +193,7 @@ def main(args):
         
         # Compute the target weight (need to think over this)
         target_weight = np.exp(ot_cost / args.temperature)
+        target_weight = np.where(rollout_episode['action_mode'] == PRE_INTV, 0, target_weight) # Ignoring the pre-intervention samples
         target_weight = target_weight / np.mean(target_weight) # Ensures a valid target distribution
         original_rollout_eps = replay_buffer.get_episode(rollout_indices[k])
         original_rollout_eps['action_weight'] = target_weight

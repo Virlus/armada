@@ -236,7 +236,7 @@ class MyDataset(BaseImageDataset):
 def test():
     import os
     from PIL import Image
-    zarr_path = os.path.expanduser('/home/jinyang/yuwenye/human-in-the-loop/data/0225_abs_PnP/replay_buffer.zarr')
+    zarr_path = os.path.expanduser('/home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0305_pour_sirius_round1_4/replay_buffer.zarr')
     shape_meta = {
         'obs':{
             'wrist_img':{

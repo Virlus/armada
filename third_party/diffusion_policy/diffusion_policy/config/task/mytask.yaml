@@ -1,6 +1,6 @@
 name: pouring
 
-image_shape: [3, 240, 320]
+image_shape: [3, 518, 518]
 dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0305_pour_sirius_round1_4
 
 shape_meta: &shape_meta

@@ -50,7 +50,7 @@ policy:
     interpolate_antialias: True
     interpolate_offset: 0.0
     proprio_shape: ${shape_meta.obs.ee_pose.shape}
-    pretrained_path: /home/yuwenye/common/dinov2/dinov2_vitl14_reg4_pretrain.pth
+    pretrained_path: /home/yuwenye/common/dinov2/dinov2_vits14_reg4_pretrain.pth
 
   horizon: ${horizon}
   n_action_steps: ${eval:'${n_action_steps}+${n_latency_steps}'}
@@ -58,8 +58,6 @@ policy:
   num_inference_steps: 100
 
   crop_shape: [216, 288]
-  obs_encoder_group_norm: True
-  eval_fixed_crop: True
 
   n_layer: 8
   n_cond_layers: 0  # >0: use transformer encoder for cond, otherwise use MLP
@@ -84,7 +82,7 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 1
+  batch_size: 128
   num_workers: 4
   # shuffle: True
   pin_memory: True
@@ -93,7 +91,7 @@ dataloader:
   drop_last: False
 
 val_dataloader:
-  batch_size: 1
+  batch_size: 128
   num_workers: 4
   # shuffle: False
   pin_memory: True
@@ -137,7 +135,7 @@ training:
 logging:
   project: human-in-the-loop
   resume: True
-  mode: offline
+  mode: online
   name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
   tags: ["${name}", "${task_name}", "${exp_name}"]
   id: null

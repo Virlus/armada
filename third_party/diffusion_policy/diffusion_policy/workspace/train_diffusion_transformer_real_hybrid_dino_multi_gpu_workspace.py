@@ -59,10 +59,10 @@ class TrainDiffusionTransformerHybridDinoMultiGPUWorkspace(BaseWorkspace):
         np.random.seed(seed)
         random.seed(seed)
         
-        # Currently hack the image resolution 
-        img_res = cfg.task.image_shape[1:]
-        BICUBIC = InterpolationMode.BICUBIC
-        self.image_processor = Compose([Resize(img_res, interpolation=BICUBIC)])
+        # # Currently hack the image resolution 
+        # img_res = cfg.task.image_shape[1:]
+        # BICUBIC = InterpolationMode.BICUBIC
+        # self.image_processor = Compose([Resize(img_res, interpolation=BICUBIC)])
 
         # configure model
         self.model: DiffusionTransformerHybridDinov2Policy = hydra.utils.instantiate(cfg.policy).to(device)
@@ -179,13 +179,13 @@ class TrainDiffusionTransformerHybridDinoMultiGPUWorkspace(BaseWorkspace):
                 with tqdm.tqdm(train_dataloader, desc=f"Training epoch {self.epoch}", disable=(rank!=0), 
                         leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                     for batch_idx, batch in enumerate(tepoch):
-                        # Hack the image resolution
-                        for key in batch['obs']:
-                            if 'img' in key:
-                                img_flatten = batch['obs'][key].view(-1, *batch['obs'][key].shape[2:])
-                                img_processed = self.image_processor(img_flatten)
-                                img_processed = img_processed.view(batch['obs'][key].shape[0], batch['obs'][key].shape[1], *img_processed.shape[1:])
-                                batch['obs'][key] = img_processed
+                        # # Hack the image resolution
+                        # for key in batch['obs']:
+                        #     if 'img' in key:
+                        #         img_flatten = batch['obs'][key].view(-1, *batch['obs'][key].shape[2:])
+                        #         img_processed = self.image_processor(img_flatten)
+                        #         img_processed = img_processed.view(batch['obs'][key].shape[0], batch['obs'][key].shape[1], *img_processed.shape[1:])
+                        #         batch['obs'][key] = img_processed
                         # device transfer
                         batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
                         if train_sampling_batch is None:

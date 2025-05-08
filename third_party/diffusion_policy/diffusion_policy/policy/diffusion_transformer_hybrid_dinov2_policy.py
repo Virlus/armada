@@ -11,11 +11,6 @@ from diffusion_policy.policy.base_image_policy import BaseImagePolicy
 from diffusion_policy.model.diffusion.transformer_for_diffusion import TransformerForDiffusion
 from diffusion_policy.model.diffusion.mask_generator import LowdimMaskGenerator
 from diffusion_policy.model.hybrid.dinov2_obs_encoder import Dinov2ObsEncoder
-from diffusion_policy.common.robomimic_config_util import get_robomimic_config
-from robomimic.algo import algo_factory
-from robomimic.algo.algo import PolicyAlgo
-import robomimic.utils.obs_utils as ObsUtils
-import robomimic.models.base_nets as rmbn
 import diffusion_policy.model.vision.crop_randomizer as dmvc
 from diffusion_policy.common.pytorch_util import dict_apply, replace_submodules
 
@@ -52,60 +47,6 @@ class DiffusionTransformerHybridDinov2Policy(BaseImagePolicy):
         action_shape = shape_meta['action']['shape']
         assert len(action_shape) == 1
         action_dim = action_shape[0]
-        # obs_shape_meta = shape_meta['obs']
-        # obs_config = {
-        #     'low_dim': [],
-        #     'rgb': [],
-        #     'depth': [],
-        #     'scan': []
-        # }
-        # obs_key_shapes = dict()
-        # for key, attr in obs_shape_meta.items():
-        #     shape = attr['shape']
-        #     obs_key_shapes[key] = list(shape)
-
-        #     type = attr.get('type', 'low_dim')
-        #     if type == 'rgb':
-        #         obs_config['rgb'].append(key)
-        #     elif type == 'low_dim':
-        #         obs_config['low_dim'].append(key)
-        #     else:
-        #         raise RuntimeError(f"Unsupported obs type: {type}")
-
-        # # get raw robomimic config
-        # config = get_robomimic_config(
-        #     algo_name='bc_rnn',
-        #     hdf5_type='image',
-        #     task_name='square',
-        #     dataset_type='ph')
-        
-        # with config.unlocked():
-        #     # set config with shape_meta
-        #     config.observation.modalities.obs = obs_config
-
-        #     if crop_shape is None:
-        #         for key, modality in config.observation.encoder.items():
-        #             if modality.obs_randomizer_class == 'CropRandomizer':
-        #                 modality['obs_randomizer_class'] = None
-        #     else:
-        #         # set random crop parameter
-        #         ch, cw = crop_shape
-        #         for key, modality in config.observation.encoder.items():
-        #             if modality.obs_randomizer_class == 'CropRandomizer':
-        #                 modality.obs_randomizer_kwargs.crop_height = ch
-        #                 modality.obs_randomizer_kwargs.crop_width = cw
-
-        # # init global state
-        # ObsUtils.initialize_obs_utils_with_config(config)
-
-        # # load model
-        # policy: PolicyAlgo = algo_factory(
-        #         algo_name=config.algo_name,
-        #         config=config,
-        #         obs_key_shapes=obs_key_shapes,
-        #         ac_dim=action_dim,
-        #         device='cpu',
-        #     )
 
         # create diffusion model
         obs_feature_dim = obs_encoder.output_shape()[0]
@@ -286,9 +227,10 @@ class DiffusionTransformerHybridDinov2Policy(BaseImagePolicy):
         ) -> torch.optim.Optimizer:
         optim_groups = self.model.get_optim_groups(
             weight_decay=transformer_weight_decay)
-        optim_groups.append({
+        optim_groups.append({ # Lower lr for pretrained DinoV2 encoder
             "params": self.obs_encoder.parameters(),
-            "weight_decay": obs_encoder_weight_decay
+            "weight_decay": obs_encoder_weight_decay,
+            "lr": 0.1 * learning_rate 
         })
         optimizer = torch.optim.AdamW(
             optim_groups, lr=learning_rate, betas=betas

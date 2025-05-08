@@ -102,7 +102,7 @@ val_dataloader:
 optimizer:
   transformer_weight_decay: 1.0e-3
   obs_encoder_weight_decay: 1.0e-6
-  learning_rate: 3.0e-5
+  learning_rate: 1.0e-4
   betas: [0.9, 0.95]
 
 training:

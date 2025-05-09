@@ -22,7 +22,7 @@ import tqdm
 import numpy as np
 import shutil
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
-from diffusion_policy.policy.diffusion_transformer_hybrid_dinov2_policy import DiffusionTransformerHybridDinov2Policy
+from diffusion_policy.policy.diffusion_unet_hybrid_dinov2_policy import DiffusionUnetHybridDinov2Policy
 from diffusion_policy.dataset.base_dataset import BaseImageDataset
 from diffusion_policy.env_runner.base_image_runner import BaseImageRunner
 from diffusion_policy.common.checkpoint_util import TopKCheckpointManager
@@ -44,7 +44,7 @@ def mkdir_p(folder_path):
         else:
             raise
 
-class TrainDiffusionTransformerHybridDinoMultiGPUWorkspace(BaseWorkspace):
+class TrainDiffusionUnetHybridDinoMultiGPUWorkspace(BaseWorkspace):
     include_keys = ['global_step', 'epoch']
 
     def __init__(self, cfg: OmegaConf, rank, world_size, device_id, device='cuda:0', output_dir=None):
@@ -58,11 +58,11 @@ class TrainDiffusionTransformerHybridDinoMultiGPUWorkspace(BaseWorkspace):
         random.seed(seed)
 
         # configure model
-        self.model: DiffusionTransformerHybridDinov2Policy = hydra.utils.instantiate(cfg.policy).to(device)
+        self.model: DiffusionUnetHybridDinov2Policy = hydra.utils.instantiate(cfg.policy).to(device)
         self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
         self.model = DDP(self.model, device_ids=[device_id], find_unused_parameters=True)
 
-        self.ema_model: DiffusionTransformerHybridDinov2Policy = None
+        self.ema_model: DiffusionUnetHybridDinov2Policy = None
         if cfg.training.use_ema:
             self.ema_model = copy.deepcopy(self.model)
 
@@ -82,13 +82,13 @@ class TrainDiffusionTransformerHybridDinoMultiGPUWorkspace(BaseWorkspace):
             lastest_ckpt_path = self.get_checkpoint_path()
             if lastest_ckpt_path.is_file():
                 print(f"Resuming from checkpoint {lastest_ckpt_path}")
-                self.load_checkpoint(path=lastest_ckpt_path, exclude_keys=['optimizer'], include_keys=[])
+                self.load_checkpoint(path=lastest_ckpt_path)
 
         # configure dataset
         dataset: BaseImageDataset
         dataset = hydra.utils.instantiate(cfg.task.dataset)
         assert isinstance(dataset, BaseImageDataset)
-
+        
         sampler = DistributedSampler(dataset=dataset, num_replicas=world_size, rank=rank, shuffle=True, seed=cfg.training.seed, drop_last=True)
         train_dataloader = DataLoader(dataset, sampler=sampler, **cfg.dataloader)
         normalizer = dataset.get_normalizer()
@@ -149,7 +149,7 @@ class TrainDiffusionTransformerHybridDinoMultiGPUWorkspace(BaseWorkspace):
         if self.ema_model is not None:
             self.ema_model.to(device)
         optimizer_to(self.optimizer, device)
-        
+
         # save batch for sampling
         train_sampling_batch = None
 
@@ -236,7 +236,7 @@ class TrainDiffusionTransformerHybridDinoMultiGPUWorkspace(BaseWorkspace):
                 if (self.epoch % cfg.training.val_every) == 0:
                     with torch.no_grad():
                         val_losses = list()
-                        with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", disable=(rank!=0), 
+                        with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", disable=(rank!=0),
                                 leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                             for batch_idx, batch in enumerate(tepoch):
                                 batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
@@ -260,7 +260,6 @@ class TrainDiffusionTransformerHybridDinoMultiGPUWorkspace(BaseWorkspace):
                         
                         result = policy.module.predict_action(obs_dict)
                         pred_action = result['action_pred']
-
                         mse = torch.nn.functional.mse_loss(pred_action, gt_action)
                         step_log['train_action_mse_error'] = mse.item()
                         del batch
@@ -307,7 +306,7 @@ class TrainDiffusionTransformerHybridDinoMultiGPUWorkspace(BaseWorkspace):
     config_path=str(pathlib.Path(__file__).parent.parent.joinpath("config")), 
     config_name=pathlib.Path(__file__).stem)
 def main(cfg):
-    workspace = TrainDiffusionTransformerHybridDinoMultiGPUWorkspace(cfg)
+    workspace = TrainDiffusionUnetHybridDinoMultiGPUWorkspace(cfg)
     workspace.run()
 
 if __name__ == "__main__":

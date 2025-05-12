@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torchvision.transforms import Compose, Resize
 from torchvision.transforms import InterpolationMode
-from diffusion_policy.model.vision.dinov2_vit import DinoVisionTransformer, vit_large, vit_small
+from diffusion_policy.model.vision.dinov2_vit import DinoVisionTransformer, vit_large, vit_small, vit_base
 from collections import OrderedDict
 
 
@@ -22,7 +22,7 @@ class Dinov2ObsEncoder(nn.Module):
         ):
         super(Dinov2ObsEncoder, self).__init__()
         
-        self.wrist_img_enc = vit_small(
+        self.wrist_img_enc = vit_base(
             img_size=img_size,
             patch_size=patch_size,
             init_values=init_values,
@@ -33,7 +33,7 @@ class Dinov2ObsEncoder(nn.Module):
             interpolate_offset=interpolate_offset
         )
         
-        self.side_img_enc = vit_small(
+        self.side_img_enc = vit_base(
             img_size=img_size,
             patch_size=patch_size,
             init_values=init_values,

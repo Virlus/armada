@@ -1,4 +1,4 @@
-name: pouring_dino_small
+name: pouring_dino_base
 
 image_shape: [3, 224, 224]
 dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0305_pour_filtered_lowres
@@ -42,3 +42,5 @@ dataset:
   rel_ee_pose: False
   n_obs_steps: ${n_obs_steps}
   shape_meta: ${shape_meta}
+  random_crop: True
+  image_shape: ${task.image_shape}

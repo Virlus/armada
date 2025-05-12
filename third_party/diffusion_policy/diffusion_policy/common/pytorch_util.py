@@ -15,6 +15,22 @@ def dict_apply(
             result[key] = func(value)
     return result
 
+def dict_apply_with_key(
+        x: Dict[str, torch.Tensor],
+        func: Callable[[str, torch.Tensor], torch.Tensor],
+        keys: List[str],
+        ) -> Dict[str, torch.Tensor]:
+    result = dict()
+    for key, value in x.items():
+        if isinstance(value, dict):
+            result[key] = dict_apply_with_key(value, func, keys)
+        else:
+            if key in keys:
+                result[key] = func(value)
+            else:
+                result[key] = value
+    return result
+
 def pad_remaining_dims(x, target):
     assert x.shape == target.shape[:len(x.shape)]
     return x.reshape(x.shape + (1,)*(len(target.shape) - len(x.shape)))

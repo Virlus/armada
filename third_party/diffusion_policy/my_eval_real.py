@@ -25,7 +25,7 @@ from hardware.my_device.robot import FlexivRobot, FlexivGripper
 from hardware.my_device.camera import CameraD400
 from hardware.my_device.keyboard import Keyboard
 
-camera_serial = ["038522063145", "104422070044"]
+camera_serial = ["135122075425", "135122070361"]
 
 def main(rank, eval_cfg, device_ids):
     fps = 10  # TODO

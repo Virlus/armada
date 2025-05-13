@@ -23,7 +23,7 @@ class CameraD400(object):
         self.config = rs.config()
         if serial is not None:
             self.config.enable_device(serial)
-        if is_calib or serial == "038522063145" or serial == "104422070044":
+        if is_calib or serial == "135122075425" or serial == "135122070361":
             self.config.enable_stream(rs.stream.depth, 640, 480,rs.format.z16,30)
             self.config.enable_stream(rs.stream.color, 640, 480,rs.format.bgr8,30)
         else:
@@ -174,12 +174,27 @@ def live_application():
         display.blit(pygame.surfarray.make_surface(img),(0, 0))
         pygame.display.update()
 
+
+import torch
+from torchvision.transforms import Compose, Resize
+from torchvision.transforms import InterpolationMode
+from PIL import Image
+
 if __name__ == "__main__":
+    BICUBIC = InterpolationMode.BICUBIC
+    image_processor = Compose([Resize((224, 224), interpolation=BICUBIC)])
     # live_application()
-    camera_serial = ["038522063145", "104422070044"]
+    camera_serial = ["135122075425", "135122070361"]
     cameras = [CameraD400(s) for s in camera_serial]
     for camera in cameras:
         color_image, depth_image = camera.get_data()
+
+        new_image = image_processor(torch.from_numpy(cv2.cvtColor(color_image.copy(), cv2.COLOR_BGR2RGB)).\
+                                      permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
+        
+        # Image.fromarray(color_image).save(f'color_{camera}.png')
+        # Image.fromarray(new_image).save(f'test_{camera}.png')
+
         print(color_image)
         cv2.imshow('color', color_image)
         cv2.waitKey(1)

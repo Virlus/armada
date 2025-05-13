@@ -45,7 +45,7 @@ if __name__ == '__main__':
     # robot.robot.setMode(robot.mode.NRT_PLAN_EXECUTION)
     # robot.robot.executePlan("PLAN-FreeDriveAuto")
 
-    cam = CameraD400("104422070044", is_calib=True)
+    cam = CameraD400("135122070361", is_calib=True)
     dir = os.path.join("./workspace/flexiv/calib/out","cali_hand")
     os.makedirs(dir)
     k = Keyboard()

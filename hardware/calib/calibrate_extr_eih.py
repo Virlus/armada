@@ -552,7 +552,7 @@ class calibration():
 
 
 if __name__ == "__main__":
-    cam = CameraD400(serial="104422070044")
+    cam = CameraD400(serial="135122070361")
     physicsClient = p.connect(p.GUI)
     rob = p.loadURDF("../flexiv_rdk/resources/flexiv_rizon4_kinematics.urdf")
     # flexiv = FlexivRobot(robot_ip_address="192.168.2.100",

@@ -29,7 +29,7 @@ from hardware.my_device.keyboard import Keyboard
 from hardware.my_device.sigma import Sigma7
 from hardware.my_device.logitechG29_wheel import Controller
 
-camera_serial = ["038522063145", "104422070044"]
+camera_serial = ["135122075425", "135122070361"]
 
 # Sirius-specific macros
 HUMAN = 0

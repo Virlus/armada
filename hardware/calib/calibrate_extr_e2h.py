@@ -532,7 +532,7 @@ class calibration():
 
 
 if __name__ == "__main__":
-    side_cam = CameraD400("038522063145")
+    side_cam = CameraD400("135122075425")
     # cam = CameraD400('242322072982')
  
     physicsClient = p.connect(p.GUI)

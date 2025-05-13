@@ -34,8 +34,8 @@ if __name__ == '__main__':
     all_poses = [get_interpolated_array(10, key_poses[i], key_poses[i+1]) for i in range(len(key_poses)-1)]
     all_poses = np.concatenate(all_poses, axis=0)
 
-    cam_hand = CameraD400("104422070044", is_calib=True)
-    cam_side = CameraD400("038522063145")
+    cam_hand = CameraD400("135122070361", is_calib=True)
+    cam_side = CameraD400("135122075425")
     dir = os.path.join("./workspace/flexiv/calib/out","cali_side")
     os.makedirs(dir)
     dir_hand = os.path.join(dir, 'hand')

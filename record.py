@@ -19,7 +19,7 @@ from hardware.my_device.logitechG29_wheel import Controller
 
 from third_party.diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 
-camera_serial = ["038522063145", "104422070044"]
+camera_serial = ["135122075425", "135122070361"]
 
 
 def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper, cameras:List[CameraD400], sigma:Sigma7, \
@@ -169,7 +169,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0304_pour')
+    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0514_pour_expert')
     parser.add_argument('-res', '--resolution', nargs='+', type=int)
     args = parser.parse_args()
     main(args)

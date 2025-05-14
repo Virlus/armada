@@ -12,7 +12,7 @@ def main(args):
     robot = FlexivRobot()
     gripper = FlexivGripper(robot)
     replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=['wrist_cam', 'side_cam', 'tcp_pose', \
-                                                                      'joint_pos', 'action', 'action_mode'])
+                                                                      'joint_pos', 'action'])
     zarr_path = os.path.join(args.output, 'replay_buffer.zarr')
     save_buffer = ReplayBuffer.create_from_path(zarr_path, mode='a')
     image_save_path = os.path.join(os.path.dirname(args.demo_path), 'images')
@@ -60,7 +60,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0305_pour_sirius_filtered/replay_buffer.zarr')
+    parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0514_test/replay_buffer.zarr')
     parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/debug')
     args = parser.parse_args()
     main(args)

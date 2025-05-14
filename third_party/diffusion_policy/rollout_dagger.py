@@ -63,6 +63,8 @@ def main(rank, eval_cfg, device_ids):
     # overwrite some config values according to evaluation config
     cfg.policy.num_inference_steps = eval_cfg.policy.num_inference_steps
     cfg.output_dir = eval_cfg.output_dir
+    if 'obs_encoder' in cfg.policy:
+        cfg.policy.obs_encoder.pretrained_path = None
     # if rank == 0:
     #     pathlib.Path(cfg.output_dir).mkdir(parents=True, exist_ok=True)
 

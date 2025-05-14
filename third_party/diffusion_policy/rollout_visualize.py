@@ -13,7 +13,7 @@ import dill
 import time
 from scipy.spatial.transform import Rotation as R
 import cv2
-from torchvision.transforms import Compose, Resize
+from torchvision.transforms import Compose, Resize, CenterCrop
 from torchvision.transforms import InterpolationMode
 import torch.nn.functional as F
 
@@ -99,7 +99,11 @@ def main(rank, eval_cfg, device_ids):
         state_shape = cfg.task['shape_meta']['obs']['qpos']['shape']
 
     BICUBIC = InterpolationMode.BICUBIC
-    image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
+    # image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
+    image_processor = Compose([
+        Resize((img_shape[1]+8, img_shape[2]+8), interpolation=BICUBIC),
+        CenterCrop((img_shape[1], img_shape[2]))
+    ])
 
     # Overwritten by evaluation config specifically
     seed = int(time.time())

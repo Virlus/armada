@@ -82,7 +82,7 @@ class TrainDiffusionUnetHybridDinoMultiGPUWorkspace(BaseWorkspace):
             lastest_ckpt_path = self.get_checkpoint_path()
             if lastest_ckpt_path.is_file():
                 print(f"Resuming from checkpoint {lastest_ckpt_path}")
-                self.load_checkpoint(path=lastest_ckpt_path)
+                self.load_checkpoint(path=lastest_ckpt_path, exclude_keys=['optimizer'], include_keys=[])
 
         # configure dataset
         dataset: BaseImageDataset
@@ -236,7 +236,7 @@ class TrainDiffusionUnetHybridDinoMultiGPUWorkspace(BaseWorkspace):
                 if (self.epoch % cfg.training.val_every) == 0:
                     with torch.no_grad():
                         val_losses = list()
-                        with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", disable=(rank!=0),
+                        with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", disable=(rank!=0), 
                                 leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                             for batch_idx, batch in enumerate(tepoch):
                                 batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))

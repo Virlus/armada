@@ -33,10 +33,6 @@ def main(args):
             last_p = curr_p
             last_r = curr_r
             robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat(scalar_first=True)), 0))
-            # if replay_buffer['action'][j, 7] == 0:
-            #     gripper.move(gripper.max_width)
-            # else:
-            #     gripper.move(0)
             gripper.move(replay_buffer['action'][j, 7])
             time.sleep(max(1 / 10 - (time.time() - start_time), 0))
 

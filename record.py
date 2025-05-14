@@ -54,6 +54,9 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
     last_p = robot.init_pose[:3]
     last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
 
+    seed = int(time.time())
+    np.random.seed(seed)
+
     while not keyboard.quit and not keyboard.discard and not keyboard.finish:
         time.sleep(max(0.1 - (time.time() - start_time), 0))
         start_time = time.time()
@@ -102,15 +105,20 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
 
         # Initialize at the beginning of the episode
         if cnt == 0:
-            robot.send_tcp_pose(robot.init_pose)
+            random_init_pose = robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
+            robot.send_tcp_pose(random_init_pose)
+            # robot.send_tcp_pose(robot.init_pose)
             time.sleep(1.5)
             gripper.move(gripper.max_width)
             time.sleep(0.5)
             last_throttle = False
             sigma.reset()
             cnt += 1
-            last_p = robot.init_pose[:3]
-            last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
+            last_p = random_init_pose[:3]
+            last_r = R.from_quat(random_init_pose[3:7], scalar_first=True)
+            random_p_drift = random_init_pose[:3] - robot.init_pose[:3]
+            random_r_drift = R.from_quat(robot.init_pose[3:7], scalar_first=True).inv() * R.from_quat(random_init_pose[3:7], scalar_first=True)
+            sigma.transform_from_robot(random_p_drift, random_r_drift)
             print("Episode start!")
             continue
 
@@ -165,11 +173,11 @@ def main(args):
         record(replay_buffer, robot, gripper, camera, sigma, keyboard, controller, image_processor)
         if not keyboard.quit:
             print("reset the environment...")
-            time.sleep(10)
+            time.sleep(15)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0514_test')
+    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0514_pour')
     parser.add_argument('-res', '--resolution', nargs='+', type=int)
     args = parser.parse_args()
     main(args)

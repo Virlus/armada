@@ -1,5 +1,5 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/test_dino.ckpt
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0514_14.24.32_train_diffusion_transformer_hybrid_multi_gpu_pouring_dino_base/latest.ckpt
 output_dir: outputs/
 
 Ta: 6

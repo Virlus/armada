@@ -1,4 +1,4 @@
-name: pouring_dino_base_wo_wrist_crop
+name: pouring_dino_base_wo_wrist_crop_dino_head
 
 image_shape: [3, 224, 224]
 dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0514_pour

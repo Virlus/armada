@@ -54,6 +54,11 @@ def main(args):
     # Load the current checkpoint
     payload = torch.load(open(args.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
+    
+    # Prevent repeated loading of pretrained models
+    if 'obs_encoder' in cfg.policy:
+        cfg.policy.obs_encoder.pretrained_path = None
+    
     cls = hydra.utils.get_class(cfg._target_)
     workspace = cls(cfg, rank, world_size, device_id, device)
     # workspace = cls(cfg)
@@ -106,8 +111,10 @@ def main(args):
             'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
             'ee_pose': eps_state[indices, :].unsqueeze(0)
         }
-        obs_features = policy.extract_latent(obs_dict)
-        human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
+        
+        with torch.no_grad():
+            obs_features = policy.extract_latent(obs_dict)
+            human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
             
     for j, rollout_idx in enumerate(tqdm.tqdm(rollout_indices, desc="Obtaining latent for rollouts")):
         rollout_episode = replay_buffer.get_episode(rollout_idx)
@@ -125,14 +132,15 @@ def main(args):
             'ee_pose': eps_state[indices, :].unsqueeze(0)
         }
 
-        obs_features = policy.extract_latent(obs_dict)
-        rollout_init_latent[j] = obs_features.squeeze(0).reshape(-1)
-                
+        with torch.no_grad():
+            obs_features = policy.extract_latent(obs_dict)
+            rollout_init_latent[j] = obs_features.squeeze(0).reshape(-1)
+    
     dist_mat = euclidean_distance(human_init_latent, rollout_init_latent)
     dist_mat = dist_mat.to(device).detach()
     
     # Visualization
-    os.makedirs(f'visual/ot_matched_full', exist_ok=True)
+    os.makedirs(args.save_path, exist_ok=True)
     human_corr_indices = torch.argmin(dist_mat, dim=0)
     
     # Carry out optimal transport between corresponding episodes
@@ -165,8 +173,9 @@ def main(args):
                     'ee_pose': eps_state[episode_idx-To+1: episode_idx+1, :].unsqueeze(0)
                 }
 
-            obs_features = policy.extract_latent(obs_dict)
-            human_latent[idx] = obs_features.squeeze(0).reshape(-1)
+            with torch.no_grad():
+                obs_features = policy.extract_latent(obs_dict)
+                human_latent[idx] = obs_features.squeeze(0).reshape(-1)
             
         eps_side_img = (torch.from_numpy(rollout_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
         eps_wrist_img = (torch.from_numpy(rollout_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
@@ -193,8 +202,9 @@ def main(args):
                     'ee_pose': eps_state[episode_idx-To+1: episode_idx+1, :].unsqueeze(0)
                 }
 
-            obs_features = policy.extract_latent(obs_dict)
-            rollout_latent[idx] = obs_features.squeeze(0).reshape(-1)
+            with torch.no_grad():
+                obs_features = policy.extract_latent(obs_dict)
+                rollout_latent[idx] = obs_features.squeeze(0).reshape(-1)
             
         dist_mat = euclidean_distance(human_latent, rollout_latent)
         dist_mat = dist_mat.to(device).detach()
@@ -255,7 +265,7 @@ def main(args):
         main_ax.set_xlim(-0.5, rollout_latent.shape[0]-0.5)
         main_ax.set_ylim(human_latent.shape[0]-0.5, -0.5)
 
-        plt.savefig(f'visual/ot_matched_full/{human_corr_idx}_{rollout_indices[k]}_ot.png', bbox_inches='tight')
+        plt.savefig(f'{args.save_path}/{human_corr_idx}_{rollout_indices[k]}_ot.png', bbox_inches='tight')
 
 
 if __name__ == '__main__':
@@ -264,6 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--dataset_path', type=str, required=True)
     parser.add_argument('-ckpt', '--checkpoint_path', type=str, required=True)
     parser.add_argument('-skip', '--skip_frame', type=int, required=True)
+    parser.add_argument('-save', '--save_path', type=str, required=True)
     args = parser.parse_args()
     
     os.environ["MASTER_ADDR"] = "localhost"

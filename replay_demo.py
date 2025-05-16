@@ -40,7 +40,9 @@ def main(args):
             episode_path = os.path.join(image_save_path, f'episode_{i}')
             os.makedirs(episode_path, exist_ok=True)
             side_img = replay_buffer['side_cam'][j]
+            wrist_img = replay_buffer['wrist_cam'][j]
             Image.fromarray(side_img).save(os.path.join(episode_path, f'side_img_{j}.png'))
+            Image.fromarray(wrist_img).save(os.path.join(episode_path, f'wrist_img_{j}.png'))
 
         while True:
             key = input('Press "s" to save to filtered data, "c" to continue, or "q" to quit: ')
@@ -56,7 +58,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0514_test/replay_buffer.zarr')
+    parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0514_pour/replay_buffer.zarr')
     parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/debug')
     args = parser.parse_args()
     main(args)

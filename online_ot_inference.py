@@ -112,8 +112,10 @@ def main(args):
             'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
             'ee_pose': eps_state[indices, :].unsqueeze(0)
         }
-        obs_features = policy.extract_latent(obs_dict)
-        human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
+        
+        with torch.no_grad():
+            obs_features = policy.extract_latent(obs_dict)
+            human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
         
         human_episode['action_weight'] = np.ones(human_episode['action'].shape[0])
             
@@ -133,15 +135,16 @@ def main(args):
             'ee_pose': eps_state[indices, :].unsqueeze(0)
         }
 
-        obs_features = policy.extract_latent(obs_dict)
-        rollout_init_latent[j] = obs_features.squeeze(0).reshape(-1)
+        with torch.no_grad():
+            obs_features = policy.extract_latent(obs_dict)
+            rollout_init_latent[j] = obs_features.squeeze(0).reshape(-1)
     
     dist_mat = euclidean_distance(human_init_latent, rollout_init_latent)
     dist_mat = dist_mat.to(device).detach()
     human_corr_indices = torch.argmin(dist_mat, dim=0)
     
     # Carry out optimal transport between corresponding episodes
-    os.makedirs(f'visual/ot_greedy', exist_ok=True)
+    os.makedirs(args.save_path, exist_ok=True)
     for k, human_corr_idx in enumerate(tqdm.tqdm(human_corr_indices, desc="OT matching between corresponding episodes")):
         human_episode = replay_buffer.get_episode(human_corr_idx)
         rollout_episode = replay_buffer.get_episode(rollout_indices[k])
@@ -171,8 +174,9 @@ def main(args):
                     'ee_pose': eps_state[episode_idx-To+1: episode_idx+1, :].unsqueeze(0)
                 }
 
-            obs_features = policy.extract_latent(obs_dict)
-            human_latent[idx] = obs_features.squeeze(0).reshape(-1)
+            with torch.no_grad():
+                obs_features = policy.extract_latent(obs_dict)
+                human_latent[idx] = obs_features.squeeze(0).reshape(-1)
             
         eps_side_img = (torch.from_numpy(rollout_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
         eps_wrist_img = (torch.from_numpy(rollout_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
@@ -202,8 +206,9 @@ def main(args):
                     'ee_pose': eps_state[episode_idx-To+1: episode_idx+1, :].unsqueeze(0)
                 }
 
-            obs_features = policy.extract_latent(obs_dict)
-            obs_features = obs_features.squeeze(0).reshape(-1)
+            with torch.no_grad():
+                obs_features = policy.extract_latent(obs_dict)
+                obs_features = obs_features.squeeze(0).reshape(-1)
             
             # Greedy OT assignment
             rollout_weight = float(1. / (rollout_len // n_skip_frame))
@@ -286,7 +291,7 @@ def main(args):
         main_ax.set_xlim(-0.5, rollout_len // n_skip_frame-0.5)
         main_ax.set_ylim(demo_len // n_skip_frame-0.5, -0.5)
 
-        plt.savefig(f'visual/ot_greedy/{human_corr_idx}_{rollout_indices[k]}_ot.png', bbox_inches='tight') 
+        plt.savefig(f'{args.save_path}/{human_corr_idx}_{rollout_indices[k]}_ot.png', bbox_inches='tight') 
         
 
 if __name__ == '__main__':

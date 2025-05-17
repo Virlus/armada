@@ -280,5 +280,6 @@ if __name__ == "__main__":
         gripper.move(width)
         time.sleep(0.5)
         tcp_pose, joint_pos, _, _ = robot.get_robot_state()
-        print(tcp_pose)
+        # print(tcp_pose)
         print(joint_pos)
+        import pdb; pdb.set_trace()

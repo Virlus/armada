@@ -28,8 +28,8 @@ class Sigma7:
 
     def read_state(self):
         sig, px, py, pz, oa, ob, og, pg, matrix = sigma7.drdGetPositionAndOrientation()
-        pos = np.array([-px, -py,pz])
-        rot = np.array([oa, -ob, -og])
+        pos = np.array([px, py,pz])
+        rot = np.array([-oa, ob, -og])
         return pos, rot, pg
     
     def get_control(self):

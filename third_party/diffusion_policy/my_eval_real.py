@@ -90,10 +90,11 @@ def main(rank, eval_cfg, device_ids):
 
     BICUBIC = InterpolationMode.BICUBIC
     # image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
-    image_processor = Compose([
+    side_image_processor = Compose([
         Resize((img_shape[1]+8, img_shape[2]+8), interpolation=BICUBIC),
         CenterCrop((img_shape[1], img_shape[2]))
     ])
+    wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
 
     # Overwritten by evaluation config specifically
     seed = int(time.time())
@@ -137,10 +138,10 @@ def main(rank, eval_cfg, device_ids):
         while j < max_episode_length:
             # 'f' to end the episode
             if keyboard.finish:
-                robot.send_joint_pose(robot.home_joint_pos)
-                time.sleep(1.5)
+                # robot.send_joint_pose(robot.home_joint_pos)
+                # time.sleep(1.5)
                 robot.send_tcp_pose(robot.init_pose)
-                time.sleep(1.5)
+                time.sleep(3)
                 gripper.move(gripper.max_width)
                 time.sleep(0.5)
                 print("Reset!")
@@ -163,8 +164,8 @@ def main(rank, eval_cfg, device_ids):
             for camera in cameras:
                 color_image, _ = camera.get_data()
                 cam_data.append(color_image)
-            img_0 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
-            img_1 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+            img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+            img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
             if j == 0:
                 for idx in range(state_history.shape[0]):
                     img_0_history[idx] = img_0
@@ -218,10 +219,10 @@ def main(rank, eval_cfg, device_ids):
 
 
         if j == max_episode_length:
-            robot.send_joint_pose(robot.home_joint_pos)
-            time.sleep(1.5)
+            # robot.send_joint_pose(robot.home_joint_pos)
+            # time.sleep(1.5)
             robot.send_tcp_pose(robot.init_pose)
-            time.sleep(1.5)
+            time.sleep(3)
             gripper.move(gripper.max_width)
             time.sleep(0.5)
             print("Reset!")

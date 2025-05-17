@@ -1,5 +1,5 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0514_14.24.32_train_diffusion_transformer_hybrid_multi_gpu_pouring_dino_base/latest.ckpt
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0516_13.48.26_train_diffusion_transformer_hybrid_multi_gpu_pouring_dino_base_wo_wrist_crop_dino_head/latest.ckpt
 train_dataset_path: /mnt/workspace/DP/0514_pour
 save_buffer_path: /mnt/workspace/DP/0514_pour_sirius_round1_1
 output_dir: outputs/

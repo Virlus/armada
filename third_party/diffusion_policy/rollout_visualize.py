@@ -148,10 +148,10 @@ def main(rank, eval_cfg, device_ids):
         while j < max_episode_length:
             # 'f' to end the episode
             if keyboard.finish:
-                robot.send_joint_pose(robot.home_joint_pos)
-                time.sleep(1.5)
+                # robot.send_joint_pose(robot.home_joint_pos)
+                # time.sleep(1.5)
                 robot.send_tcp_pose(robot.init_pose)
-                time.sleep(1.5)
+                time.sleep(3)
                 gripper.move(gripper.max_width)
                 time.sleep(0.5)
                 print("Reset!")
@@ -243,10 +243,10 @@ def main(rank, eval_cfg, device_ids):
 
 
         if j == max_episode_length:
-            robot.send_joint_pose(robot.home_joint_pos)
-            time.sleep(1.5)
+            # robot.send_joint_pose(robot.home_joint_pos)
+            # time.sleep(1.5)
             robot.send_tcp_pose(robot.init_pose)
-            time.sleep(1.5)
+            time.sleep(3)
             gripper.move(gripper.max_width)
             time.sleep(0.5)
             print("Reset!")

@@ -115,10 +115,11 @@ def main(rank, eval_cfg, device_ids):
 
     BICUBIC = InterpolationMode.BICUBIC
     # image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
-    image_processor = Compose([
+    side_image_processor = Compose([
         Resize((img_shape[1]+8, img_shape[2]+8), interpolation=BICUBIC),
         CenterCrop((img_shape[1], img_shape[2]))
     ])
+    wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
 
     # Overwritten by evaluation config specifically
     seed = int(time.time())
@@ -215,8 +216,8 @@ def main(rank, eval_cfg, device_ids):
         for camera in cameras:
             color_image, _ = camera.get_data()
             cam_data.append(color_image)
-        original_img_0 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
-        original_img_1 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
+        original_img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
+        original_img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
         policy_img_0 = original_img_0 / 255.
         policy_img_1 = original_img_1 / 255.
 
@@ -267,8 +268,8 @@ def main(rank, eval_cfg, device_ids):
                 for camera in cameras:
                     color_image, _ = camera.get_data()
                     cam_data.append(color_image)
-                img_0 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
-                img_1 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+                img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+                img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
 
                 # Update the observation history
                 policy_img_0_history[:-1] = policy_img_0_history[1:]
@@ -324,9 +325,9 @@ def main(rank, eval_cfg, device_ids):
                     gripper.move(demo_gripper_action)
 
                     # Save demonstrations to the buffer
-                    wrist_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
+                    wrist_image = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
                                       permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-                    side_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).\
+                    side_image = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).\
                                                 permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
                     wrist_cam.append(wrist_image)
                     side_cam.append(side_image)
@@ -410,8 +411,8 @@ def main(rank, eval_cfg, device_ids):
                     state = tmp_state
                 state = torch.from_numpy(state)
 
-                img_0 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
-                img_1 = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+                img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+                img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
                 policy_img_0_history[:-1] = policy_img_0_history[1:]
                 policy_img_0_history[-1] = img_0
                 policy_img_1_history[:-1] = policy_img_1_history[1:]
@@ -420,9 +421,9 @@ def main(rank, eval_cfg, device_ids):
                 policy_state_history[-1] = state
                 
                 # Save demonstrations to the buffer
-                wrist_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
+                wrist_image = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
                                       permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-                side_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).\
+                side_image = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).\
                                             permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
                 wrist_cam.append(wrist_image)
                 side_cam.append(side_image)
@@ -461,10 +462,10 @@ def main(rank, eval_cfg, device_ids):
                 print('Saved episode ', episode_id)
                 break
 
-        robot.send_joint_pose(robot.home_joint_pos)
-        time.sleep(2)
+        # robot.send_joint_pose(robot.home_joint_pos)
+        # time.sleep(2)
         robot.send_tcp_pose(robot.init_pose)
-        time.sleep(2)
+        time.sleep(3)
         gripper.move(gripper.max_width)
         time.sleep(0.5)
         print("Reset!")

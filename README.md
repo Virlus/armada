@@ -27,10 +27,6 @@ bash mytest.sh
 cd third_party/diffusion_policy
 python my_eval_real.py
 
-# Rollout trained policy with human intervention in DAgger fashion
-cd third_party/diffusion_policy
-python rollout_dagger.py
-
 # Rollout trained policy with human intervention and Sirius-style reweighing mechanism
 cd third_party/diffusion_policy
 python rollout_sirius.py

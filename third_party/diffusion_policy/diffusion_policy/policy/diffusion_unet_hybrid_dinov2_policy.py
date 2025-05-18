@@ -186,6 +186,15 @@ class DiffusionUnetHybridDinov2Policy(BaseImagePolicy):
 
         return trajectory
 
+    def extract_latent(self, obs_dict: Dict[str, torch.Tensor]) -> torch.Tensor:
+        nobs = self.normalizer.normalize(obs_dict)
+        value = next(iter(nobs.values()))
+        B, To = value.shape[:2]
+        To = self.n_obs_steps
+        this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].reshape(-1,*x.shape[2:]))
+        nobs_features = self.obs_encoder(this_nobs)
+        nobs_features = nobs_features.reshape(B, To, -1)
+        return nobs_features
 
     def predict_action(self, obs_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """

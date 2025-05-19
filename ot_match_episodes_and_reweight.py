@@ -90,12 +90,13 @@ def main(args):
         episode_start = replay_buffer.episode_ends[i-1] if i > 0 else 0
         if np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == HUMAN):
             human_demo_indices.append(i)
-        elif np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == INTV):
+        # elif np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == INTV):
+        else:
             rollout_indices.append(i)
-            
+    
     human_init_latent = torch.zeros((len(human_demo_indices), int(To*obs_feature_dim)), device=device)
     rollout_init_latent = torch.zeros((len(rollout_indices), int(To*obs_feature_dim)), device=device)
-            
+    
     for i in tqdm.tqdm(human_demo_indices, desc="Obtaining latent for human demo"):
         human_episode = replay_buffer.get_episode(i)
         eps_side_img = (torch.from_numpy(human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)

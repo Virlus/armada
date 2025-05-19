@@ -155,10 +155,10 @@ def main(args):
         eps_state[:, :3] = human_episode['tcp_pose'][:, :3]
         eps_state[:, 3:] = obs_rot_transformer.forward(human_episode['tcp_pose'][:, 3:])
         eps_state = (torch.from_numpy(eps_state)).to(device)
-        rollout_len = human_episode['action'].shape[0]
-        human_latent = torch.zeros((rollout_len // n_skip_frame, int(To*obs_feature_dim)), device=device)
+        demo_len = human_episode['action'].shape[0]
+        human_latent = torch.zeros((demo_len // n_skip_frame, int(To*obs_feature_dim)), device=device)
         
-        for idx in range(rollout_len // n_skip_frame):
+        for idx in range(demo_len // n_skip_frame):
             episode_idx = idx * n_skip_frame
             if episode_idx < To - 1:
                 indices = [0] * (To-1-episode_idx) + list(range(episode_idx+1))

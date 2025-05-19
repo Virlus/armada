@@ -60,6 +60,11 @@ def main(args):
     # Load the current checkpoint
     payload = torch.load(open(args.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
+    
+    # Prevent repeated loading of pretrained models
+    if 'obs_encoder' in cfg.policy:
+        cfg.policy.obs_encoder.pretrained_path = None
+    
     cls = hydra.utils.get_class(cfg._target_)
     workspace = cls(cfg, rank, world_size, device_id, device)
     # workspace = cls(cfg)

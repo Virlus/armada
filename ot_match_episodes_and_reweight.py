@@ -137,7 +137,8 @@ def main(args):
             obs_features = policy.extract_latent(obs_dict)
             rollout_init_latent[j] = obs_features.squeeze(0).reshape(-1)
     
-    dist_mat = euclidean_distance(human_init_latent, rollout_init_latent)
+    # dist_mat = euclidean_distance(human_init_latent, rollout_init_latent)
+    dist_mat = cosine_distance(human_init_latent, rollout_init_latent)
     dist_mat = dist_mat.to(device).detach()
     
     # Visualization
@@ -207,7 +208,8 @@ def main(args):
                 obs_features = policy.extract_latent(obs_dict)
                 rollout_latent[idx] = obs_features.squeeze(0).reshape(-1)
             
-        dist_mat = euclidean_distance(human_latent, rollout_latent)
+        # dist_mat = euclidean_distance(human_latent, rollout_latent)
+        dist_mat = cosine_distance(human_latent, rollout_latent)
         dist_mat = dist_mat.to(device).detach()
         ot_res = optimal_transport_plan(human_latent, rollout_latent, dist_mat)
         ot_cost = torch.sum(ot_res * dist_mat, dim=0)

@@ -26,18 +26,34 @@ PRE_INTV = 2
 INTV = 3
 
 
-def process_image(array, size, highlight=False):
+def process_image(array, size, highlight=False, color = [255, 0, 0]):
     img = Image.fromarray(array).convert('RGBA')
     img = img.resize(size)
     if highlight:
         border_width = 15
         arr = np.array(img)
-        arr[:border_width, :] = [255, 0, 0, 255]
-        arr[-border_width:, :] = [255, 0, 0, 255]
-        arr[:, :border_width] = [255, 0, 0, 255]
-        arr[:, -border_width:] = [255, 0, 0, 255]
+        arr[:border_width, :] = color + [255]
+        arr[-border_width:, :] = color + [255]
+        arr[:, :border_width] = color + [255]
+        arr[:, -border_width:] = color + [255]
         return Image.fromarray(arr)
     return img
+
+
+def failure_detect(cost, window_size=15):
+    """
+    Failure detection in a foresight manner with Optimal Transport cost
+    """
+    # smoothen the cost signal first
+    cost = np.convolve(cost, np.ones(10)/10, mode='same')
+    indices = []
+    for i in range(3, len(cost)):
+        window_start = max(0, i - window_size)
+        prev_cost_mean = np.mean(cost[window_start:i])
+        prev_cost_std = np.std(cost[window_start:i])
+        if cost[i] > prev_cost_mean + 3 * prev_cost_std:
+            indices.append(i)
+    return indices
 
 
 def tensor_delete(tensor, indices):
@@ -145,7 +161,8 @@ def main(args):
             obs_features = policy.extract_latent(obs_dict)
             rollout_init_latent[j] = obs_features.squeeze(0).reshape(-1)
     
-    dist_mat = euclidean_distance(human_init_latent, rollout_init_latent)
+    # dist_mat = euclidean_distance(human_init_latent, rollout_init_latent)
+    dist_mat = cosine_distance(human_init_latent, rollout_init_latent)
     dist_mat = dist_mat.to(device).detach()
     human_corr_indices = torch.argmin(dist_mat, dim=0)
     
@@ -218,7 +235,8 @@ def main(args):
             
             # Greedy OT assignment
             rollout_weight = float(1. / (rollout_len // n_skip_frame))
-            dist2expert = euclidean_distance(human_latent[expert_indices], obs_features.unsqueeze(0)).squeeze(-1)
+            # dist2expert = euclidean_distance(human_latent[expert_indices], obs_features.unsqueeze(0)).squeeze(-1)
+            dist2expert = cosine_distance(human_latent[expert_indices], obs_features.unsqueeze(0)).squeeze(-1)
             
             while rollout_weight > 0:
                 if dist2expert.shape[0] == 0:
@@ -253,6 +271,7 @@ def main(args):
         main_ax = fig.add_subplot(gs[1])
 
         cost_array = greedy_ot_cost.detach().cpu().numpy()
+        failure_timesteps = failure_detect(cost_array, args.window_size)
         cost_im = cost_ax.imshow(cost_array.reshape(1, -1), 
                                 cmap='plasma', 
                                 aspect='auto')
@@ -281,8 +300,12 @@ def main(args):
 
         for x in range(rollout_len // n_skip_frame):
             rollout_array = rollout_episode['side_cam'][int(x * n_skip_frame)]
-            if rollout_episode['action_mode'][int(x * n_skip_frame)] == INTV:
+            if rollout_episode['action_mode'][int(x * n_skip_frame)] == INTV and x in failure_timesteps:
+                img = process_image(rollout_array, (100, 100), highlight=True, color=[0, 255, 0])
+            elif rollout_episode['action_mode'][int(x * n_skip_frame)] == INTV:
                 img = process_image(rollout_array, (100, 100), highlight=True)
+            elif x in failure_timesteps:
+                img = process_image(rollout_array, (100, 100), highlight=True, color=[0, 0, 0])
             else:
                 img = process_image(rollout_array, (100, 100), highlight=False)
             img = np.array(img)
@@ -307,6 +330,7 @@ if __name__ == '__main__':
     parser.add_argument('-save', '--save_path', type=str, required=True)
     parser.add_argument('-ckpt', '--checkpoint_path', type=str, required=True)
     parser.add_argument('-skip', '--skip_frame', type=int, required=True)
+    parser.add_argument('-win', '--window_size', type=int, default=15)
     args = parser.parse_args()
     
     os.environ["MASTER_ADDR"] = "localhost"

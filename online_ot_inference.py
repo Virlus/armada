@@ -91,7 +91,8 @@ def main(args):
         episode_start = replay_buffer.episode_ends[i-1] if i > 0 else 0
         if np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == HUMAN):
             human_demo_indices.append(i)
-        elif np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == INTV):
+        # elif np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == INTV):
+        else:
             rollout_indices.append(i)
             
     human_init_latent = torch.zeros((len(human_demo_indices), int(To*obs_feature_dim)), device=device)

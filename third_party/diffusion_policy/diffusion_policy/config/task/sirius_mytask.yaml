@@ -1,4 +1,4 @@
-name: pouring_dino_base_sirius
+name: pouring_sirius
 
 image_shape: [3, 224, 224]
 dataset_path: /data/yuwenye/human-in-the-loop/data/0518_pour_cluttered_50_sirius_round1_2

@@ -1,4 +1,4 @@
-name: pouring_dino_base_ot_reweighted
+name: pouring_ot_reweighted
 
 image_shape: [3, 224, 224]
 dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0518_pour_cluttered_50_sirius_round1_2_ot_reweighted

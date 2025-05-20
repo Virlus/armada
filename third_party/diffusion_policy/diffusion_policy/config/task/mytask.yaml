@@ -1,4 +1,4 @@
-name: pouring_dino_base_full
+name: pouring_full
 
 image_shape: [3, 224, 224]
 dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0518_pour_full_100

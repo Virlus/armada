@@ -1,7 +1,7 @@
-name: pouring_dino_base_wo_wrist_crop_dino_head
+name: pouring_dino_base_full
 
 image_shape: [3, 224, 224]
-dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0514_pour
+dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0518_pour_full_100
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
@@ -32,7 +32,7 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.mydataset.MyDataset
-  zarr_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0514_pour/replay_buffer.zarr
+  zarr_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0518_pour_full_100/replay_buffer.zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}

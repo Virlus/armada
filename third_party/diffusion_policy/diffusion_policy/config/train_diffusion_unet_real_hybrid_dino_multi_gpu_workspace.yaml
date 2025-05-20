@@ -6,7 +6,7 @@ device_ids: '0,1,2,3'
 output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
 
 name: train_diffusion_unet_hybrid_multi_gpu
-_target_: diffusion_policy.workspace.train_diffusion_unet_real_hybrid_dino_multi_gpu_workspace.TrainDiffusionUnetHybridDinoMultiGPUWorkspace
+_target_: diffusion_policy.workspace.train_diffusion_unet_hybrid_dino_multi_gpu_workspace.TrainDiffusionUnetHybridDinoMultiGPUWorkspace
 
 task_name: ${task.name}
 shape_meta: ${task.shape_meta}

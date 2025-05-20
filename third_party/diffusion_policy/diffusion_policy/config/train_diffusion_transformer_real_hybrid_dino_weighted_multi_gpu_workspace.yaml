@@ -5,8 +5,8 @@ defaults:
 device_ids: '0,1,2,3'
 output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
 
-name: train_diffusion_transformer_hybrid_weighted_multi_gpu
-_target_: diffusion_policy.workspace.train_diffusion_transformer_hybrid_weighted_multi_gpu_workspace.TrainDiffusionTransformerHybridWeightedMultiGPUWorkspace
+name: train_diffusion_transformer_hybrid_dino_weighted_multi_gpu
+_target_: diffusion_policy.workspace.train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_workspace.TrainDiffusionTransformerHybridDinoWeightedMultiGPUWorkspace
 
 task_name: ${task.name}
 shape_meta: ${task.shape_meta}
@@ -22,7 +22,7 @@ keypoint_visible_rate: 1.0
 obs_as_cond: True
 
 policy:
-  _target_: diffusion_policy.policy.diffusion_transformer_hybrid_image_policy.DiffusionTransformerHybridImagePolicy
+  _target_: diffusion_policy.policy.diffusion_transformer_hybrid_dinov2_policy.DiffusionTransformerHybridDinov2Policy
 
   shape_meta: ${shape_meta}
   
@@ -39,14 +39,25 @@ policy:
     steps_offset: 0
     prediction_type: epsilon # or sample
 
+  obs_encoder:
+    _target_: diffusion_policy.model.hybrid.dinov2_obs_encoder.Dinov2ObsEncoder
+    img_size: 518
+    patch_size: 14
+    init_values: 1.0
+    ffn_layer: mlp
+    block_chunks: 0
+    num_register_tokens: 4
+    interpolate_antialias: True
+    interpolate_offset: 0.0
+    proprio_shape: ${shape_meta.obs.ee_pose.shape}
+    pretrained_path: null
+
   horizon: ${horizon}
   n_action_steps: ${eval:'${n_action_steps}+${n_latency_steps}'}
   n_obs_steps: ${n_obs_steps}
   num_inference_steps: 100
 
-  crop_shape: [216, 288]
-  obs_encoder_group_norm: True
-  eval_fixed_crop: True
+  crop_shape: [224, 224]
 
   n_layer: 8
   n_cond_layers: 0  # >0: use transformer encoder for cond, otherwise use MLP
@@ -71,7 +82,7 @@ ema:
   max_value: 0.9999
 
 dataloader:
-  batch_size: 128
+  batch_size: 64
   num_workers: 4
   # shuffle: True
   pin_memory: True
@@ -80,7 +91,7 @@ dataloader:
   drop_last: False
 
 val_dataloader:
-  batch_size: 128
+  batch_size: 64
   num_workers: 4
   # shuffle: False
   pin_memory: True
@@ -91,7 +102,7 @@ val_dataloader:
 optimizer:
   transformer_weight_decay: 1.0e-3
   obs_encoder_weight_decay: 1.0e-6
-  learning_rate: 3.0e-5
+  learning_rate: 1.0e-4
   betas: [0.9, 0.95]
 
 training:
@@ -99,7 +110,7 @@ training:
   seed: 42
   debug: False
   resume: True
-  resume_path: outputs/0305_14.10.45_train_diffusion_transformer_hybrid_multi_gpu_pouring
+  resume_path: outputs/2025.05.18/18.22.23_train_diffusion_transformer_hybrid_multi_gpu_pouring_dino_base_cluttered
   # optimization
   lr_scheduler: cosine
   # Transformer needs LR warmup

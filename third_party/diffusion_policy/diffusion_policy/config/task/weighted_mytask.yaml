@@ -1,7 +1,7 @@
-name: pouring_ot_latest
+name: pouring_dino_base_ot_reweighted
 
-image_shape: [3, 240, 320]
-dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0305_pour_sirius_round1_4_ot_reweighted_latest
+image_shape: [3, 224, 224]
+dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0518_pour_cluttered_50_sirius_round1_2_ot_reweighted
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
@@ -32,7 +32,7 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.weighted_mydataset.WeightedMyDataset
-  zarr_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0305_pour_sirius_round1_4_ot_reweighted_latest/replay_buffer.zarr
+  zarr_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0518_pour_cluttered_50_sirius_round1_2_ot_reweighted/replay_buffer.zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}
@@ -43,3 +43,5 @@ dataset:
   n_obs_steps: ${n_obs_steps}
   shape_meta: ${shape_meta}
   max_n_episodes: 150
+  random_crop: True
+  image_shape: ${task.image_shape}

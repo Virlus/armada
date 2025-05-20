@@ -41,6 +41,11 @@ def main(args):
     # Load the current checkpoint
     payload = torch.load(open(args.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
+    
+    # Prevent repeated loading of pretrained models
+    if 'obs_encoder' in cfg.policy:
+        cfg.policy.obs_encoder.pretrained_path = None
+    
     cls = hydra.utils.get_class(cfg._target_)
     workspace = cls(cfg, rank, world_size, device_id, device)
     # workspace = cls(cfg)
@@ -72,7 +77,8 @@ def main(args):
         episode_start = replay_buffer.episode_ends[i-1] if i > 0 else 0
         if np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == HUMAN):
             human_demo_indices.append(i)
-        elif np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == INTV):
+        # elif np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == INTV):
+        else:
             rollout_indices.append(i)
             
     human_init_latent = torch.zeros((len(human_demo_indices), int(To*obs_feature_dim)), device=device)
@@ -93,8 +99,10 @@ def main(args):
             'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
             'ee_pose': eps_state[indices, :].unsqueeze(0)
         }
-        obs_features = policy.extract_latent(obs_dict)
-        human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
+        
+        with torch.no_grad():
+            obs_features = policy.extract_latent(obs_dict)
+            human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
         
         human_episode['action_weight'] = np.ones(human_episode['action'].shape[0])
         save_buffer.add_episode(human_episode)
@@ -115,10 +123,11 @@ def main(args):
             'ee_pose': eps_state[indices, :].unsqueeze(0)
         }
 
-        obs_features = policy.extract_latent(obs_dict)
-        rollout_init_latent[j] = obs_features.squeeze(0).reshape(-1)
+        with torch.no_grad():
+            obs_features = policy.extract_latent(obs_dict)
+            rollout_init_latent[j] = obs_features.squeeze(0).reshape(-1)
     
-    dist_mat = euclidean_distance(human_init_latent, rollout_init_latent)
+    dist_mat = cosine_distance(human_init_latent, rollout_init_latent)
     dist_mat = dist_mat.to(device).detach()
     human_corr_indices = torch.argmin(dist_mat, dim=0)
     
@@ -133,10 +142,10 @@ def main(args):
         eps_state[:, :3] = human_episode['tcp_pose'][:, :3]
         eps_state[:, 3:] = obs_rot_transformer.forward(human_episode['tcp_pose'][:, 3:])
         eps_state = (torch.from_numpy(eps_state)).to(device)
-        rollout_len = human_episode['action'].shape[0]
-        human_latent = torch.zeros((rollout_len // n_skip_frame, int(To*obs_feature_dim)), device=device)
+        demo_len = human_episode['action'].shape[0]
+        human_latent = torch.zeros((demo_len // n_skip_frame, int(To*obs_feature_dim)), device=device)
         
-        for idx in range(rollout_len // n_skip_frame):
+        for idx in range(demo_len // n_skip_frame):
             episode_idx = idx * n_skip_frame
             if episode_idx < To - 1:
                 indices = [0] * (To-1-episode_idx) + list(range(episode_idx+1))
@@ -152,8 +161,9 @@ def main(args):
                     'ee_pose': eps_state[episode_idx-To+1: episode_idx+1, :].unsqueeze(0)
                 }
 
-            obs_features = policy.extract_latent(obs_dict)
-            human_latent[idx] = obs_features.squeeze(0).reshape(-1)
+            with torch.no_grad():
+                obs_features = policy.extract_latent(obs_dict)
+                human_latent[idx] = obs_features.squeeze(0).reshape(-1)
             
         eps_side_img = (torch.from_numpy(rollout_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
         eps_wrist_img = (torch.from_numpy(rollout_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
@@ -180,10 +190,11 @@ def main(args):
                     'ee_pose': eps_state[episode_idx-To+1: episode_idx+1, :].unsqueeze(0)
                 }
 
-            obs_features = policy.extract_latent(obs_dict)
-            rollout_latent[idx] = obs_features.squeeze(0).reshape(-1)
+            with torch.no_grad():
+                obs_features = policy.extract_latent(obs_dict)
+                rollout_latent[idx] = obs_features.squeeze(0).reshape(-1)
             
-        dist_mat = euclidean_distance(human_latent, rollout_latent)
+        dist_mat = cosine_distance(human_latent, rollout_latent)
         dist_mat = dist_mat.to(device).detach()
         ot_res = optimal_transport_plan(human_latent, rollout_latent, dist_mat)
         ot_cost = torch.sum(ot_res * dist_mat, dim=0)
@@ -193,7 +204,7 @@ def main(args):
         
         # Compute the target weight (need to think over this)
         target_weight = np.exp(ot_cost / args.temperature)
-        target_weight = np.where(rollout_episode['action_mode'] == PRE_INTV, 0, target_weight) # Ignoring the pre-intervention samples
+        # target_weight = np.where(rollout_episode['action_mode'] == PRE_INTV, 0, target_weight) # Ignoring the pre-intervention samples
         target_weight = target_weight / np.mean(target_weight) # Ensures a valid target distribution
         original_rollout_eps = replay_buffer.get_episode(rollout_indices[k])
         original_rollout_eps['action_weight'] = target_weight

@@ -4,9 +4,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from typing import Dict
 import torch
+import torchvision.transforms as transforms
 import numpy as np
 import copy
-from diffusion_policy.common.pytorch_util import dict_apply
+from diffusion_policy.common.pytorch_util import dict_apply, dict_apply_with_key
 from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.sampler import (
     SequenceSampler, get_val_mask, downsample_mask)
@@ -35,7 +36,9 @@ class SiriusMyDataset(BaseImageDataset):
             rel_ee_pose=False,
             n_obs_steps=1,
             shape_meta=None,
-            max_n_episodes=150
+            max_n_episodes=150,
+            random_crop=False,
+            image_shape=(3, 240, 320),
             ):
         
         super().__init__()
@@ -78,6 +81,14 @@ class SiriusMyDataset(BaseImageDataset):
             if 'rotation_rep' in shape_meta['obs']['ee_pose']:
                 self.obs_rot_transformer = RotationTransformer(from_rep='quaternion', to_rep=shape_meta['obs']['ee_pose']['rotation_rep'])
 
+        if random_crop:
+            self.crop_randomizer = transforms.Compose([
+                transforms.Resize((image_shape[1]+8, image_shape[2]+8), interpolation=transforms.InterpolationMode.BICUBIC),
+                transforms.RandomCrop((image_shape[1], image_shape[2]))
+            ])
+        else:
+            self.crop_randomizer = None
+        
         # Currently we only support multiple observation steps
         assert self.n_obs_steps > 1
         
@@ -280,10 +291,14 @@ class SiriusMyDataset(BaseImageDataset):
 
         return data
     
+    def _image_postprocess(self, img):
+        return self.crop_randomizer(img) if self.crop_randomizer is not None else img
+    
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.sampler.sample_sequence(idx)
         data = self._sample_to_data(sample)
         torch_data = dict_apply(data, torch.from_numpy)
+        torch_data = dict_apply_with_key(torch_data, self._image_postprocess, ['side_img'])
         return torch_data
 
 

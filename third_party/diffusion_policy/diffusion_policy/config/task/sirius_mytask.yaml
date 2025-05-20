@@ -1,7 +1,7 @@
-name: pouring_sirius_full
+name: pouring_dino_base_sirius
 
-image_shape: [3, 240, 320]
-dataset_path: /data/yuwenye/human-in-the-loop/data/0305_pour_sirius_round1_4
+image_shape: [3, 224, 224]
+dataset_path: /data/yuwenye/human-in-the-loop/data/0518_pour_cluttered_50_sirius_round1_2
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
@@ -32,7 +32,7 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.sirius_mydataset.SiriusMyDataset
-  zarr_path: /data/yuwenye/human-in-the-loop/data/0305_pour_sirius_round1_4/replay_buffer.zarr
+  zarr_path: /data/yuwenye/human-in-the-loop/data/0518_pour_cluttered_50_sirius_round1_2/replay_buffer.zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}
@@ -43,3 +43,5 @@ dataset:
   n_obs_steps: ${n_obs_steps}
   shape_meta: ${shape_meta}
   max_n_episodes: 150
+  random_crop: True
+  image_shape: ${task.image_shape}

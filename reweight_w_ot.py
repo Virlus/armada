@@ -200,7 +200,7 @@ def main(args):
         ot_cost = torch.sum(ot_res * dist_mat, dim=0)
         ot_cost = ot_cost.detach().cpu().numpy()
         ot_cost = np.concatenate((np.repeat(ot_cost, n_skip_frame), np.ones(rollout_len - len(ot_cost) * n_skip_frame) * ot_cost[-1]), axis=0) 
-        ot_cost = np.where(rollout_episode['action_mode'] == INTV, ot_cost, -ot_cost)
+        ot_cost = np.where(rollout_episode['action_mode'] == PRE_INTV, -ot_cost, ot_cost) # All meaningful(high OT cost) rollout samples and human interventions should be emphasized
         
         # Compute the target weight (need to think over this)
         target_weight = np.exp(ot_cost / args.temperature)

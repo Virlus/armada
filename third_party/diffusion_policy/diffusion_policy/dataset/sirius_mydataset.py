@@ -42,8 +42,9 @@ class SiriusMyDataset(BaseImageDataset):
             ):
         
         super().__init__()
-        self.replay_buffer = ReplayBuffer.copy_from_path(
-            zarr_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose', 'action_mode'])
+        # self.replay_buffer = ReplayBuffer.copy_from_path(
+        #     zarr_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose', 'action_mode'])
+        self.replay_buffer = ReplayBuffer.copy_from_path(zarr_path) # Copy all existing keys
         # Memory reduction mechanism from Sirius
         self._prune_episodes(max_n_episodes=max_n_episodes)
         val_mask = get_val_mask(
@@ -276,6 +277,9 @@ class SiriusMyDataset(BaseImageDataset):
             for mode, weight in self.reweigh_dict.items():
                 sample_weight = np.where(sample_action_mode == mode, weight, sample_weight)
             
+            if 'action_weight' in sample:
+                sample_weight = sample_weight * sample['action_weight'] # Cumulative importance sampling
+            
             data = {
                 'obs': {
                     'wrist_img': wrist_img, # T, 3, 480, 640
@@ -305,15 +309,15 @@ class SiriusMyDataset(BaseImageDataset):
 def test():
     import os
     from PIL import Image
-    zarr_path = os.path.expanduser('/data/yuwenye/human-in-the-loop/data/0305_pour_sirius_round1_4/replay_buffer.zarr')
+    zarr_path = os.path.expanduser('/home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0518_pour_cluttered_50_sirius_round1_3_ot_reweighted/replay_buffer.zarr')
     shape_meta = {
         'obs':{
             'wrist_img':{
-                'shape': [3, 240, 320],
+                'shape': [3, 224, 224],
                 'type': 'rgb'
             },
             'side_img':{
-                'shape': [3, 240, 320],
+                'shape': [3, 224, 224],
                 'type': 'rgb'
             },
             'ee_pose':{
@@ -327,9 +331,11 @@ def test():
             'rotation_rep': 'rotation_6d'
         }
     }
-    dataset = SiriusMyDataset(zarr_path, horizon=16, rel_ee_pose=False, n_obs_steps=2, shape_meta=shape_meta, max_n_episodes=100)
+    dataset = SiriusMyDataset(zarr_path, horizon=16, rel_ee_pose=False, n_obs_steps=2, shape_meta=shape_meta, \
+        max_n_episodes=100, random_crop=True, image_shape=(3, 224, 224))
     dataset.get_normalizer()
-    import pdb; pdb.set_trace()
+    for i in range(len(dataset)):
+        sample_batch = dataset[i]
 
 if __name__ == '__main__':
     test()

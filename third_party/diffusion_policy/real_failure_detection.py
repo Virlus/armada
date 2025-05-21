@@ -245,43 +245,8 @@ def main(rank, eval_cfg, device_ids):
                 policy_img_1_history[idx] = policy_img_1
                 policy_state_history[idx] = state
 
-            curr_obs = {
-                'side_img': policy_img_0_history.unsqueeze(0),
-                'wrist_img': policy_img_1_history.unsqueeze(0),
-                state_type: policy_state_history.unsqueeze(0)
-            }
-
-            # Predict qpos actions
-            initial_actions = policy.predict_action(curr_obs)
-            np_action_dict = dict_apply(initial_actions, lambda x: x.detach().to('cpu').numpy())
-            action_seq = np_action_dict['action'][0]
-
             # Initialize the action buffer
-            last_predicted_abs_actions = np.zeros_like(action_seq[:, :8])
-
-            # Keep track of pose from the last frame for relative action space
-            if eval_cfg.random_init:
-                last_p = random_init_pose[:3]
-                last_r = R.from_quat(random_init_pose[3:7], scalar_first=True)
-            else:
-                last_p = robot.init_pose[:3]
-                last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
-
-            tmp_last_p = last_p
-            tmp_last_r = last_r
-            
-            # Predict the entier action chunk for failure detection
-            for step in range(policy.n_action_steps):
-                tmp_p_action = action_seq[step, :3]
-                tmp_curr_p = tmp_last_p + tmp_p_action
-                tmp_r_action = action_rot_transformer.inverse(action_seq[step, 3:action_dim-1])
-                action_rot = R.from_quat(tmp_r_action, scalar_first=True)
-                tmp_curr_r = tmp_last_r * action_rot
-                tmp_last_p = tmp_curr_p
-                tmp_last_r = tmp_curr_r
-                demo_gripper_action = action_seq[step, -1]
-                deployed_action = np.concatenate((tmp_curr_p, tmp_curr_r.as_quat(scalar_first=True), [demo_gripper_action]), 0)
-                last_predicted_abs_actions[step] = deployed_action
+            last_predicted_abs_actions = None
             
             # Keep track of throttle usage for human intervention (Default to True because the teleop should follow up from arbitrary pose)
             last_throttle = True
@@ -399,6 +364,8 @@ def main(rank, eval_cfg, device_ids):
                         deployed_action = np.concatenate((tmp_curr_p, tmp_curr_r.as_quat(scalar_first=True), [demo_gripper_action]), 0)
                         predicted_abs_actions[step] = deployed_action
 
+                    if last_predicted_abs_actions is None:
+                        last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[:-Ta]), 0) # Prevent anomalous value in the beginning
                     action_inconsistency = np.linalg.norm(predicted_abs_actions[:-Ta] - last_predicted_abs_actions[Ta:])
                     last_predicted_abs_actions = predicted_abs_actions
                     action_inconsistency_buffer.extend([action_inconsistency] * Ta)

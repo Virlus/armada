@@ -1,0 +1,11 @@
+device_ids: '0'
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0518_18.22.23_train_diffusion_transformer_hybrid_multi_gpu_pouring_dino_base_cluttered/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/0518_pour_cluttered_50
+save_buffer_path: /mnt/workspace/DP/0518_pour_cluttered_50_failure_detection_round1_1
+output_dir: outputs/
+
+Ta: 6
+random_init: True
+
+policy:
+  num_inference_steps: 8

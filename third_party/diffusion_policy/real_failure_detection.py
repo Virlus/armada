@@ -79,10 +79,6 @@ def main(rank, eval_cfg, device_ids):
     device = f"cuda:{device_id}"
     torch.distributed.init_process_group("nccl", rank=rank, world_size=world_size)
 
-    # Random seed 
-    seed = int(time.time())
-    np.random.seed(seed)
-
     # load checkpoint
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
@@ -143,12 +139,13 @@ def main(rank, eval_cfg, device_ids):
     ])
     wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
 
-    # Overwritten by evaluation config specifically
+    # Random seed for every rollout
     seed = int(time.time())
     np.random.seed(seed)
 
     assert eval_cfg.Ta <= Ta
     Ta = eval_cfg.Ta
+    ot_weight = eval_cfg.ot_weight
     
     # Inspect the current round (Sirius-specific)
     match_round = re.search(r'round(\d)', eval_cfg.save_buffer_path)
@@ -167,7 +164,7 @@ def main(rank, eval_cfg, device_ids):
     # Initialize demonstration buffer
     zarr_path = os.path.join(eval_cfg.train_dataset_path, 'replay_buffer.zarr')
     dataset_keys = ['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose']
-    if 'sirius' in eval_cfg.train_dataset_path:
+    if 'round' in eval_cfg.train_dataset_path:
         dataset_keys.append('action_mode')
         replay_buffer = ReplayBuffer.copy_from_path(zarr_path, keys=dataset_keys)
     else:
@@ -205,7 +202,7 @@ def main(rank, eval_cfg, device_ids):
 
     # Evaluation starts here
     episode_idx = 0
-    max_episode_length = 600
+    max_episode_length = 300
     # episode_list = [x for x in range(eval_cfg.num_episode) if (x + 1) % world_size == rank]
 
     os.makedirs(eval_cfg.save_buffer_path, exist_ok=True)
@@ -310,9 +307,9 @@ def main(rank, eval_cfg, device_ids):
             human_latent = torch.zeros((demo_len // Ta, int(To*obs_feature_dim)), device=device)
             
             for idx in range(demo_len // Ta):
-                episode_idx = idx * Ta
-                if episode_idx < To - 1:
-                    indices = [0] * (To-1-episode_idx) + list(range(episode_idx+1))
+                human_demo_idx = idx * Ta
+                if human_demo_idx < To - 1:
+                    indices = [0] * (To-1-human_demo_idx) + list(range(human_demo_idx+1))
                     obs_dict = {
                         'side_img': eps_side_img[indices, :].unsqueeze(0),
                         'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
@@ -320,9 +317,9 @@ def main(rank, eval_cfg, device_ids):
                     }
                 else:
                     obs_dict = {
-                        'side_img': eps_side_img[episode_idx-To+1: episode_idx+1, :].unsqueeze(0),
-                        'wrist_img': eps_wrist_img[episode_idx-To+1: episode_idx+1, :].unsqueeze(0), 
-                        'ee_pose': eps_state[episode_idx-To+1: episode_idx+1, :].unsqueeze(0)
+                        'side_img': eps_side_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0),
+                        'wrist_img': eps_wrist_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0), 
+                        'ee_pose': eps_state[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0)
                     }
 
                 with torch.no_grad():
@@ -591,12 +588,12 @@ def main(rank, eval_cfg, device_ids):
                     joint_pos.append(jointPose)
                     action.append(np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])))
                     action_mode.append(INTV)
-                    action_inconsistency_buffer.append(action_inconsistency)
 
                     time.sleep(max(1 / fps - (time.time() - start_time), 0))
                     j += 1
 
                     if j % Ta == 0: # Maintain Optimal Transport calculation during human intervention
+                        action_inconsistency_buffer.extend([0] * Ta)
                         rollout_weight = float(1. / (max_episode_length // Ta))
                         curr_obs = {
                             'side_img': policy_img_0_history.unsqueeze(0),
@@ -661,11 +658,13 @@ def main(rank, eval_cfg, device_ids):
                     action_inconsistency_buffer = np.array(action_inconsistency_buffer)
                     ot_cost_final = greedy_ot_cost[:len(action_inconsistency_buffer)//Ta].detach().cpu().numpy()
                     cell_size = 1
-                    fig = plt.figure(figsize=(episode['wrist_cam'].shape[0] // Ta * cell_size, 2 * cell_size+1))
-                    gs = plt.GridSpec(2, 1, height_ratios=[0.5, 0.5], hspace=0.8)
+                    fig = plt.figure(figsize=(episode['wrist_cam'].shape[0] // Ta * cell_size, 3 * cell_size+2))
+                    gs = plt.GridSpec(3, 1, height_ratios=[0.33, 0.33, 0.33], hspace=0.8)
                     # ax = fig.add_subplot(111)
                     action_ax = fig.add_subplot(gs[0])
                     ot_ax = fig.add_subplot(gs[1])
+                    final_ax = fig.add_subplot(gs[2])
+
                     im = action_ax.imshow(action_inconsistency_buffer[::Ta].reshape(1, -1), cmap='plasma', aspect='auto')
                     action_ax.set_xticks([])
                     action_ax.set_yticks([])
@@ -675,8 +674,15 @@ def main(rank, eval_cfg, device_ids):
                     ot_ax.set_xticks([])
                     ot_ax.set_yticks([])
                     plt.colorbar(im, ax=ot_ax, shrink=0.9)
+
+                    im = final_ax.imshow((ot_cost_final * ot_weight + action_inconsistency_buffer[::Ta]).reshape(1, -1), cmap='magma', aspect='auto')
+                    final_ax.set_xticks([])
+                    final_ax.set_yticks([])
+                    plt.colorbar(im, ax=final_ax, shrink=0.9)
+
                     action_ax.set_title('Action Inconsistency')
                     ot_ax.set_title('OT Cost')
+                    final_ax.set_title('Failure index')
                     for x in range(action_inconsistency_buffer.shape[0]//Ta):
                         rollout_array = episode['side_cam'][int(x * Ta)]
                         if episode['action_mode'][int(x * Ta)] == INTV:
@@ -685,14 +691,14 @@ def main(rank, eval_cfg, device_ids):
                             img = process_image(rollout_array, (100, 100), highlight=False)
                         img = np.array(img)
                         imagebox = OffsetImage(img, zoom=1)
-                        trans = BlendedGenericTransform(ot_ax.transData, ot_ax.transAxes)
+                        trans = BlendedGenericTransform(final_ax.transData, final_ax.transAxes)
                         box_alignment = (0.5, 1.0)
                         ab = AnnotationBbox(imagebox, (x, -0.05), xycoords=trans, frameon=False,
                                             box_alignment=box_alignment, pad=0)
-                        ot_ax.add_artist(ab)
+                        final_ax.add_artist(ab)
 
-                    ot_ax.set_xlim(-0.5, action_inconsistency_buffer.shape[0]//Ta-0.5)
-                    ot_ax.set_ylim(-0.5, 0.5)
+                    final_ax.set_xlim(-0.5, action_inconsistency_buffer.shape[0]//Ta-0.5)
+                    final_ax.set_ylim(-0.5, 0.5)
                     plt.savefig(f'{eval_cfg.save_buffer_path}/episode_{episode_id}.png', bbox_inches='tight')
                     break
 

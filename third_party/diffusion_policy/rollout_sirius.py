@@ -143,7 +143,7 @@ def main(rank, eval_cfg, device_ids):
     # Initialize demonstration buffer
     zarr_path = os.path.join(eval_cfg.train_dataset_path, 'replay_buffer.zarr')
     dataset_keys = ['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose']
-    if 'sirius' in eval_cfg.train_dataset_path:
+    if 'round' in eval_cfg.train_dataset_path:
         dataset_keys.append('action_mode')
         replay_buffer = ReplayBuffer.copy_from_path(zarr_path, keys=dataset_keys)
     else:

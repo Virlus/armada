@@ -496,6 +496,16 @@ def main(rank, eval_cfg, device_ids):
                                 expert_indices = tensor_delete(expert_indices, nearest_expert)
                                 dist2expert = tensor_delete(dist2expert, nearest_expert)
 
+                    # Check if the failure index exceeds the threshold
+                    if action_inconsistency + ot_weight * greedy_ot_cost[idx] > eval_cfg.failure_threshold:
+                        print("Failure detected!")
+                        while not keyboard.ctn and not keyboard.discard and not keyboard.help:
+                            time.sleep(0.1)
+                        if keyboard.ctn:
+                            print("Not a failure! Continue policy rollout.")
+                            keyboard.ctn = False
+                            continue
+
                 # Reset the signal of request for help 
                 keyboard.help = False
                 # Compensate for the transformation of robot tcp pose during sigma detachment

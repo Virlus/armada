@@ -8,6 +8,7 @@ Ta: 10
 random_init: True
 
 ot_weight: 1.0
+failure_threshold: 0.03
 
 policy:
   num_inference_steps: 8

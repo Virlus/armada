@@ -4,7 +4,7 @@ train_dataset_path: /mnt/workspace/DP/0518_pour_cluttered_50
 save_buffer_path: /mnt/workspace/DP/0518_pour_cluttered_50_failure_detection_round1_1
 output_dir: outputs/
 
-Ta: 6
+Ta: 10
 random_init: True
 
 policy:

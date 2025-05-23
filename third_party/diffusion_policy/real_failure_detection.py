@@ -19,6 +19,7 @@ from torchvision.transforms import InterpolationMode
 import pygame
 from PIL import Image
 import matplotlib.pyplot as plt
+import tqdm
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.transforms import BlendedGenericTransform
 
@@ -32,6 +33,8 @@ from hardware.my_device.camera import CameraD400
 from hardware.my_device.keyboard import Keyboard
 from hardware.my_device.sigma import Sigma7
 from hardware.my_device.logitechG29_wheel import Controller
+
+from util.ot_util import *
 
 camera_serial = ["135122075425", "135122070361"]
 
@@ -62,8 +65,12 @@ def postprocess_action_mode(action_mode: np.ndarray):
             pre_intv_indices = np.arange(max(0, i-INTV_STEPS), i)
             pre_intv_indices = pre_intv_indices[np.where(action_mode[pre_intv_indices] == INTV, False, True)]
             action_mode[pre_intv_indices] = PRE_INTV
-
     return action_mode
+
+def tensor_delete(tensor, indices):
+    mask = torch.ones(tensor.numel(), dtype=torch.bool)
+    mask[indices] = False
+    return tensor[mask]
 
 def main(rank, eval_cfg, device_ids):
     fps = 10  # TODO
@@ -79,7 +86,6 @@ def main(rank, eval_cfg, device_ids):
     # load checkpoint
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
-    # cfg.shape_meta = eval_cfg.shape_meta # Hacked for the same reason as above
 
     # rotation transformation for action space and observation space
     action_dim = cfg.shape_meta['action']['shape'][0]
@@ -122,6 +128,7 @@ def main(rank, eval_cfg, device_ids):
     # Extract some hyperparameters from the config
     To = policy.n_obs_steps
     Ta = policy.n_action_steps
+    obs_feature_dim = policy.obs_feature_dim
     img_shape = cfg.task['shape_meta']['obs']['wrist_img']['shape']
     if 'ee_pose' in cfg.shape_meta['obs']:
         state_shape = cfg.task['shape_meta']['obs']['ee_pose']['shape']
@@ -139,6 +146,8 @@ def main(rank, eval_cfg, device_ids):
     # Overwritten by evaluation config specifically
     seed = int(time.time())
     np.random.seed(seed)
+
+    assert eval_cfg.Ta <= Ta
     Ta = eval_cfg.Ta
     
     # Inspect the current round (Sirius-specific)
@@ -164,6 +173,35 @@ def main(rank, eval_cfg, device_ids):
     else:
         replay_buffer = ReplayBuffer.copy_from_path(zarr_path, keys=dataset_keys)
         replay_buffer.data['action_mode'] = np.full((replay_buffer.n_steps, ), HUMAN)
+
+    # Distinguish original human demonstrations from rollouts with human intervention
+    human_demo_indices = []
+    for i in range(replay_buffer.n_episodes):
+        episode_start = replay_buffer.episode_ends[i-1] if i > 0 else 0
+        if np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == HUMAN):
+            human_demo_indices.append(i)
+            
+    human_init_latent = torch.zeros((len(human_demo_indices), int(To*obs_feature_dim)), device=device)
+
+    for i in tqdm.tqdm(human_demo_indices, desc="Obtaining latent for human demo"):
+        human_episode = replay_buffer.get_episode(i)
+        eps_side_img = (torch.from_numpy(human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
+        eps_wrist_img = (torch.from_numpy(human_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
+        eps_state = np.zeros((human_episode['tcp_pose'].shape[0], ee_pose_dim))
+        eps_state[:, :3] = human_episode['tcp_pose'][:, :3]
+        eps_state[:, 3:] = obs_rot_transformer.forward(human_episode['tcp_pose'][:, 3:])
+        eps_state = (torch.from_numpy(eps_state)).to(device)
+        
+        indices = [0] * To
+        obs_dict = {
+            'side_img': eps_side_img[indices, :].unsqueeze(0),
+            'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
+            'ee_pose': eps_state[indices, :].unsqueeze(0)
+        }
+        
+        with torch.no_grad():
+            obs_features = policy.extract_latent(obs_dict)
+            human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
 
     # Evaluation starts here
     episode_idx = 0
@@ -245,6 +283,58 @@ def main(rank, eval_cfg, device_ids):
                 policy_img_1_history[idx] = policy_img_1
                 policy_state_history[idx] = state
 
+            # Match the current rollout with the closest expert episode by initial visual latent vector
+            curr_obs = {
+                'side_img': policy_img_0_history.unsqueeze(0),
+                'wrist_img': policy_img_1_history.unsqueeze(0),
+                state_type: policy_state_history.unsqueeze(0)
+            }
+
+            with torch.no_grad():
+                obs_features = policy.extract_latent(curr_obs)
+                rollout_latent = obs_features.reshape(-1).unsqueeze(0)
+            
+            dist_mat = cosine_distance(human_init_latent, rollout_latent).to(device).detach()
+            matched_human_idx = human_demo_indices[torch.argmin(dist_mat, dim=0).item()]
+            matched_human_episode = replay_buffer.get_episode(matched_human_idx)
+
+            # Fetch the latent representations of the matched human episode
+
+            eps_side_img = (torch.from_numpy(matched_human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
+            eps_wrist_img = (torch.from_numpy(matched_human_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
+            eps_state = np.zeros((matched_human_episode['tcp_pose'].shape[0], ee_pose_dim))
+            eps_state[:, :3] = matched_human_episode['tcp_pose'][:, :3]
+            eps_state[:, 3:] = obs_rot_transformer.forward(matched_human_episode['tcp_pose'][:, 3:])
+            eps_state = (torch.from_numpy(eps_state)).to(device)
+            demo_len = matched_human_episode['action'].shape[0]
+            human_latent = torch.zeros((demo_len // Ta, int(To*obs_feature_dim)), device=device)
+            
+            for idx in range(demo_len // Ta):
+                episode_idx = idx * Ta
+                if episode_idx < To - 1:
+                    indices = [0] * (To-1-episode_idx) + list(range(episode_idx+1))
+                    obs_dict = {
+                        'side_img': eps_side_img[indices, :].unsqueeze(0),
+                        'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
+                        'ee_pose': eps_state[indices, :].unsqueeze(0)
+                    }
+                else:
+                    obs_dict = {
+                        'side_img': eps_side_img[episode_idx-To+1: episode_idx+1, :].unsqueeze(0),
+                        'wrist_img': eps_wrist_img[episode_idx-To+1: episode_idx+1, :].unsqueeze(0), 
+                        'ee_pose': eps_state[episode_idx-To+1: episode_idx+1, :].unsqueeze(0)
+                    }
+
+                with torch.no_grad():
+                    obs_features = policy.extract_latent(obs_dict)
+                    human_latent[idx] = obs_features.squeeze(0).reshape(-1)
+
+            # Initialize the rollout optimal transport components with an assumption of maximum episode length [Need verification]
+            expert_weight = torch.ones((demo_len // Ta,), device=device) / float(demo_len // Ta)
+            expert_indices = torch.arange(demo_len // Ta, device=device)
+            greedy_ot_plan = torch.zeros((demo_len // Ta, max_episode_length // Ta), device=device)
+            greedy_ot_cost = torch.zeros((max_episode_length // Ta,), device=device)
+
             # Keep track of pose from the last frame for relative action space
             if eval_cfg.random_init:
                 last_p = random_init_pose[:3]
@@ -307,8 +397,10 @@ def main(rank, eval_cfg, device_ids):
                         state_type: policy_state_history.unsqueeze(0)
                     }
 
-                    # Predict qpos actions
-                    curr_action = policy.predict_action(curr_obs)
+                    # Predict eef actions
+                    with torch.no_grad():
+                        curr_action = policy.predict_action(curr_obs)
+                        curr_latent = policy.extract_latent(curr_obs).reshape(-1)
                     np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
                     action_seq = np_action_dict['action'][0]
                     predicted_abs_actions = np.zeros_like(action_seq[:, :8])
@@ -360,7 +452,7 @@ def main(rank, eval_cfg, device_ids):
                     tmp_last_p = last_p
                     tmp_last_r = last_r
                     
-                    # Predict the entier action chunk for failure detection
+                    # Predict the entire action chunk for failure detection
                     for step in range(Ta, policy.n_action_steps):
                         tmp_p_action = action_seq[step, :3]
                         tmp_curr_p = tmp_last_p + tmp_p_action
@@ -373,11 +465,39 @@ def main(rank, eval_cfg, device_ids):
                         deployed_action = np.concatenate((tmp_curr_p, tmp_curr_r.as_quat(scalar_first=True), [demo_gripper_action]), 0)
                         predicted_abs_actions[step] = deployed_action
 
+                    # Calculate the action inconsistency
                     if last_predicted_abs_actions is None:
                         last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[:-Ta]), 0) # Prevent anomalous value in the beginning
                     action_inconsistency = np.linalg.norm(predicted_abs_actions[:-Ta] - last_predicted_abs_actions[Ta:])
                     last_predicted_abs_actions = predicted_abs_actions
                     action_inconsistency_buffer.extend([action_inconsistency] * Ta)
+
+                    # Calculate the Optimal Transport plan
+                    rollout_weight = float(1. / (max_episode_length // Ta))
+                    dist2expert = cosine_distance(human_latent[expert_indices], curr_latent.unsqueeze(0)).squeeze(-1)
+                    idx = j // Ta
+                    while rollout_weight > 0:
+                        if dist2expert.shape[0] == 0:
+                            break
+                        nearest_expert = torch.argmin(dist2expert, dim=0)
+                        expert_index = expert_indices[nearest_expert]
+                        if expert_weight[nearest_expert] < rollout_weight:
+                            rollout_weight -= expert_weight[nearest_expert]
+                            greedy_ot_plan[expert_index, idx] += expert_weight[nearest_expert]
+                            greedy_ot_cost[idx] += expert_weight[nearest_expert] * dist2expert[nearest_expert]
+                            # Release related expert from the buffer
+                            expert_weight = tensor_delete(expert_weight, nearest_expert)
+                            expert_indices = tensor_delete(expert_indices, nearest_expert)
+                            dist2expert = tensor_delete(dist2expert, nearest_expert)
+                        else:
+                            greedy_ot_plan[expert_index, idx] += rollout_weight
+                            greedy_ot_cost[idx] += rollout_weight * dist2expert[nearest_expert]
+                            expert_weight[nearest_expert] -= rollout_weight
+                            rollout_weight = 0
+                            if expert_weight[nearest_expert] == 0:
+                                expert_weight = tensor_delete(expert_weight, nearest_expert)
+                                expert_indices = tensor_delete(expert_indices, nearest_expert)
+                                dist2expert = tensor_delete(dist2expert, nearest_expert)
 
                 # Reset the signal of request for help 
                 keyboard.help = False
@@ -476,6 +596,41 @@ def main(rank, eval_cfg, device_ids):
                     time.sleep(max(1 / fps - (time.time() - start_time), 0))
                     j += 1
 
+                    if j % Ta == 0: # Maintain Optimal Transport calculation during human intervention
+                        rollout_weight = float(1. / (max_episode_length // Ta))
+                        curr_obs = {
+                            'side_img': policy_img_0_history.unsqueeze(0),
+                            'wrist_img': policy_img_1_history.unsqueeze(0),
+                            state_type: policy_state_history.unsqueeze(0)
+                        }
+                        with torch.no_grad():
+                            curr_latent = policy.extract_latent(curr_obs).reshape(-1)
+                        dist2expert = cosine_distance(human_latent[expert_indices], curr_latent.unsqueeze(0)).squeeze(-1)
+                        idx = j // Ta
+                        while rollout_weight > 0:
+                            if dist2expert.shape[0] == 0:
+                                break
+                            nearest_expert = torch.argmin(dist2expert, dim=0)
+                            expert_index = expert_indices[nearest_expert]
+                            if expert_weight[nearest_expert] < rollout_weight:
+                                rollout_weight -= expert_weight[nearest_expert]
+                                greedy_ot_plan[expert_index, idx] += expert_weight[nearest_expert]
+                                greedy_ot_cost[idx] += expert_weight[nearest_expert] * dist2expert[nearest_expert]
+                                # Release related expert from the buffer
+                                expert_weight = tensor_delete(expert_weight, nearest_expert)
+                                expert_indices = tensor_delete(expert_indices, nearest_expert)
+                                dist2expert = tensor_delete(dist2expert, nearest_expert)
+                            else:
+                                greedy_ot_plan[expert_index, idx] += rollout_weight
+                                greedy_ot_cost[idx] += rollout_weight * dist2expert[nearest_expert]
+                                expert_weight[nearest_expert] -= rollout_weight
+                                rollout_weight = 0
+                                if expert_weight[nearest_expert] == 0:
+                                    expert_weight = tensor_delete(expert_weight, nearest_expert)
+                                    expert_indices = tensor_delete(expert_indices, nearest_expert)
+                                    dist2expert = tensor_delete(dist2expert, nearest_expert)
+
+
                 # Reset the signal of request for inference
                 keyboard.infer = False
                 # Detach the teleop device except when human intervention
@@ -501,14 +656,27 @@ def main(rank, eval_cfg, device_ids):
                     replay_buffer.add_episode(episode, compressors='disk')
                     episode_id = replay_buffer.n_episodes - 1
                     print('Saved episode ', episode_id)
+
+                    # Visualize action inconsistency and observation optimal transport cost
                     action_inconsistency_buffer = np.array(action_inconsistency_buffer)
+                    ot_cost_final = greedy_ot_cost[:len(action_inconsistency_buffer)//Ta].detach().cpu().numpy()
                     cell_size = 1
-                    fig = plt.figure(figsize=(episode['wrist_cam'].shape[0] // Ta * cell_size, cell_size))
-                    ax = fig.add_subplot(111)
-                    im = ax.imshow(action_inconsistency_buffer[::Ta].reshape(1, -1), cmap='plasma', aspect='auto')
-                    ax.set_xticks([])
-                    ax.set_yticks([])
-                    plt.colorbar(im, ax=ax, shrink=0.9)
+                    fig = plt.figure(figsize=(episode['wrist_cam'].shape[0] // Ta * cell_size, 2 * cell_size+1))
+                    gs = plt.GridSpec(2, 1, height_ratios=[0.5, 0.5], hspace=0.8)
+                    # ax = fig.add_subplot(111)
+                    action_ax = fig.add_subplot(gs[0])
+                    ot_ax = fig.add_subplot(gs[1])
+                    im = action_ax.imshow(action_inconsistency_buffer[::Ta].reshape(1, -1), cmap='plasma', aspect='auto')
+                    action_ax.set_xticks([])
+                    action_ax.set_yticks([])
+                    plt.colorbar(im, ax=action_ax, shrink=0.9)
+
+                    im = ot_ax.imshow(ot_cost_final.reshape(1, -1), cmap='cividis', aspect='auto')
+                    ot_ax.set_xticks([])
+                    ot_ax.set_yticks([])
+                    plt.colorbar(im, ax=ot_ax, shrink=0.9)
+                    action_ax.set_title('Action Inconsistency')
+                    ot_ax.set_title('OT Cost')
                     for x in range(action_inconsistency_buffer.shape[0]//Ta):
                         rollout_array = episode['side_cam'][int(x * Ta)]
                         if episode['action_mode'][int(x * Ta)] == INTV:
@@ -517,14 +685,14 @@ def main(rank, eval_cfg, device_ids):
                             img = process_image(rollout_array, (100, 100), highlight=False)
                         img = np.array(img)
                         imagebox = OffsetImage(img, zoom=1)
-                        trans = BlendedGenericTransform(ax.transData, ax.transAxes)
+                        trans = BlendedGenericTransform(ot_ax.transData, ot_ax.transAxes)
                         box_alignment = (0.5, 1.0)
                         ab = AnnotationBbox(imagebox, (x, -0.05), xycoords=trans, frameon=False,
                                             box_alignment=box_alignment, pad=0)
-                        ax.add_artist(ab)
+                        ot_ax.add_artist(ab)
 
-                    ax.set_xlim(-0.5, action_inconsistency_buffer.shape[0]//Ta-0.5)
-                    ax.set_ylim(-0.5, 0.5)
+                    ot_ax.set_xlim(-0.5, action_inconsistency_buffer.shape[0]//Ta-0.5)
+                    ot_ax.set_ylim(-0.5, 0.5)
                     plt.savefig(f'{eval_cfg.save_buffer_path}/episode_{episode_id}.png', bbox_inches='tight')
                     break
 

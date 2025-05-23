@@ -245,6 +245,14 @@ def main(rank, eval_cfg, device_ids):
                 policy_img_1_history[idx] = policy_img_1
                 policy_state_history[idx] = state
 
+            # Keep track of pose from the last frame for relative action space
+            if eval_cfg.random_init:
+                last_p = random_init_pose[:3]
+                last_r = R.from_quat(random_init_pose[3:7], scalar_first=True)
+            else:
+                last_p = robot.init_pose[:3]
+                last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
+
             # Initialize the action buffer
             last_predicted_abs_actions = None
             
@@ -260,6 +268,7 @@ def main(rank, eval_cfg, device_ids):
                 # ===========================================================
                 #                   Policy inference loop
                 # ===========================================================
+                last_predicted_abs_actions = None
                 print("=========== Policy inference ============")
                 while not keyboard.finish and not keyboard.discard and not keyboard.help:
                     if j >= max_episode_length:

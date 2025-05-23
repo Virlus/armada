@@ -468,7 +468,7 @@ def main(rank, eval_cfg, device_ids):
                     # Calculate the action inconsistency
                     if last_predicted_abs_actions is None:
                         last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[:-Ta]), 0) # Prevent anomalous value in the beginning
-                    action_inconsistency = np.linalg.norm(predicted_abs_actions[:-Ta] - last_predicted_abs_actions[Ta:])
+                    action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:-Ta] - last_predicted_abs_actions[Ta:], axis=-1))
                     last_predicted_abs_actions = predicted_abs_actions
                     action_inconsistency_buffer.extend([action_inconsistency] * Ta)
 

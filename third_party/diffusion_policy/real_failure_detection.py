@@ -143,9 +143,13 @@ def main(rank, eval_cfg, device_ids):
     seed = int(time.time())
     np.random.seed(seed)
 
+    # Failure detection hyparameters
     assert eval_cfg.Ta <= Ta
     Ta = eval_cfg.Ta
     ot_weight = eval_cfg.ot_weight
+    num_samples = eval_cfg.num_samples
+    window_size = eval_cfg.window_size
+    failure_threshold = eval_cfg.failure_threshold
     
     # Inspect the current round (Sirius-specific)
     match_round = re.search(r'round(\d)', eval_cfg.save_buffer_path)
@@ -296,7 +300,6 @@ def main(rank, eval_cfg, device_ids):
             matched_human_episode = replay_buffer.get_episode(matched_human_idx)
 
             # Fetch the latent representations of the matched human episode
-
             eps_side_img = (torch.from_numpy(matched_human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
             eps_wrist_img = (torch.from_numpy(matched_human_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
             eps_state = np.zeros((matched_human_episode['tcp_pose'].shape[0], ee_pose_dim))
@@ -334,11 +337,11 @@ def main(rank, eval_cfg, device_ids):
 
             # Keep track of pose from the last frame for relative action space
             if eval_cfg.random_init:
-                last_p = random_init_pose[:3]
-                last_r = R.from_quat(random_init_pose[3:7], scalar_first=True)
+                last_p = random_init_pose[np.newaxis, :3].repeat(num_samples, axis=0)
+                last_r = R.from_quat(random_init_pose[np.newaxis, 3:7].repeat(num_samples, axis=0), scalar_first=True)
             else:
-                last_p = robot.init_pose[:3]
-                last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
+                last_p = robot.init_pose[np.newaxis, :3].repeat(num_samples, axis=0)
+                last_r = R.from_quat(robot.init_pose[np.newaxis, 3:7].repeat(num_samples, axis=0), scalar_first=True)
 
             # Initialize the action buffer
             last_predicted_abs_actions = None
@@ -358,7 +361,7 @@ def main(rank, eval_cfg, device_ids):
                 last_predicted_abs_actions = None
                 print("=========== Policy inference ============")
                 while not keyboard.finish and not keyboard.discard and not keyboard.help:
-                    if j >= max_episode_length:
+                    if j >= max_episode_length - Ta:
                         break
 
                     start_time = time.time()
@@ -394,22 +397,28 @@ def main(rank, eval_cfg, device_ids):
                         state_type: policy_state_history.unsqueeze(0)
                     }
 
+                    policy_obs = {
+                        'side_img': policy_img_0_history.unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
+                        'wrist_img': policy_img_1_history.unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
+                        state_type: policy_state_history.unsqueeze(0).repeat(num_samples, 1, 1)
+                    }
+
                     # Predict eef actions
                     with torch.no_grad():
-                        curr_action = policy.predict_action(curr_obs)
+                        curr_action = policy.predict_action(policy_obs)
                         curr_latent = policy.extract_latent(curr_obs).reshape(-1)
                     np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
-                    action_seq = np_action_dict['action'][0]
-                    predicted_abs_actions = np.zeros_like(action_seq[:, :8])
+                    action_seq = np_action_dict['action']
+                    predicted_abs_actions = np.zeros_like(action_seq[:, :, :8])
 
                     # Derive the action chunk
                     for step in range(Ta):
                         if step > 0:
                             start_time = time.time()
                         # Action calculation
-                        curr_p_action = action_seq[step, :3]
+                        curr_p_action = action_seq[:, step, :3]
                         curr_p = last_p + curr_p_action
-                        curr_r_action = action_rot_transformer.inverse(action_seq[step, 3:action_dim-1])
+                        curr_r_action = action_rot_transformer.inverse(action_seq[:, step, 3:action_dim-1])
                         action_rot = R.from_quat(curr_r_action, scalar_first=True)
                         curr_r = last_r * action_rot
                         last_p = curr_p
@@ -422,14 +431,14 @@ def main(rank, eval_cfg, device_ids):
                             cam_data.append((color_image, depth_image))
                         tcpPose, jointPose, _, _ = robot.get_robot_state()
                         # demo_gripper_action = 1 if action_seq[step, 7] >= 0.5 else 0
-                        demo_gripper_action = action_seq[step, -1]
+                        demo_gripper_action = action_seq[:, step, -1]
 
-                        deployed_action = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), [demo_gripper_action]), 0)
-                        predicted_abs_actions[step] = deployed_action
+                        deployed_action = np.concatenate((curr_p[0], curr_r[0].as_quat(scalar_first=True)), 0)
+                        predicted_abs_actions[:, step] = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), demo_gripper_action[:, np.newaxis]), -1)
 
-                        robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat(scalar_first=True)), 0))
+                        robot.send_tcp_pose(deployed_action)
                         # target_width = gripper.max_width if action_seq[step, 7] < 0.5 else 0 # Threshold could be adjusted at inference time
-                        gripper.move(demo_gripper_action)
+                        gripper.move(demo_gripper_action[0])
 
                         # Save demonstrations to the buffer
                         wrist_image = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
@@ -440,7 +449,7 @@ def main(rank, eval_cfg, device_ids):
                         side_cam.append(side_image)
                         tcp_pose.append(tcpPose)
                         joint_pos.append(jointPose)
-                        action.append(np.concatenate((curr_p_action, curr_r_action, [demo_gripper_action]), 0))
+                        action.append(np.concatenate((curr_p_action[0], curr_r_action[0], [demo_gripper_action[0]]), 0))
                         action_mode.append(ROBOT)
 
                         time.sleep(max(1 / fps - (time.time() - start_time), 0))
@@ -451,22 +460,24 @@ def main(rank, eval_cfg, device_ids):
                     
                     # Predict the entire action chunk for failure detection
                     for step in range(Ta, policy.n_action_steps):
-                        tmp_p_action = action_seq[step, :3]
+                        tmp_p_action = action_seq[:, step, :3]
                         tmp_curr_p = tmp_last_p + tmp_p_action
-                        tmp_r_action = action_rot_transformer.inverse(action_seq[step, 3:action_dim-1])
+                        tmp_r_action = action_rot_transformer.inverse(action_seq[:, step, 3:action_dim-1])
                         action_rot = R.from_quat(tmp_r_action, scalar_first=True)
                         tmp_curr_r = tmp_last_r * action_rot
                         tmp_last_p = tmp_curr_p
                         tmp_last_r = tmp_curr_r
-                        demo_gripper_action = action_seq[step, -1]
-                        deployed_action = np.concatenate((tmp_curr_p, tmp_curr_r.as_quat(scalar_first=True), [demo_gripper_action]), 0)
-                        predicted_abs_actions[step] = deployed_action
+                        demo_gripper_action = action_seq[:, step, -1]
+                        deployed_action = np.concatenate((tmp_curr_p, tmp_curr_r.as_quat(scalar_first=True), demo_gripper_action[:, np.newaxis]), -1)
+                        predicted_abs_actions[:, step] = deployed_action
 
                     # Calculate the action inconsistency
                     if last_predicted_abs_actions is None:
-                        last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[:-Ta]), 0) # Prevent anomalous value in the beginning
-                    action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:-Ta] - last_predicted_abs_actions[Ta:], axis=-1))
-                    last_predicted_abs_actions = predicted_abs_actions
+                        last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[0, :-Ta]), 0) # Prevent anomalous value in the beginning
+                    action_fluctuation = np.mean(np.sum(np.square(np.linalg.norm(predicted_abs_actions[:, 1:] - predicted_abs_actions[:, :-1], axis=-1)), axis=-1)) # Action fluctuation
+                    action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1)) * \
+                        np.exp(-action_fluctuation / 0.0005) # Larger fluctuation entails larger inconsistency
+                    last_predicted_abs_actions = predicted_abs_actions[0]
                     action_inconsistency_buffer.extend([action_inconsistency] * Ta)
 
                     # Calculate the Optimal Transport plan
@@ -496,8 +507,13 @@ def main(rank, eval_cfg, device_ids):
                                 expert_indices = tensor_delete(expert_indices, nearest_expert)
                                 dist2expert = tensor_delete(dist2expert, nearest_expert)
 
+                    window_index_mean = 0 if idx < window_size else torch.mean(ot_weight * greedy_ot_cost[idx-window_size:idx] \
+                                                + torch.tensor(action_inconsistency_buffer[idx-window_size:idx], device=device))
+                    window_index_std = torch.inf if idx < window_size else torch.std(ot_weight * greedy_ot_cost[idx-window_size:idx] \
+                                                + torch.tensor(action_inconsistency_buffer[idx-window_size:idx], device=device))
+
                     # Check if the failure index exceeds the threshold
-                    if action_inconsistency + ot_weight * greedy_ot_cost[idx] > eval_cfg.failure_threshold:
+                    if action_inconsistency + ot_weight * greedy_ot_cost[idx] > failure_threshold:
                         print("Failure detected!")
                         while not keyboard.ctn and not keyboard.discard and not keyboard.help:
                             time.sleep(0.1)
@@ -517,11 +533,13 @@ def main(rank, eval_cfg, device_ids):
                 sigma.transform_from_robot(translate, rotation)
 
                 print("============ Human intervention =============")
+                last_p = last_p[0]
+                last_r = last_r[0]
                 # ============================================================
                 #                   Human intervention loop
                 # ============================================================
                 while not keyboard.finish and not keyboard.discard and not keyboard.infer:
-                    if j >= max_episode_length:
+                    if j >= max_episode_length - 1:
                         break
                     
                     start_time = time.time()
@@ -603,7 +621,7 @@ def main(rank, eval_cfg, device_ids):
                     j += 1
 
                     if j % Ta == 0: # Maintain Optimal Transport calculation during human intervention
-                        action_inconsistency_buffer.extend([0] * Ta)
+                        action_inconsistency_buffer.extend([action_inconsistency] * Ta)
                         rollout_weight = float(1. / (max_episode_length // Ta))
                         curr_obs = {
                             'side_img': policy_img_0_history.unsqueeze(0),
@@ -637,6 +655,9 @@ def main(rank, eval_cfg, device_ids):
                                     expert_indices = tensor_delete(expert_indices, nearest_expert)
                                     dist2expert = tensor_delete(dist2expert, nearest_expert)
 
+                # Reset the last action buffer for policy inference
+                last_p = last_p[np.newaxis, :].repeat(num_samples, axis=0)
+                last_r = R.from_quat(last_r.as_quat(scalar_first=True)[np.newaxis, :].repeat(num_samples, axis=0), scalar_first=True)
 
                 # Reset the signal of request for inference
                 keyboard.infer = False
@@ -648,7 +669,7 @@ def main(rank, eval_cfg, device_ids):
                 detach_rot = R.from_quat(np.array(detach_tcp[3:]), scalar_first=True)
 
                 # This episode fails to accomplish the task
-                if j >= max_episode_length or keyboard.discard:
+                if j >= max_episode_length - 1 or keyboard.discard:
                     break
 
                 # Save the demonstrations to the replay buffer

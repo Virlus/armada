@@ -206,7 +206,7 @@ def main(rank, eval_cfg, device_ids):
 
     # Evaluation starts here
     episode_idx = 0
-    max_episode_length = 300
+    max_episode_length = 450
     # episode_list = [x for x in range(eval_cfg.num_episode) if (x + 1) % world_size == rank]
 
     os.makedirs(eval_cfg.save_buffer_path, exist_ok=True)

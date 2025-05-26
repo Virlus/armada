@@ -16,6 +16,7 @@ import cv2
 from torchvision.transforms import Compose, Resize, CenterCrop
 from torchvision.transforms import InterpolationMode
 import torch.nn.functional as F
+from PIL import Image
 
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.common.pytorch_util import dict_apply
@@ -37,9 +38,7 @@ def main(rank, eval_cfg, device_ids):
     # load checkpoint
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
-    # rel_ee_pose = cfg.task.dataset.rel_ee_pose # Determines the action space
     rel_ee_pose = True # Hacked because currently the action space is always relative
-    # cfg.shape_meta = eval_cfg.shape_meta # Hacked for the same reason as above
 
     # rotation transformation for action space and observation space
     action_dim = cfg.shape_meta['action']['shape'][0]
@@ -62,8 +61,6 @@ def main(rank, eval_cfg, device_ids):
     cfg.output_dir = eval_cfg.output_dir
     if 'obs_encoder' in cfg.policy:
         cfg.policy.obs_encoder.pretrained_path = None
-    # if rank == 0:
-    #     pathlib.Path(cfg.output_dir).mkdir(parents=True, exist_ok=True)
 
     cls = hydra.utils.get_class(cfg._target_)
     workspace = cls(cfg, rank, world_size, device_id, device)
@@ -97,9 +94,17 @@ def main(rank, eval_cfg, device_ids):
     wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
 
     # Overwritten by evaluation config specifically
-    seed = int(time.time())
+    seed = eval_cfg.seed
     np.random.seed(seed)
     Ta = eval_cfg.Ta
+    save_img = False
+    output_dir = os.path.join(eval_cfg.output_dir, f"seed_{seed}")
+    if os.path.isdir(output_dir):
+        print(f"Output directory {output_dir} already exists, will not overwrite it.")
+    else:
+        os.makedirs(output_dir)
+        print(f"Created output directory: {output_dir}")
+        save_img = True
 
     # run evaluation
     robot = FlexivRobot()
@@ -133,6 +138,38 @@ def main(rank, eval_cfg, device_ids):
             last_p = robot.init_pose[:3]
             last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
 
+        if save_img:
+            cam_data = []
+            for camera in cameras:
+                color_image, _ = camera.get_data()
+                cam_data.append(color_image)
+            side_img = cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)
+            wrist_img = cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)
+            Image.fromarray(side_img).save(os.path.join(output_dir, f"side_{episode_idx}.png"))
+            Image.fromarray(wrist_img).save(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
+        else:
+            ref_side_img = cv2.imread(os.path.join(output_dir, f"side_{episode_idx}.png"))
+            ref_wrist_img = cv2.imread(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
+            cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
+            cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
+            # Ensure an identical configuration
+            while not keyboard.ctn:
+                cam_data = []
+                for camera in cameras:
+                    color_image, _ = camera.get_data()
+                    cam_data.append(color_image)
+                # ref_side_img = Image.open(os.path.join(output_dir, f"side_{episode_idx}.png"))
+                # ref_wrist_img = Image.open(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
+                side_img = cam_data[0].copy()
+                wrist_img = cam_data[1].copy()
+                # Image.fromarray((np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8)).show()
+                # Image.fromarray((np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8)).show()
+                cv2.imshow("Side", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
+                cv2.imshow("Wrist", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
+                cv2.waitKey(1)
+            keyboard.ctn = False
+            cv2.destroyAllWindows() 
+        
         # Policy inference
         j = 0
         while j < max_episode_length:
@@ -141,9 +178,9 @@ def main(rank, eval_cfg, device_ids):
                 # robot.send_joint_pose(robot.home_joint_pos)
                 # time.sleep(1.5)
                 robot.send_tcp_pose(robot.init_pose)
-                time.sleep(3)
+                time.sleep(6)
                 gripper.move(gripper.max_width)
-                time.sleep(0.5)
+                time.sleep(4)
                 print("Reset!")
                 break
             start_time = time.time()
@@ -222,9 +259,9 @@ def main(rank, eval_cfg, device_ids):
             # robot.send_joint_pose(robot.home_joint_pos)
             # time.sleep(1.5)
             robot.send_tcp_pose(robot.init_pose)
-            time.sleep(3)
+            time.sleep(6)
             gripper.move(gripper.max_width)
-            time.sleep(0.5)
+            time.sleep(4)
             print("Reset!")
 
     torch.distributed.destroy_process_group()

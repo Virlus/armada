@@ -1,10 +1,11 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0516_13.48.26_train_diffusion_transformer_hybrid_multi_gpu_pouring_dino_base_wo_wrist_crop_dino_head/latest.ckpt
-output_dir: outputs/
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0520_19.43.29_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_pouring_dino_base_ot_reweighted/latest.ckpt
+output_dir: outputs/visual/0526_rollout_exp
 
 Ta: 6
 num_episode: 20
 random_init: True
+seed: 0
 
 policy:
   num_inference_steps: 8

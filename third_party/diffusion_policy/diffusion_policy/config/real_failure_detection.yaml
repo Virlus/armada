@@ -1,17 +1,18 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0521_14.10.15_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_pouring_sirius/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/0518_pour_cluttered_50_sirius_failure_detection_round2_6
-save_buffer_path: /mnt/workspace/DP/0518_pour_cluttered_50_sirius_failure_detection_round2_7
-output_dir: outputs/
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0518_18.22.23_train_diffusion_transformer_hybrid_multi_gpu_pouring_dino_base_cluttered/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/0518_pour_cluttered_50
+save_buffer_path: /mnt/workspace/DP/0518_pour_cluttered_50_failure_detection_Ta_${Ta}_ot_weight_${ot_weight}_thres_${failure_threshold}_window_${window_size}_seed_${seed}_round1_1_dynamic_prod
+output_dir: outputs/visual/0526_failure_detection_cluttered_50_exp
 
-Ta: 10
+Ta: 8
 random_init: True
+seed: 1
 
 # Failure detection hyperparameters
 ot_weight: 2
 failure_threshold: 0.05
 num_samples: 10
-window_size: 10
+window_size: 5
 
 policy:
   num_inference_steps: 8

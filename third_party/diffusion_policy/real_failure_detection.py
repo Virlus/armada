@@ -140,7 +140,7 @@ def main(rank, eval_cfg, device_ids):
     wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
 
     # Random seed for every rollout
-    seed = int(time.time())
+    seed = eval_cfg.seed
     np.random.seed(seed)
 
     # Failure detection hyparameters
@@ -150,6 +150,15 @@ def main(rank, eval_cfg, device_ids):
     num_samples = eval_cfg.num_samples
     window_size = eval_cfg.window_size
     failure_threshold = eval_cfg.failure_threshold
+
+    save_img = False
+    output_dir = os.path.join(eval_cfg.output_dir, f"seed_{seed}")
+    if os.path.isdir(output_dir):
+        print(f"Output directory {output_dir} already exists, will not overwrite it.")
+    else:
+        os.makedirs(output_dir)
+        print(f"Created output directory: {output_dir}")
+        save_img = True
     
     # Inspect the current round (Sirius-specific)
     match_round = re.search(r'round(\d)', eval_cfg.save_buffer_path)
@@ -345,6 +354,39 @@ def main(rank, eval_cfg, device_ids):
 
             # Initialize the action buffer
             last_predicted_abs_actions = None
+
+            # Strictly align with previous scenes
+            if save_img:
+                cam_data = []
+                for camera in cameras:
+                    color_image, _ = camera.get_data()
+                    cam_data.append(color_image)
+                side_img = cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)
+                wrist_img = cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)
+                Image.fromarray(side_img).save(os.path.join(output_dir, f"side_{episode_idx}.png"))
+                Image.fromarray(wrist_img).save(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
+            else:
+                ref_side_img = cv2.imread(os.path.join(output_dir, f"side_{episode_idx}.png"))
+                ref_wrist_img = cv2.imread(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
+                cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
+                cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
+                # Ensure an identical configuration
+                while not keyboard.ctn:
+                    cam_data = []
+                    for camera in cameras:
+                        color_image, _ = camera.get_data()
+                        cam_data.append(color_image)
+                    # ref_side_img = Image.open(os.path.join(output_dir, f"side_{episode_idx}.png"))
+                    # ref_wrist_img = Image.open(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
+                    side_img = cam_data[0].copy()
+                    wrist_img = cam_data[1].copy()
+                    # Image.fromarray((np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8)).show()
+                    # Image.fromarray((np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8)).show()
+                    cv2.imshow("Side", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
+                    cv2.imshow("Wrist", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
+                    cv2.waitKey(1)
+                keyboard.ctn = False
+                cv2.destroyAllWindows()
             
             # Keep track of throttle usage for human intervention (Default to True because the teleop should follow up from arbitrary pose)
             last_throttle = True
@@ -353,6 +395,7 @@ def main(rank, eval_cfg, device_ids):
             detach_pos = np.array(detach_tcp[:3])
             detach_rot = R.from_quat(np.array(detach_tcp[3:]), scalar_first=True)
             j = 0 # Episode timestep
+            failure_indices = []
 
             while True:
                 # ===========================================================
@@ -476,7 +519,7 @@ def main(rank, eval_cfg, device_ids):
                         last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[0, :-Ta]), 0) # Prevent anomalous value in the beginning
                     action_fluctuation = np.mean(np.sum(np.square(np.linalg.norm(predicted_abs_actions[:, 1:] - predicted_abs_actions[:, :-1], axis=-1)), axis=-1)) # Action fluctuation
                     action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1)) * \
-                        np.exp(-action_fluctuation / 0.0005) # Larger fluctuation entails larger inconsistency
+                        np.exp(-action_fluctuation / 0.001) # Larger fluctuation entails larger inconsistency
                     last_predicted_abs_actions = predicted_abs_actions[0]
                     action_inconsistency_buffer.extend([action_inconsistency] * Ta)
 
@@ -507,14 +550,15 @@ def main(rank, eval_cfg, device_ids):
                                 expert_indices = tensor_delete(expert_indices, nearest_expert)
                                 dist2expert = tensor_delete(dist2expert, nearest_expert)
 
-                    window_index_mean = 0 if idx < window_size else torch.mean(ot_weight * greedy_ot_cost[idx-window_size:idx] \
-                                                + torch.tensor(action_inconsistency_buffer[idx-window_size:idx], device=device))
-                    window_index_std = torch.inf if idx < window_size else torch.std(ot_weight * greedy_ot_cost[idx-window_size:idx] \
-                                                + torch.tensor(action_inconsistency_buffer[idx-window_size:idx], device=device))
+                    window_index_mean = 0 if idx < window_size else torch.mean(greedy_ot_cost[idx-window_size:idx] \
+                                                * torch.tensor(action_inconsistency_buffer[(idx-window_size)*Ta:idx*Ta:Ta], device=device))
+                    window_index_std = torch.inf if idx < window_size else torch.std(greedy_ot_cost[idx-window_size:idx] \
+                                                * torch.tensor(action_inconsistency_buffer[(idx-window_size)*Ta:idx*Ta:Ta], device=device))
 
                     # Check if the failure index exceeds the threshold
-                    if action_inconsistency + ot_weight * greedy_ot_cost[idx] > failure_threshold:
+                    if action_inconsistency * greedy_ot_cost[idx] > window_index_mean + 3 * window_index_std:
                         print("Failure detected!")
+                        failure_indices.append(idx)
                         while not keyboard.ctn and not keyboard.discard and not keyboard.help:
                             time.sleep(0.1)
                         if keyboard.ctn:
@@ -706,7 +750,7 @@ def main(rank, eval_cfg, device_ids):
                     ot_ax.set_yticks([])
                     plt.colorbar(im, ax=ot_ax, shrink=0.9)
 
-                    im = final_ax.imshow((ot_cost_final * ot_weight + action_inconsistency_buffer[::Ta]).reshape(1, -1), cmap='magma', aspect='auto')
+                    im = final_ax.imshow((ot_cost_final * action_inconsistency_buffer[::Ta]).reshape(1, -1), cmap='magma', aspect='auto')
                     final_ax.set_xticks([])
                     final_ax.set_yticks([])
                     plt.colorbar(im, ax=final_ax, shrink=0.9)
@@ -716,7 +760,9 @@ def main(rank, eval_cfg, device_ids):
                     final_ax.set_title('Failure index')
                     for x in range(action_inconsistency_buffer.shape[0]//Ta):
                         rollout_array = episode['side_cam'][int(x * Ta)]
-                        if episode['action_mode'][int(x * Ta)] == INTV:
+                        if x in failure_indices:
+                            img = process_image(rollout_array, (100, 100), highlight=True, color=[0,0,255])
+                        elif episode['action_mode'][int(x * Ta)] == INTV:
                             img = process_image(rollout_array, (100, 100), highlight=True)
                         else:
                             img = process_image(rollout_array, (100, 100), highlight=False)

@@ -733,12 +733,13 @@ def main(rank, eval_cfg, device_ids):
                     action_inconsistency_buffer = np.array(action_inconsistency_buffer)
                     ot_cost_final = greedy_ot_cost[:len(action_inconsistency_buffer)//Ta].detach().cpu().numpy()
                     cell_size = 1
-                    fig = plt.figure(figsize=(episode['wrist_cam'].shape[0] // Ta * cell_size, 3 * cell_size+2))
-                    gs = plt.GridSpec(3, 1, height_ratios=[0.33, 0.33, 0.33], hspace=0.8)
+                    fig = plt.figure(figsize=(episode['wrist_cam'].shape[0] // Ta * cell_size, (3 + demo_len // Ta) * cell_size + 2))
+                    gs = plt.GridSpec(4, 1, height_ratios=[0.083, 0.083, 0.083, 0.75], hspace=0.8)
                     # ax = fig.add_subplot(111)
                     action_ax = fig.add_subplot(gs[0])
                     ot_ax = fig.add_subplot(gs[1])
                     final_ax = fig.add_subplot(gs[2])
+                    plan_ax = fig.add_subplot(gs[3])
 
                     im = action_ax.imshow(action_inconsistency_buffer[::Ta].reshape(1, -1), cmap='plasma', aspect='auto')
                     action_ax.set_xticks([])
@@ -755,10 +756,36 @@ def main(rank, eval_cfg, device_ids):
                     final_ax.set_yticks([])
                     plt.colorbar(im, ax=final_ax, shrink=0.9)
 
+                    im = plan_ax.imshow(greedy_ot_plan[:, :len(action_inconsistency_buffer)//Ta].detach().cpu().numpy(), cmap='viridis', aspect='auto')
+                    plt.colorbar(im, ax=plan_ax, shrink=0.75)
+                    plan_ax.set_xticks(np.arange(demo_len // Ta))
+                    plan_ax.set_yticks(np.arange(len(action_inconsistency_buffer)//Ta))
+                    plan_ax.set_xticklabels([''] * (demo_len // Ta))
+                    plan_ax.set_yticklabels([''] * (len(action_inconsistency_buffer)//Ta))
+                    plan_ax.tick_params(axis='both', which='both', length=0)
+
                     action_ax.set_title('Action Inconsistency')
                     ot_ax.set_title('OT Cost')
                     final_ax.set_title('Failure index')
-                    for x in range(action_inconsistency_buffer.shape[0]//Ta):
+                    plan_ax.set_title('OT plan')
+
+                    print("Expert demonstration rendering")
+                    
+                    for y in range((demo_len - 1) // Ta):
+                        human_array = (eps_side_img[int(y * Ta)].permute(1, 2, 0).detach().cpu().numpy() * 255).astype(np.uint8).clip(0, 255)
+                        # human_array = human_array.astype(np.uint8).clip(0, 255)
+                        img = process_image(human_array, (100, 100), highlight=False)
+                        img = np.array(img)
+                        imagebox = OffsetImage(img, zoom=1)
+                        trans = BlendedGenericTransform(plan_ax.transAxes, plan_ax.transData)
+                        box_alignment = (1.0, 0.5)
+                        ab = AnnotationBbox(imagebox, (-0.05, y), xycoords=trans, frameon=False,
+                                            box_alignment=box_alignment, pad=0)
+                        plan_ax.add_artist(ab)
+
+                    print("Rollout traj rendering")
+
+                    for x in range((action_inconsistency_buffer.shape[0]-1)//Ta):
                         rollout_array = episode['side_cam'][int(x * Ta)]
                         if x in failure_indices:
                             img = process_image(rollout_array, (100, 100), highlight=True, color=[0,0,255])
@@ -768,14 +795,14 @@ def main(rank, eval_cfg, device_ids):
                             img = process_image(rollout_array, (100, 100), highlight=False)
                         img = np.array(img)
                         imagebox = OffsetImage(img, zoom=1)
-                        trans = BlendedGenericTransform(final_ax.transData, final_ax.transAxes)
+                        trans = BlendedGenericTransform(plan_ax.transData, plan_ax.transAxes)
                         box_alignment = (0.5, 1.0)
                         ab = AnnotationBbox(imagebox, (x, -0.05), xycoords=trans, frameon=False,
                                             box_alignment=box_alignment, pad=0)
-                        final_ax.add_artist(ab)
+                        plan_ax.add_artist(ab)
 
-                    final_ax.set_xlim(-0.5, action_inconsistency_buffer.shape[0]//Ta-0.5)
-                    final_ax.set_ylim(-0.5, 0.5)
+                    plan_ax.set_xlim(-0.5, action_inconsistency_buffer.shape[0]//Ta-0.5)
+                    plan_ax.set_ylim(demo_len//Ta-0.5, 0.5)
                     plt.savefig(f'{eval_cfg.save_buffer_path}/episode_{episode_id}.png', bbox_inches='tight')
                     break
 

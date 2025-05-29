@@ -526,7 +526,7 @@ def main(rank, eval_cfg, device_ids):
                     # Calculate the Optimal Transport plan
                     rollout_weight = float(1. / (max_episode_length // Ta))
                     dist2expert = cosine_distance(human_latent[expert_indices], curr_latent.unsqueeze(0)).squeeze(-1)
-                    idx = j // Ta
+                    idx = j // Ta - 1
                     while rollout_weight > 0:
                         if dist2expert.shape[0] == 0:
                             break
@@ -771,9 +771,8 @@ def main(rank, eval_cfg, device_ids):
 
                     print("Expert demonstration rendering")
                     
-                    for y in range((demo_len - 1) // Ta):
+                    for y in range(demo_len // Ta):
                         human_array = (eps_side_img[int(y * Ta)].permute(1, 2, 0).detach().cpu().numpy() * 255).astype(np.uint8).clip(0, 255)
-                        # human_array = human_array.astype(np.uint8).clip(0, 255)
                         img = process_image(human_array, (100, 100), highlight=False)
                         img = np.array(img)
                         imagebox = OffsetImage(img, zoom=1)
@@ -785,7 +784,7 @@ def main(rank, eval_cfg, device_ids):
 
                     print("Rollout traj rendering")
 
-                    for x in range((action_inconsistency_buffer.shape[0]-1)//Ta):
+                    for x in range(action_inconsistency_buffer.shape[0]//Ta):
                         rollout_array = episode['side_cam'][int(x * Ta)]
                         if x in failure_indices:
                             img = process_image(rollout_array, (100, 100), highlight=True, color=[0,0,255])

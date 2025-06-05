@@ -608,10 +608,11 @@ def main(rank, eval_cfg, device_ids):
                                                     * torch.tensor(action_inconsistency_buffer[(idx-window_size)*Ta:idx*Ta:Ta], device=device))
                         failure_flag = action_inconsistency * greedy_ot_cost[idx] > window_index_mean + 3 * window_index_std
                     else:
-                        window_index_mean = 0 if idx < window_size else torch.mean(greedy_ot_cost[idx-window_size:idx])
-                        window_index_std = torch.inf if idx < window_size else torch.std(greedy_ot_cost[idx-window_size:idx])
+                        # window_index_mean = 0 if idx < window_size else torch.mean(greedy_ot_cost[idx-window_size:idx])
+                        # window_index_std = torch.inf if idx < window_size else torch.std(greedy_ot_cost[idx-window_size:idx])
                         inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold
-                        ot_flag = greedy_ot_cost[idx] > window_index_mean + 3 * window_index_std
+                        # ot_flag = greedy_ot_cost[idx] > window_index_mean + 3 * window_index_std
+                        ot_flag = greedy_ot_cost[idx] > ot_threshold
                         failure_flag = inconsistency_violation or ot_flag
                     
                     if failure_flag:

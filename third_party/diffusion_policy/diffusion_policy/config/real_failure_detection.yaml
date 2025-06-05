@@ -9,7 +9,8 @@ random_init: True
 seed: 0
 
 # Failure detection hyperparameters
-inconsistency_metric: stat
+inconsistency_metric: expert
+ot_threshold: 0.02
 num_samples: 10
 window_size: 5
 

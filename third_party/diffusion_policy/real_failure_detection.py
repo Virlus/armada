@@ -144,6 +144,7 @@ def main(rank, eval_cfg, device_ids):
     Ta = eval_cfg.Ta
     inconsistency_metric = eval_cfg.inconsistency_metric
     assert inconsistency_metric in ['stat', 'expert']
+    ot_threshold = eval_cfg.ot_threshold
     num_samples = eval_cfg.num_samples
     window_size = eval_cfg.window_size
 
@@ -214,7 +215,7 @@ def main(rank, eval_cfg, device_ids):
 
     # Evaluation starts here
     episode_idx = 0
-    max_episode_length = torch.max(torch.tensor(human_eps_len)) // Ta * Ta # Define the maximum episode length according to expert demonstrations
+    max_episode_length = int(torch.max(torch.tensor(human_eps_len)) // Ta * Ta)# Define the maximum episode length according to expert demonstrations
 
     os.makedirs(eval_cfg.save_buffer_path, exist_ok=True)
 
@@ -372,9 +373,9 @@ def main(rank, eval_cfg, device_ids):
                 # Calculate the action inconsistency
                 if last_predicted_abs_actions is None:
                     last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[0, :-Ta]), 0) # Prevent anomalous value in the beginning
-                action_fluctuation = np.mean(np.sum(np.square(np.linalg.norm(predicted_abs_actions[:, 1:] - predicted_abs_actions[:, :-1], axis=-1)), axis=-1)) # Action fluctuation
-                action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1)) * \
-                    np.exp(-action_fluctuation / 0.001) # Larger fluctuation entails larger inconsistency
+                # action_fluctuation = np.mean(np.sum(np.square(np.linalg.norm(predicted_abs_actions[:, 1:] - predicted_abs_actions[:, :-1], axis=-1)), axis=-1)) # Action fluctuation
+                action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1)) # * \
+                    # np.exp(-action_fluctuation / 0.001) # Larger fluctuation entails larger inconsistency
                 last_predicted_abs_actions = predicted_abs_actions[0]
                 expert_action_inconsistency_buffer.extend([action_inconsistency] * Ta)
                 
@@ -401,7 +402,7 @@ def main(rank, eval_cfg, device_ids):
             last_predicted_abs_actions = None
 
             # Strictly align with previous scenes
-            if save_img:
+            if save_img or not os.path.isfile(os.path.join(output_dir, f"side_{episode_idx}.png")):
                 cam_data = []
                 for camera in cameras:
                     color_image, _ = camera.get_data()
@@ -582,9 +583,9 @@ def main(rank, eval_cfg, device_ids):
                     # Calculate the action inconsistency
                     if last_predicted_abs_actions is None:
                         last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[0, :-Ta]), 0) # Prevent anomalous value in the beginning
-                    action_fluctuation = np.mean(np.sum(np.square(np.linalg.norm(predicted_abs_actions[:, 1:] - predicted_abs_actions[:, :-1], axis=-1)), axis=-1)) # Action fluctuation
-                    action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1)) * \
-                        np.exp(-action_fluctuation / 0.001) # Larger fluctuation entails larger inconsistency
+                    # action_fluctuation = np.mean(np.sum(np.square(np.linalg.norm(predicted_abs_actions[:, 1:] - predicted_abs_actions[:, :-1], axis=-1)), axis=-1)) # Action fluctuation
+                    action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1)) # * \
+                        # np.exp(-action_fluctuation / 0.001) # Larger fluctuation entails larger inconsistency
                     last_predicted_abs_actions = predicted_abs_actions[0]
                     action_inconsistency_buffer.extend([action_inconsistency] * Ta)
 
@@ -727,20 +728,6 @@ def main(rank, eval_cfg, device_ids):
                         else:
                             dummy_action_inconsistency = 0
                         action_inconsistency_buffer.extend([dummy_action_inconsistency] * Ta)
-                        # rollout_weight = float(1. / (max_episode_length // Ta))
-                        # curr_obs = {
-                        #     'side_img': policy_img_0_history.unsqueeze(0),
-                        #     'wrist_img': policy_img_1_history.unsqueeze(0),
-                        #     state_type: policy_state_history.unsqueeze(0)
-                        # }
-                        # with torch.no_grad():
-                        #     curr_latent = policy.extract_latent(curr_obs).reshape(-1)
-                        # dist2expert = cosine_distance(human_latent[expert_indices], curr_latent.unsqueeze(0)).squeeze(-1)
-                        # idx = j // Ta
-                        # # Update the OT plan
-                        # greedy_ot_plan, greedy_ot_cost, expert_weight, expert_indices = greedy_ot_amortize(
-                        #     greedy_ot_plan, greedy_ot_cost, expert_weight, rollout_weight, dist2expert, expert_indices, idx
-                        # )
 
                 # Reset the last action buffer for policy inference
                 last_p = last_p[np.newaxis, :].repeat(num_samples, axis=0)

@@ -1,7 +1,7 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0516_13.48.26_train_diffusion_transformer_hybrid_multi_gpu_pouring_dino_base_wo_wrist_crop_dino_head/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/0514_pour
-save_buffer_path: /mnt/workspace/DP/0514_pour_sirius_round1_1
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0518_18.22.23_train_diffusion_transformer_hybrid_multi_gpu_pouring_dino_base_cluttered/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/0518_pour_cluttered_50_sirius_round1_2
+save_buffer_path: /mnt/workspace/DP/0518_pour_cluttered_50_sirius_round1_3
 output_dir: outputs/
 
 Ta: 6

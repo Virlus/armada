@@ -27,6 +27,7 @@ from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.model.common.rotation_transformer import RotationTransformer
+from diffusion_policy.real_world.failure_detection_util import greedy_ot_amortize
 
 from hardware.my_device.robot import FlexivRobot, FlexivGripper
 from hardware.my_device.camera import CameraD400
@@ -66,11 +67,6 @@ def postprocess_action_mode(action_mode: np.ndarray):
             pre_intv_indices = pre_intv_indices[np.where(action_mode[pre_intv_indices] == INTV, False, True)]
             action_mode[pre_intv_indices] = PRE_INTV
     return action_mode
-
-def tensor_delete(tensor, indices):
-    mask = torch.ones(tensor.numel(), dtype=torch.bool)
-    mask[indices] = False
-    return tensor[mask]
 
 def main(rank, eval_cfg, device_ids):
     fps = 10  # TODO
@@ -146,10 +142,10 @@ def main(rank, eval_cfg, device_ids):
     # Failure detection hyparameters
     assert eval_cfg.Ta <= Ta
     Ta = eval_cfg.Ta
-    ot_weight = eval_cfg.ot_weight
+    inconsistency_metric = eval_cfg.inconsistency_metric
+    assert inconsistency_metric in ['stat', 'expert']
     num_samples = eval_cfg.num_samples
     window_size = eval_cfg.window_size
-    failure_threshold = eval_cfg.failure_threshold
 
     save_img = False
     output_dir = os.path.join(eval_cfg.output_dir, f"seed_{seed}")
@@ -192,6 +188,7 @@ def main(rank, eval_cfg, device_ids):
             human_demo_indices.append(i)
             
     human_init_latent = torch.zeros((len(human_demo_indices), int(To*obs_feature_dim)), device=device)
+    human_eps_len = []
 
     for i in tqdm.tqdm(human_demo_indices, desc="Obtaining latent for human demo"):
         human_episode = replay_buffer.get_episode(i)
@@ -213,20 +210,18 @@ def main(rank, eval_cfg, device_ids):
             obs_features = policy.extract_latent(obs_dict)
             human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
 
+        human_eps_len.append(eps_side_img.shape[0])
+
     # Evaluation starts here
     episode_idx = 0
-    max_episode_length = 450
-    # episode_list = [x for x in range(eval_cfg.num_episode) if (x + 1) % world_size == rank]
+    max_episode_length = torch.max(torch.tensor(human_eps_len)) // Ta * Ta # Define the maximum episode length according to expert demonstrations
 
     os.makedirs(eval_cfg.save_buffer_path, exist_ok=True)
 
     try:
-        # for episode_idx in range(eval_cfg.num_episode):
         while True: 
             if keyboard.quit:
                 break
-            # if episode_idx not in episode_list:
-            #     continue
             print(f"Rollout episode: {episode_idx}")
 
             # Reset keyboard states
@@ -317,6 +312,15 @@ def main(rank, eval_cfg, device_ids):
             eps_state = (torch.from_numpy(eps_state)).to(device)
             demo_len = matched_human_episode['action'].shape[0]
             human_latent = torch.zeros((demo_len // Ta, int(To*obs_feature_dim)), device=device)
+
+            # Now we need to compute inferred action inconsistency for the matched human episode as well
+            expert_init_pose = matched_human_episode['tcp_pose']
+            eps_last_p = expert_init_pose[0:1, :3].repeat(num_samples, axis=0)
+            eps_last_r = R.from_quat(expert_init_pose[0:1, 3:].repeat(num_samples, axis=0), scalar_first=True)
+
+            # Initialize the action buffer
+            last_predicted_abs_actions = None
+            expert_action_inconsistency_buffer = []
             
             for idx in range(demo_len // Ta):
                 human_demo_idx = idx * Ta
@@ -327,16 +331,57 @@ def main(rank, eval_cfg, device_ids):
                         'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
                         'ee_pose': eps_state[indices, :].unsqueeze(0)
                     }
+                    policy_obs = {
+                        'side_img': eps_side_img[indices, :].unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
+                        'wrist_img': eps_wrist_img[indices, :].unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
+                        'ee_pose': eps_state[indices, :].unsqueeze(0).repeat(num_samples, 1, 1)
+                    }
                 else:
                     obs_dict = {
                         'side_img': eps_side_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0),
                         'wrist_img': eps_wrist_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0), 
                         'ee_pose': eps_state[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0)
                     }
+                    policy_obs = {
+                        'side_img': eps_side_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
+                        'wrist_img': eps_wrist_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
+                        'ee_pose': eps_state[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0).repeat(num_samples, 1, 1)
+                    }
 
                 with torch.no_grad():
                     obs_features = policy.extract_latent(obs_dict)
                     human_latent[idx] = obs_features.squeeze(0).reshape(-1)
+                    curr_action = policy.predict_action(policy_obs)
+                    np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
+                    action_seq = np_action_dict['action']
+                    predicted_abs_actions = np.zeros_like(action_seq[:, :, :8])
+
+                # Derive the action chunk
+                for step in range(policy.n_action_steps):
+                    # Action calculation
+                    curr_p_action = action_seq[:, step, :3]
+                    curr_p = eps_last_p + curr_p_action
+                    curr_r_action = action_rot_transformer.inverse(action_seq[:, step, 3:action_dim-1])
+                    action_rot = R.from_quat(curr_r_action, scalar_first=True)
+                    curr_r = eps_last_r * action_rot
+                    eps_last_p = curr_p
+                    eps_last_r = curr_r
+                    demo_gripper_action = action_seq[:, step, -1]
+                    predicted_abs_actions[:, step] = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), demo_gripper_action[:, np.newaxis]), -1)
+                
+                # Calculate the action inconsistency
+                if last_predicted_abs_actions is None:
+                    last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[0, :-Ta]), 0) # Prevent anomalous value in the beginning
+                action_fluctuation = np.mean(np.sum(np.square(np.linalg.norm(predicted_abs_actions[:, 1:] - predicted_abs_actions[:, :-1], axis=-1)), axis=-1)) # Action fluctuation
+                action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1)) * \
+                    np.exp(-action_fluctuation / 0.001) # Larger fluctuation entails larger inconsistency
+                last_predicted_abs_actions = predicted_abs_actions[0]
+                expert_action_inconsistency_buffer.extend([action_inconsistency] * Ta)
+                
+                eps_last_p = eps_last_p[0:1, :].repeat(num_samples, axis=0)
+                eps_last_r = R.from_quat(R.as_quat(eps_last_r, scalar_first=True)[0:1, :].repeat(num_samples, axis=0), scalar_first=True)
+
+            expert_action_threshold = np.array(expert_action_inconsistency_buffer).sum()
 
             # Initialize the rollout optimal transport components with an assumption of maximum episode length [Need verification]
             expert_weight = torch.ones((demo_len // Ta,), device=device) / float(demo_len // Ta)
@@ -473,14 +518,12 @@ def main(rank, eval_cfg, device_ids):
                             color_image, depth_image = camera.get_data()
                             cam_data.append((color_image, depth_image))
                         tcpPose, jointPose, _, _ = robot.get_robot_state()
-                        # demo_gripper_action = 1 if action_seq[step, 7] >= 0.5 else 0
                         demo_gripper_action = action_seq[:, step, -1]
 
                         deployed_action = np.concatenate((curr_p[0], curr_r[0].as_quat(scalar_first=True)), 0)
                         predicted_abs_actions[:, step] = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), demo_gripper_action[:, np.newaxis]), -1)
 
                         robot.send_tcp_pose(deployed_action)
-                        # target_width = gripper.max_width if action_seq[step, 7] < 0.5 else 0 # Threshold could be adjusted at inference time
                         gripper.move(demo_gripper_action[0])
 
                         # Save demonstrations to the buffer
@@ -495,6 +538,28 @@ def main(rank, eval_cfg, device_ids):
                         action.append(np.concatenate((curr_p_action[0], curr_r_action[0], [demo_gripper_action[0]]), 0))
                         action_mode.append(ROBOT)
 
+                        if step == Ta - To + 1:
+                            # Comply with Policy Observation buffer timesteps
+                            img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+                            img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+                            if 'ee_pose' in cfg.shape_meta['obs']:
+                                state = robot.get_robot_state()[0]
+                            else:
+                                state = robot.get_robot_state()[1]
+                            state = np.array(state)
+                            if obs_rot_transformer is not None:
+                                tmp_state = np.zeros((ee_pose_dim,))
+                                tmp_state[:3] = state[:3]
+                                tmp_state[3:] = obs_rot_transformer.forward(state[3:])
+                                state = tmp_state
+                            state = torch.from_numpy(state)
+                            policy_img_0_history[:-1] = policy_img_0_history[1:]
+                            policy_img_0_history[-1] = img_0
+                            policy_img_1_history[:-1] = policy_img_1_history[1:]
+                            policy_img_1_history[-1] = img_1
+                            policy_state_history[:-1] = policy_state_history[1:]
+                            policy_state_history[-1] = state
+                        
                         time.sleep(max(1 / fps - (time.time() - start_time), 0))
                         j += 1
 
@@ -523,40 +588,32 @@ def main(rank, eval_cfg, device_ids):
                     last_predicted_abs_actions = predicted_abs_actions[0]
                     action_inconsistency_buffer.extend([action_inconsistency] * Ta)
 
+                    last_p = last_p[0:1, :].repeat(num_samples, axis=0)
+                    last_r = R.from_quat(R.as_quat(last_r, scalar_first=True)[0:1, :].repeat(num_samples, axis=0), scalar_first=True)
+
                     # Calculate the Optimal Transport plan
                     rollout_weight = float(1. / (max_episode_length // Ta))
                     dist2expert = cosine_distance(human_latent[expert_indices], curr_latent.unsqueeze(0)).squeeze(-1)
                     idx = j // Ta - 1
-                    while rollout_weight > 0:
-                        if dist2expert.shape[0] == 0:
-                            break
-                        nearest_expert = torch.argmin(dist2expert, dim=0)
-                        expert_index = expert_indices[nearest_expert]
-                        if expert_weight[nearest_expert] < rollout_weight:
-                            rollout_weight -= expert_weight[nearest_expert]
-                            greedy_ot_plan[expert_index, idx] += expert_weight[nearest_expert]
-                            greedy_ot_cost[idx] += expert_weight[nearest_expert] * dist2expert[nearest_expert]
-                            # Release related expert from the buffer
-                            expert_weight = tensor_delete(expert_weight, nearest_expert)
-                            expert_indices = tensor_delete(expert_indices, nearest_expert)
-                            dist2expert = tensor_delete(dist2expert, nearest_expert)
-                        else:
-                            greedy_ot_plan[expert_index, idx] += rollout_weight
-                            greedy_ot_cost[idx] += rollout_weight * dist2expert[nearest_expert]
-                            expert_weight[nearest_expert] -= rollout_weight
-                            rollout_weight = 0
-                            if expert_weight[nearest_expert] == 0:
-                                expert_weight = tensor_delete(expert_weight, nearest_expert)
-                                expert_indices = tensor_delete(expert_indices, nearest_expert)
-                                dist2expert = tensor_delete(dist2expert, nearest_expert)
+                    # Update the OT plan
+                    greedy_ot_plan, greedy_ot_cost, expert_weight, expert_indices = greedy_ot_amortize(
+                        greedy_ot_plan, greedy_ot_cost, expert_weight, rollout_weight, dist2expert, expert_indices, idx
+                    )
 
-                    window_index_mean = 0 if idx < window_size else torch.mean(greedy_ot_cost[idx-window_size:idx] \
-                                                * torch.tensor(action_inconsistency_buffer[(idx-window_size)*Ta:idx*Ta:Ta], device=device))
-                    window_index_std = torch.inf if idx < window_size else torch.std(greedy_ot_cost[idx-window_size:idx] \
-                                                * torch.tensor(action_inconsistency_buffer[(idx-window_size)*Ta:idx*Ta:Ta], device=device))
-
-                    # Check if the failure index exceeds the threshold
-                    if action_inconsistency * greedy_ot_cost[idx] > window_index_mean + 3 * window_index_std:
+                    if inconsistency_metric == 'stat':
+                        window_index_mean = 0 if idx < window_size else torch.mean(greedy_ot_cost[idx-window_size:idx] \
+                                                    * torch.tensor(action_inconsistency_buffer[(idx-window_size)*Ta:idx*Ta:Ta], device=device))
+                        window_index_std = torch.inf if idx < window_size else torch.std(greedy_ot_cost[idx-window_size:idx] \
+                                                    * torch.tensor(action_inconsistency_buffer[(idx-window_size)*Ta:idx*Ta:Ta], device=device))
+                        failure_flag = action_inconsistency * greedy_ot_cost[idx] > window_index_mean + 3 * window_index_std
+                    else:
+                        window_index_mean = 0 if idx < window_size else torch.mean(greedy_ot_cost[idx-window_size:idx])
+                        window_index_std = torch.inf if idx < window_size else torch.std(greedy_ot_cost[idx-window_size:idx])
+                        inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold
+                        ot_flag = greedy_ot_cost[idx] > window_index_mean + 3 * window_index_std
+                        failure_flag = inconsistency_violation or ot_flag
+                    
+                    if failure_flag:
                         print("Failure detected!")
                         failure_indices.append(idx)
                         while not keyboard.ctn and not keyboard.discard and not keyboard.help:
@@ -665,39 +722,25 @@ def main(rank, eval_cfg, device_ids):
                     j += 1
 
                     if j % Ta == 0: # Maintain Optimal Transport calculation during human intervention
-                        action_inconsistency_buffer.extend([action_inconsistency] * Ta)
-                        rollout_weight = float(1. / (max_episode_length // Ta))
-                        curr_obs = {
-                            'side_img': policy_img_0_history.unsqueeze(0),
-                            'wrist_img': policy_img_1_history.unsqueeze(0),
-                            state_type: policy_state_history.unsqueeze(0)
-                        }
-                        with torch.no_grad():
-                            curr_latent = policy.extract_latent(curr_obs).reshape(-1)
-                        dist2expert = cosine_distance(human_latent[expert_indices], curr_latent.unsqueeze(0)).squeeze(-1)
-                        idx = j // Ta
-                        while rollout_weight > 0:
-                            if dist2expert.shape[0] == 0:
-                                break
-                            nearest_expert = torch.argmin(dist2expert, dim=0)
-                            expert_index = expert_indices[nearest_expert]
-                            if expert_weight[nearest_expert] < rollout_weight:
-                                rollout_weight -= expert_weight[nearest_expert]
-                                greedy_ot_plan[expert_index, idx] += expert_weight[nearest_expert]
-                                greedy_ot_cost[idx] += expert_weight[nearest_expert] * dist2expert[nearest_expert]
-                                # Release related expert from the buffer
-                                expert_weight = tensor_delete(expert_weight, nearest_expert)
-                                expert_indices = tensor_delete(expert_indices, nearest_expert)
-                                dist2expert = tensor_delete(dist2expert, nearest_expert)
-                            else:
-                                greedy_ot_plan[expert_index, idx] += rollout_weight
-                                greedy_ot_cost[idx] += rollout_weight * dist2expert[nearest_expert]
-                                expert_weight[nearest_expert] -= rollout_weight
-                                rollout_weight = 0
-                                if expert_weight[nearest_expert] == 0:
-                                    expert_weight = tensor_delete(expert_weight, nearest_expert)
-                                    expert_indices = tensor_delete(expert_indices, nearest_expert)
-                                    dist2expert = tensor_delete(dist2expert, nearest_expert)
+                        if inconsistency_metric == 'stat':
+                            dummy_action_inconsistency = action_inconsistency * 2
+                        else:
+                            dummy_action_inconsistency = 0
+                        action_inconsistency_buffer.extend([dummy_action_inconsistency] * Ta)
+                        # rollout_weight = float(1. / (max_episode_length // Ta))
+                        # curr_obs = {
+                        #     'side_img': policy_img_0_history.unsqueeze(0),
+                        #     'wrist_img': policy_img_1_history.unsqueeze(0),
+                        #     state_type: policy_state_history.unsqueeze(0)
+                        # }
+                        # with torch.no_grad():
+                        #     curr_latent = policy.extract_latent(curr_obs).reshape(-1)
+                        # dist2expert = cosine_distance(human_latent[expert_indices], curr_latent.unsqueeze(0)).squeeze(-1)
+                        # idx = j // Ta
+                        # # Update the OT plan
+                        # greedy_ot_plan, greedy_ot_cost, expert_weight, expert_indices = greedy_ot_amortize(
+                        #     greedy_ot_plan, greedy_ot_cost, expert_weight, rollout_weight, dist2expert, expert_indices, idx
+                        # )
 
                 # Reset the last action buffer for policy inference
                 last_p = last_p[np.newaxis, :].repeat(num_samples, axis=0)
@@ -815,6 +858,7 @@ def main(rank, eval_cfg, device_ids):
             
             episode_idx += 1
             
+            print(f"Current human intervention ratio: {np.sum(replay_buffer.data['action_mode'] == INTV) * 100 / np.sum(replay_buffer.data['action_mode'] != HUMAN)} %")
             # Sirius rollout halts if human intervention samples exceed 1 / 3 of original human demonstration
             if np.sum(replay_buffer.data['action_mode'] == INTV) * 3 / num_round >= np.sum(replay_buffer.data['action_mode'] == HUMAN):
                 break

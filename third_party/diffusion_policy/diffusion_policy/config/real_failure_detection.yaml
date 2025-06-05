@@ -1,16 +1,15 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/0526_14.01.52_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_pouring_ot_reweighted/bsf.ckpt
-train_dataset_path: /mnt/workspace/DP/0518_pour_cluttered_50_sirius_round1_3
-save_buffer_path: /mnt/workspace/DP/0528_pour_ours_bsf_failure_detection_Ta_${Ta}_ot_weight_${ot_weight}_thres_${failure_threshold}_window_${window_size}_seed_${seed}_round1_1_dynamic_prod
-output_dir: outputs/visual/0528_failure_detection_cluttered_50_finetuned_exp
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/mug/0604_14.20.21_train_diffusion_transformer_hybrid_dino_multi_gpu_mug_50_clean/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/0604_mug
+save_buffer_path: /mnt/workspace/DP/0604_mug_failure_detection_round1_1
+output_dir: outputs/visual/0604_mug_finetuned_exp_round1
 
 Ta: 8
 random_init: True
 seed: 0
 
 # Failure detection hyperparameters
-ot_weight: 2
-failure_threshold: 0.05
+inconsistency_metric: stat
 num_samples: 10
 window_size: 5
 

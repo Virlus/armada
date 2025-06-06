@@ -143,6 +143,7 @@ def main(rank, eval_cfg, device_ids):
     inconsistency_metric = eval_cfg.inconsistency_metric
     assert inconsistency_metric in ['stat', 'expert']
     ot_threshold = eval_cfg.ot_threshold
+    soft_ot_threshold = eval_cfg.soft_ot_threshold
     num_samples = eval_cfg.num_samples
     window_size = eval_cfg.window_size
     rewind_steps = eval_cfg.rewind_steps
@@ -366,6 +367,9 @@ def main(rank, eval_cfg, device_ids):
                     curr_r = eps_last_r * action_rot
                     eps_last_p = curr_p
                     eps_last_r = curr_r
+                    if step == Ta - 1:
+                        actual_last_p = eps_last_p
+                        actual_last_r = eps_last_r
                     demo_gripper_action = action_seq[:, step, -1]
                     predicted_abs_actions[:, step] = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), demo_gripper_action[:, np.newaxis]), -1)
                 
@@ -376,8 +380,8 @@ def main(rank, eval_cfg, device_ids):
                 last_predicted_abs_actions = predicted_abs_actions[0]
                 expert_action_inconsistency_buffer.extend([action_inconsistency] * Ta)
                 
-                eps_last_p = eps_last_p[0:1, :].repeat(num_samples, axis=0)
-                eps_last_r = R.from_quat(R.as_quat(eps_last_r, scalar_first=True)[0:1, :].repeat(num_samples, axis=0), scalar_first=True)
+                eps_last_p = actual_last_p[0:1, :].repeat(num_samples, axis=0)
+                eps_last_r = R.from_quat(R.as_quat(actual_last_r, scalar_first=True)[0:1, :].repeat(num_samples, axis=0), scalar_first=True)
 
             expert_action_threshold = np.array(expert_action_inconsistency_buffer).sum()
 
@@ -631,12 +635,25 @@ def main(rank, eval_cfg, device_ids):
                     curr_pos = np.array(curr_tcp[:3])
                     curr_rot = R.from_quat(np.array(curr_tcp[3:]), scalar_first=True)
                     # Rewind the robot while human resets the environment
-                    for i in range(int(rewind_steps * Ta)):
-                        if j < 1:
-                            break
+                    curr_timestep = j
+                    for i in range(curr_timestep):
+                        # Adaptively examine the corresponding OT cost, when the cost drops below the soft threshold, we stop rewinding
+                        if j % Ta == 0:
+                            if greedy_ot_cost[j // Ta - 1] < soft_ot_threshold:
+                                print("OT cost dropped below the soft threshold, stop rewinding.")
+                                break
+                            # Rewind the OT plan
+                            recovered_expert_weight = torch.zeros((demo_len // Ta,), device=device)
+                            recovered_expert_weight[expert_indices] = expert_weight
+                            expert_weight = recovered_expert_weight + greedy_ot_plan[:, j // Ta - 1]
+                            expert_indices = torch.nonzero(expert_weight)[:, 0]
+                            expert_weight = expert_weight[expert_indices]
+                            greedy_ot_plan[:, j // Ta - 1] = 0.
+                            greedy_ot_cost[j // Ta - 1] = 0.
+
                         # Rewind the demo history
-                        wrist_cam.pop()
-                        side_cam.pop()
+                        prev_wrist_cam = wrist_cam.pop()
+                        prev_side_cam = side_cam.pop()
                         tcp_pose.pop()
                         joint_pos.pop()
                         prev_action = action.pop()
@@ -659,11 +676,26 @@ def main(rank, eval_cfg, device_ids):
 
                     last_p = curr_pos
                     last_r = curr_rot
-                    print("Robot rewound to the last action before human intervention.")
-                    print("Please reset the scene and press 'c' to go on human intervention")
+                    print("Please reset the scene and press 'c' to go on to human intervention")
+                    ref_side_img = cv2.cvtColor(prev_side_cam, cv2.COLOR_RGB2BGR)
+                    ref_wrist_img = cv2.cvtColor(prev_wrist_cam, cv2.COLOR_RGB2BGR)
+                    cv2.namedWindow("Rewinded side view", cv2.WINDOW_AUTOSIZE)
+                    cv2.namedWindow("Rewinded wrist view", cv2.WINDOW_AUTOSIZE)
+                    # Ensure an identical configuration to the rewound scene
                     while not keyboard.ctn:
-                        time.sleep(0.1)
+                        cam_data = []
+                        for camera in cameras:
+                            color_image, _ = camera.get_data()
+                            cam_data.append(color_image)
+                        wrist_img = wrist_image_processor(torch.from_numpy(cam_data[1].copy()).\
+                                        permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
+                        side_img = side_image_processor(torch.from_numpy(cam_data[0].copy()).\
+                                        permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
+                        cv2.imshow("Rewinded side view", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
+                        cv2.imshow("Rewinded wrist view", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
+                        cv2.waitKey(1)
                     keyboard.ctn = False
+                    cv2.destroyAllWindows()
                 else:
                     last_p = last_p[0]
                     last_r = last_r[0]
@@ -885,7 +917,7 @@ def main(rank, eval_cfg, device_ids):
 
             print(f"Current progress: {np.sum(replay_buffer.data['action_mode'] == INTV) * 300 / num_round / np.sum(replay_buffer.data['action_mode'] == HUMAN)} %")
 
-            # For task configuration reset
+            # For scene configuration reset
             time.sleep(5)
     
     finally:

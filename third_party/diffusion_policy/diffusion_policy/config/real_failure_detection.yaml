@@ -1,7 +1,7 @@
 device_ids: '0'
 checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/pour/0526_14.01.52_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_pouring_ot_reweighted/bsf.ckpt
-train_dataset_path: /mnt/workspace/DP/0518_pour_cluttered_50_sirius_round1_3
-save_buffer_path: /mnt/workspace/DP/0518_pour_cluttered_50_bsf_failure_detection_round2_1_expert
+train_dataset_path: /mnt/workspace/DP/0518_pour_cluttered_50_bsf_failure_detection_round2_1_expert
+save_buffer_path: /mnt/workspace/DP/0518_pour_cluttered_50_bsf_failure_detection_round2_2_expert
 output_dir: outputs/visual/0518_pour_cluttered_50_exp_round2
 
 Ta: 8
@@ -11,6 +11,7 @@ seed: 2
 # Failure detection hyperparameters
 inconsistency_metric: expert
 ot_threshold: 0.03
+soft_ot_threshold: 0.01
 num_samples: 10
 window_size: 5
 rewind_steps: 3

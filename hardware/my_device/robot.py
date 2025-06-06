@@ -64,17 +64,10 @@ class FlexivRobot:
 
         # Move robot to home pose
         log.info("Moving to home pose")
-        # self.send_tcp_pose(self.home_pose)
-        # time.sleep(4)
         # self.send_joint_pose(self.home_joint_pos)
         # time.sleep(2)
         self.send_tcp_pose(self.home_pose)
         time.sleep(4)
-        # self.send_tcp_pose((0.6,0,0.2,0,0,1,0))
-        # self.send_tcp_pose((0.6,0,0.2,0,0.5**0.5,0.5**0.5,0))
-        # self.send_tcp_pose([0.6, 0, 0.2, 0, -0.5**0.5, 0.5**0.5, 0])
-        # self.send_tcp_pose(self.default_pose)
-        # time.sleep(5)
 
         robot.setMode(mode.NRT_PRIMITIVE_EXECUTION)
         # Zero Force-torque Sensor

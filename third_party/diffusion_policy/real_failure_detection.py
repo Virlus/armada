@@ -100,8 +100,6 @@ def main(rank, eval_cfg, device_ids):
     cfg.output_dir = eval_cfg.output_dir
     if 'obs_encoder' in cfg.policy:
         cfg.policy.obs_encoder.pretrained_path = None
-    # if rank == 0:
-    #     pathlib.Path(cfg.output_dir).mkdir(parents=True, exist_ok=True)
 
     cls = hydra.utils.get_class(cfg._target_)
     workspace = cls(cfg, rank, world_size, device_id, device)
@@ -147,6 +145,7 @@ def main(rank, eval_cfg, device_ids):
     ot_threshold = eval_cfg.ot_threshold
     num_samples = eval_cfg.num_samples
     window_size = eval_cfg.window_size
+    rewind_steps = eval_cfg.rewind_steps
 
     save_img = False
     output_dir = os.path.join(eval_cfg.output_dir, f"seed_{seed}")
@@ -373,9 +372,7 @@ def main(rank, eval_cfg, device_ids):
                 # Calculate the action inconsistency
                 if last_predicted_abs_actions is None:
                     last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[0, :-Ta]), 0) # Prevent anomalous value in the beginning
-                # action_fluctuation = np.mean(np.sum(np.square(np.linalg.norm(predicted_abs_actions[:, 1:] - predicted_abs_actions[:, :-1], axis=-1)), axis=-1)) # Action fluctuation
-                action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1)) # * \
-                    # np.exp(-action_fluctuation / 0.001) # Larger fluctuation entails larger inconsistency
+                action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1))
                 last_predicted_abs_actions = predicted_abs_actions[0]
                 expert_action_inconsistency_buffer.extend([action_inconsistency] * Ta)
                 
@@ -422,12 +419,8 @@ def main(rank, eval_cfg, device_ids):
                     for camera in cameras:
                         color_image, _ = camera.get_data()
                         cam_data.append(color_image)
-                    # ref_side_img = Image.open(os.path.join(output_dir, f"side_{episode_idx}.png"))
-                    # ref_wrist_img = Image.open(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
                     side_img = cam_data[0].copy()
                     wrist_img = cam_data[1].copy()
-                    # Image.fromarray((np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8)).show()
-                    # Image.fromarray((np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8)).show()
                     cv2.imshow("Side", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
                     cv2.imshow("Wrist", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
                     cv2.waitKey(1)
@@ -444,14 +437,15 @@ def main(rank, eval_cfg, device_ids):
             failure_indices = []
 
             while True:
+                if j >= max_episode_length - Ta:
+                    print("Maximum episode length reached, turning to human for help.")
+                    keyboard.help = True
                 # ===========================================================
                 #                   Policy inference loop
                 # ===========================================================
                 last_predicted_abs_actions = None
                 print("=========== Policy inference ============")
                 while not keyboard.finish and not keyboard.discard and not keyboard.help:
-                    if j >= max_episode_length - Ta:
-                        break
 
                     start_time = time.time()
                     if 'ee_pose' in cfg.shape_meta['obs']:
@@ -583,9 +577,7 @@ def main(rank, eval_cfg, device_ids):
                     # Calculate the action inconsistency
                     if last_predicted_abs_actions is None:
                         last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[0, :-Ta]), 0) # Prevent anomalous value in the beginning
-                    # action_fluctuation = np.mean(np.sum(np.square(np.linalg.norm(predicted_abs_actions[:, 1:] - predicted_abs_actions[:, :-1], axis=-1)), axis=-1)) # Action fluctuation
-                    action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1)) # * \
-                        # np.exp(-action_fluctuation / 0.001) # Larger fluctuation entails larger inconsistency
+                    action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1))
                     last_predicted_abs_actions = predicted_abs_actions[0]
                     action_inconsistency_buffer.extend([action_inconsistency] * Ta)
 
@@ -608,42 +600,82 @@ def main(rank, eval_cfg, device_ids):
                                                     * torch.tensor(action_inconsistency_buffer[(idx-window_size)*Ta:idx*Ta:Ta], device=device))
                         failure_flag = action_inconsistency * greedy_ot_cost[idx] > window_index_mean + 3 * window_index_std
                     else:
-                        # window_index_mean = 0 if idx < window_size else torch.mean(greedy_ot_cost[idx-window_size:idx])
-                        # window_index_std = torch.inf if idx < window_size else torch.std(greedy_ot_cost[idx-window_size:idx])
                         inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold
-                        # ot_flag = greedy_ot_cost[idx] > window_index_mean + 3 * window_index_std
                         ot_flag = greedy_ot_cost[idx] > ot_threshold
                         failure_flag = inconsistency_violation or ot_flag
                     
-                    if failure_flag:
-                        print("Failure detected!")
-                        failure_indices.append(idx)
-                        while not keyboard.ctn and not keyboard.discard and not keyboard.help:
+                    if failure_flag or j >= max_episode_length - Ta:
+                        if failure_flag:
+                            print("Failure detected! Due to ", "action inconsistency" if inconsistency_violation else "OT violation")
+                            failure_indices.append(idx)
+                        else:
+                            print("Maximum episode length reached!")
+                        print("Press 'c' to continue; Press 'd' to discard the demo; Press 'h' to request human intervention; Press 'f' to finish the episode.")
+                        while not keyboard.ctn and not keyboard.discard and not keyboard.help and not keyboard.finish:
                             time.sleep(0.1)
-                        if keyboard.ctn:
-                            print("Not a failure! Continue policy rollout.")
+                        if keyboard.ctn and j < max_episode_length - Ta:
+                            print("False Positive failure! Continue policy rollout.")
                             keyboard.ctn = False
                             continue
+                        elif keyboard.ctn and j >= max_episode_length - Ta:
+                            print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
+                            keyboard.ctn = False
+                            keyboard.help = True
+                            break
+                
+                if keyboard.help:
+                    # Reset the signal of request for help 
+                    keyboard.help = False
+                    # Compensate for the transformation of robot tcp pose during sigma detachment
+                    curr_tcp, _, _, _ = robot.get_robot_state()
+                    curr_pos = np.array(curr_tcp[:3])
+                    curr_rot = R.from_quat(np.array(curr_tcp[3:]), scalar_first=True)
+                    # Rewind the robot while human resets the environment
+                    for i in range(int(rewind_steps * Ta)):
+                        if j < 1:
+                            break
+                        # Rewind the demo history
+                        wrist_cam.pop()
+                        side_cam.pop()
+                        tcp_pose.pop()
+                        joint_pos.pop()
+                        prev_action = action.pop()
+                        action_mode.pop()
+                        action_inconsistency_buffer.pop()
+                        j -= 1
 
-                # Reset the signal of request for help 
-                keyboard.help = False
-                # Compensate for the transformation of robot tcp pose during sigma detachment
-                resume_tcp, _, _, _ = robot.get_robot_state()
-                resume_pos = np.array(resume_tcp[:3])
-                resume_rot = R.from_quat(np.array(resume_tcp[3:]), scalar_first=True)
-                translate = resume_pos - detach_pos
-                rotation = detach_rot.inv() * resume_rot
-                sigma.transform_from_robot(translate, rotation)
+                        # Deploy the inverse action on robot
+                        prev_p_action = prev_action[:3]
+                        prev_r_action = R.from_quat(prev_action[3:7], scalar_first=True)
+                        prev_gripper_action = prev_action[7]
+                        curr_pos = curr_pos - prev_p_action
+                        curr_rot = curr_rot * prev_r_action.inv()
+                        robot.send_tcp_pose(np.concatenate((curr_pos, curr_rot.as_quat(scalar_first=True)), 0))
+                        gripper.move(prev_gripper_action)
 
+                    translate = curr_pos - detach_pos
+                    rotation = detach_rot.inv() * curr_rot
+                    sigma.transform_from_robot(translate, rotation)
+
+                    last_p = curr_pos
+                    last_r = curr_rot
+                    print("Robot rewound to the last action before human intervention.")
+                    print("Please reset the scene and press 'c' to go on human intervention")
+                    while not keyboard.ctn:
+                        time.sleep(0.1)
+                    keyboard.ctn = False
+                else:
+                    last_p = last_p[0]
+                    last_r = last_r[0]
+                
+                assert last_p.shape == (3,)
+                assert last_r.as_quat(scalar_first=True).shape == (4,)
+                
                 print("============ Human intervention =============")
-                last_p = last_p[0]
-                last_r = last_r[0]
                 # ============================================================
                 #                   Human intervention loop
                 # ============================================================
                 while not keyboard.finish and not keyboard.discard and not keyboard.infer:
-                    if j >= max_episode_length - 1:
-                        break
                     
                     start_time = time.time()
                     cam_data = []
@@ -683,7 +715,6 @@ def main(rank, eval_cfg, device_ids):
                     robot.send_tcp_pose(np.concatenate((diff_p, diff_r.as_quat(scalar_first=True)), 0))
                     gripper.move_from_sigma(width)
                     gripper_action = gripper.max_width * width / 1000
-                    # gripper_action = 1 if width < 500 else 0
 
                     # Renew policy obs buffer for the next inference
                     if 'ee_pose' in cfg.shape_meta['obs']:
@@ -744,7 +775,7 @@ def main(rank, eval_cfg, device_ids):
                 detach_rot = R.from_quat(np.array(detach_tcp[3:]), scalar_first=True)
 
                 # This episode fails to accomplish the task
-                if j >= max_episode_length - 1 or keyboard.discard:
+                if keyboard.discard:
                     break
 
                 # Save the demonstrations to the replay buffer
@@ -762,11 +793,14 @@ def main(rank, eval_cfg, device_ids):
 
                     # Visualize action inconsistency and observation optimal transport cost
                     action_inconsistency_buffer = np.array(action_inconsistency_buffer)
+                    greedy_ot_cost = greedy_ot_cost[:len(action_inconsistency_buffer)//Ta] if len(greedy_ot_cost) >= len(action_inconsistency_buffer)//Ta \
+                        else torch.cat((greedy_ot_cost, torch.zeros((len(action_inconsistency_buffer)//Ta - len(greedy_ot_cost),), device=device)))
+                    greedy_ot_plan = greedy_ot_plan[:, :len(action_inconsistency_buffer)//Ta] if greedy_ot_plan.shape[1] >= len(action_inconsistency_buffer)//Ta \
+                        else torch.cat((greedy_ot_plan, torch.zeros((greedy_ot_plan.shape[0], len(action_inconsistency_buffer)//Ta - greedy_ot_plan.shape[1]), device=device)), 1)
                     ot_cost_final = greedy_ot_cost[:len(action_inconsistency_buffer)//Ta].detach().cpu().numpy()
                     cell_size = 1
                     fig = plt.figure(figsize=(episode['wrist_cam'].shape[0] // Ta * cell_size, (3 + demo_len // Ta) * cell_size + 2))
                     gs = plt.GridSpec(4, 1, height_ratios=[0.083, 0.083, 0.083, 0.75], hspace=0.8)
-                    # ax = fig.add_subplot(111)
                     action_ax = fig.add_subplot(gs[0])
                     ot_ax = fig.add_subplot(gs[1])
                     final_ax = fig.add_subplot(gs[2])
@@ -836,8 +870,6 @@ def main(rank, eval_cfg, device_ids):
                     plt.savefig(f'{eval_cfg.save_buffer_path}/episode_{episode_id}.png', bbox_inches='tight')
                     break
 
-            # robot.send_joint_pose(robot.home_joint_pos)
-            # time.sleep(2)
             robot.send_tcp_pose(robot.init_pose)
             time.sleep(3)
             gripper.move(gripper.max_width)
@@ -847,7 +879,7 @@ def main(rank, eval_cfg, device_ids):
             episode_idx += 1
             
             print(f"Current human intervention ratio: {np.sum(replay_buffer.data['action_mode'] == INTV) * 100 / np.sum(replay_buffer.data['action_mode'] != HUMAN)} %")
-            # Sirius rollout halts if human intervention samples exceed 1 / 3 of original human demonstration
+            # Rollout halts according to the ratio between human intervention and expert samples
             if np.sum(replay_buffer.data['action_mode'] == INTV) * 3 / num_round >= np.sum(replay_buffer.data['action_mode'] == HUMAN):
                 break
 

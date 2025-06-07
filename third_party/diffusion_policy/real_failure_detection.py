@@ -732,7 +732,7 @@ def main(rank, eval_cfg, device_ids):
                 # ============================================================
                 #                   Human intervention loop
                 # ============================================================
-                while not keyboard.finish and not keyboard.discard and not keyboard.infer:
+                while (not keyboard.finish and not keyboard.discard and not keyboard.infer) or j % Ta: # Force a Ta-step chunking
                     
                     start_time = time.time()
                     cam_data = []
@@ -808,15 +808,11 @@ def main(rank, eval_cfg, device_ids):
                     action.append(np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])))
                     action_mode.append(INTV)
 
+                    dummy_action_inconsistency = 0
+                    action_inconsistency_buffer.append(dummy_action_inconsistency)
+
                     time.sleep(max(1 / fps - (time.time() - start_time), 0))
                     j += 1
-
-                    if j % Ta == 0: # Maintain Optimal Transport calculation during human intervention
-                        if inconsistency_metric == 'stat':
-                            dummy_action_inconsistency = action_inconsistency * 2
-                        else:
-                            dummy_action_inconsistency = 0
-                        action_inconsistency_buffer.extend([dummy_action_inconsistency] * Ta)
 
                 # Reset the last action buffer for policy inference
                 last_p = last_p[np.newaxis, :].repeat(num_samples, axis=0)

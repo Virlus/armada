@@ -22,19 +22,19 @@ def main(args):
         robot.send_tcp_pose(robot.init_pose)
         gripper.move(gripper.max_width)
         time.sleep(2)
-        last_p = robot.init_pose[:3]
-        last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
-        for j in range(0 if i == 0 else replay_buffer.episode_ends[i-1], replay_buffer.episode_ends[i]):
-            start_time = time.time()
-            curr_p_action = replay_buffer['action'][j, :3]
-            curr_r_action = R.from_quat(replay_buffer['action'][j, 3:7], scalar_first=True)
-            curr_p = last_p + curr_p_action
-            curr_r = last_r * curr_r_action
-            last_p = curr_p
-            last_r = curr_r
-            robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat(scalar_first=True)), 0))
-            gripper.move(replay_buffer['action'][j, 7])
-            time.sleep(max(1 / 10 - (time.time() - start_time), 0))
+        # last_p = robot.init_pose[:3]
+        # last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
+        # for j in range(0 if i == 0 else replay_buffer.episode_ends[i-1], replay_buffer.episode_ends[i]):
+        #     start_time = time.time()
+        #     curr_p_action = replay_buffer['action'][j, :3]
+        #     curr_r_action = R.from_quat(replay_buffer['action'][j, 3:7], scalar_first=True)
+        #     curr_p = last_p + curr_p_action
+        #     curr_r = last_r * curr_r_action
+        #     last_p = curr_p
+        #     last_r = curr_r
+        #     robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat(scalar_first=True)), 0))
+        #     gripper.move(replay_buffer['action'][j, 7])
+        #     time.sleep(max(1 / 10 - (time.time() - start_time), 0))
 
         for j in range(0 if i == 0 else replay_buffer.episode_ends[i-1], replay_buffer.episode_ends[i]):
             episode_path = os.path.join(image_save_path, f'episode_{i}')
@@ -58,7 +58,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0514_pour/replay_buffer.zarr')
+    parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0518_pour_cluttered_50_bsf_failure_detection_round2_1_expert/replay_buffer.zarr')
     parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/debug')
     args = parser.parse_args()
     main(args)

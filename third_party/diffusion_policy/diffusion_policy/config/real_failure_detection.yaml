@@ -6,7 +6,7 @@ output_dir: outputs/visual/0518_pour_cluttered_50_exp_round2
 
 Ta: 8
 random_init: True
-seed: 2
+seed: 3
 
 # Failure detection hyperparameters
 inconsistency_metric: expert

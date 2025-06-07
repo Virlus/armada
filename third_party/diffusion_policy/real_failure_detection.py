@@ -146,7 +146,7 @@ def main(rank, eval_cfg, device_ids):
     soft_ot_threshold = eval_cfg.soft_ot_threshold
     num_samples = eval_cfg.num_samples
     window_size = eval_cfg.window_size
-    rewind_steps = eval_cfg.rewind_steps
+    post_process_action_mode = eval_cfg.post_process_action_mode
 
     save_img = False
     output_dir = os.path.join(eval_cfg.output_dir, f"seed_{seed}")
@@ -839,7 +839,10 @@ def main(rank, eval_cfg, device_ids):
                     episode['tcp_pose'] = np.stack(tcp_pose, axis=0)
                     episode['joint_pos'] = np.stack(joint_pos, axis=0)
                     episode['action'] = np.stack(action, axis=0)
-                    episode['action_mode'] = postprocess_action_mode(np.array(action_mode))
+                    if post_process_action_mode:
+                        episode['action_mode'] = postprocess_action_mode(np.array(action_mode))
+                    else:
+                        episode['action_mode'] = np.array(action_mode)
                     replay_buffer.add_episode(episode, compressors='disk')
                     episode_id = replay_buffer.n_episodes - 1
                     print('Saved episode ', episode_id)

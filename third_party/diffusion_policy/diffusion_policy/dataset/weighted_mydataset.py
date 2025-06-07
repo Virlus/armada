@@ -17,6 +17,10 @@ from diffusion_policy.common.normalize_util import get_image_range_normalizer
 from diffusion_policy.model.common.rotation_transformer import RotationTransformer
 from scipy.spatial.transform import Rotation as R
 
+HUMAN = 0
+ROBOT = 1
+PRE_INTV = 2
+INTV = 3
 
 class WeightedMyDataset(BaseImageDataset):
     def __init__(self,
@@ -36,8 +40,10 @@ class WeightedMyDataset(BaseImageDataset):
             ):
         
         super().__init__()
-        self.replay_buffer = ReplayBuffer.copy_from_path(
-            zarr_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose', 'action_weight'])
+        # self.replay_buffer = ReplayBuffer.copy_from_path(
+        #     zarr_path, keys=['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose', 'action_weight'])
+        self.replay_buffer = ReplayBuffer.copy_from_path(zarr_path) # Copy all existing keys
+        self._prune_episodes(max_n_episodes=max_n_episodes)
         val_mask = get_val_mask(
             n_episodes=self.replay_buffer.n_episodes, 
             val_ratio=val_ratio,
@@ -95,6 +101,30 @@ class WeightedMyDataset(BaseImageDataset):
             )
         val_set.train_mask = ~self.train_mask
         return val_set
+    
+    def _prune_episode_indices(self, max_n_episodes):
+        human_demo_indices = []
+        intv_indices = []
+        for i in range(self.replay_buffer.n_episodes):
+            episode_start = self.replay_buffer.episode_ends[i-1] if i > 0 else 0
+            if np.any(self.replay_buffer.data['action_mode'][episode_start: self.replay_buffer.episode_ends[i]] == HUMAN):
+                human_demo_indices.append(i)
+            elif np.any(self.replay_buffer.data['action_mode'][episode_start: self.replay_buffer.episode_ends[i]] == INTV):
+                intv_indices.append(i)
+        # LFI implementation
+        intv_indices = intv_indices[-int(max_n_episodes-len(human_demo_indices)):]
+        human_demo_indices.extend(intv_indices)
+        return human_demo_indices
+        
+    def _prune_episodes(self, max_n_episodes):
+        if self.replay_buffer.n_episodes <= max_n_episodes:
+            return
+        pruned_replay_buffer = ReplayBuffer.create_empty_numpy()
+        preserved_indices = self._prune_episode_indices(max_n_episodes)
+        assert len(preserved_indices) == max_n_episodes
+        for idx in preserved_indices:
+            pruned_replay_buffer.add_episode(self.replay_buffer.get_episode(idx), compressors='disk')
+        self.replay_buffer = pruned_replay_buffer
     
     def get_normalizer(self, mode='limits', **kwargs):
         if self.rel_ee_pose:

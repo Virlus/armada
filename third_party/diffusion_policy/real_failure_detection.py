@@ -145,7 +145,6 @@ def main(rank, eval_cfg, device_ids):
     ot_threshold = eval_cfg.ot_threshold
     soft_ot_threshold = eval_cfg.soft_ot_threshold
     num_samples = eval_cfg.num_samples
-    window_size = eval_cfg.window_size
     post_process_action_mode = eval_cfg.post_process_action_mode
 
     save_img = False
@@ -622,16 +621,9 @@ def main(rank, eval_cfg, device_ids):
                         greedy_ot_plan, greedy_ot_cost, expert_weight, rollout_weight, dist2expert, expert_indices, idx
                     )
 
-                    if inconsistency_metric == 'stat':
-                        window_index_mean = 0 if idx < window_size else torch.mean(greedy_ot_cost[idx-window_size:idx] \
-                                                    * torch.tensor(action_inconsistency_buffer[(idx-window_size)*Ta:idx*Ta:Ta], device=device))
-                        window_index_std = torch.inf if idx < window_size else torch.std(greedy_ot_cost[idx-window_size:idx] \
-                                                    * torch.tensor(action_inconsistency_buffer[(idx-window_size)*Ta:idx*Ta:Ta], device=device))
-                        failure_flag = action_inconsistency * greedy_ot_cost[idx] > window_index_mean + 3 * window_index_std
-                    else:
-                        inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold
-                        ot_flag = greedy_ot_cost[idx] > ot_threshold
-                        failure_flag = inconsistency_violation or ot_flag
+                    inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold
+                    ot_flag = greedy_ot_cost[idx] > ot_threshold
+                    failure_flag = inconsistency_violation or ot_flag
                     
                     if failure_flag or j >= max_episode_length - Ta:
                         if failure_flag:

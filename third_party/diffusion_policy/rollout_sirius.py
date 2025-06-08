@@ -17,6 +17,7 @@ import cv2
 from torchvision.transforms import Compose, Resize, CenterCrop
 from torchvision.transforms import InterpolationMode
 import pygame
+from PIL import Image
 
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.common.replay_buffer import ReplayBuffer
@@ -122,9 +123,18 @@ def main(rank, eval_cfg, device_ids):
     wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
 
     # Overwritten by evaluation config specifically
-    seed = int(time.time())
+    seed = eval_cfg.seed
     np.random.seed(seed)
     Ta = eval_cfg.Ta
+
+    save_img = False
+    output_dir = os.path.join(eval_cfg.output_dir, f"seed_{seed}")
+    if os.path.isdir(output_dir):
+        print(f"Output directory {output_dir} already exists, will not overwrite it.")
+    else:
+        os.makedirs(output_dir)
+        print(f"Created output directory: {output_dir}")
+        save_img = True
     
     # Inspect the current round (Sirius-specific)
     match_round = re.search(r'round(\d)', eval_cfg.save_buffer_path)
@@ -235,6 +245,35 @@ def main(rank, eval_cfg, device_ids):
                 last_p = robot.init_pose[:3]
                 last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
             
+            # Strictly align with previous scenes
+            if save_img or not os.path.isfile(os.path.join(output_dir, f"side_{episode_idx}.png")):
+                cam_data = []
+                for camera in cameras:
+                    color_image, _ = camera.get_data()
+                    cam_data.append(color_image)
+                side_img = cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)
+                wrist_img = cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)
+                Image.fromarray(side_img).save(os.path.join(output_dir, f"side_{episode_idx}.png"))
+                Image.fromarray(wrist_img).save(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
+            else:
+                ref_side_img = cv2.imread(os.path.join(output_dir, f"side_{episode_idx}.png"))
+                ref_wrist_img = cv2.imread(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
+                cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
+                cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
+                # Ensure an identical configuration
+                while not keyboard.ctn:
+                    cam_data = []
+                    for camera in cameras:
+                        color_image, _ = camera.get_data()
+                        cam_data.append(color_image)
+                    side_img = cam_data[0].copy()
+                    wrist_img = cam_data[1].copy()
+                    cv2.imshow("Side", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
+                    cv2.imshow("Wrist", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
+                    cv2.waitKey(1)
+                keyboard.ctn = False
+                cv2.destroyAllWindows()
+
             # Keep track of throttle usage for human intervention (Default to True because the teleop should follow up from arbitrary pose)
             last_throttle = True
             sigma.detach()

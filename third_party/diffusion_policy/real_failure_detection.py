@@ -146,6 +146,7 @@ def main(rank, eval_cfg, device_ids):
     soft_ot_threshold = eval_cfg.soft_ot_threshold
     num_samples = eval_cfg.num_samples
     post_process_action_mode = eval_cfg.post_process_action_mode
+    action_inconsistency_percentile = eval_cfg.action_inconsistency_percentile
 
     save_img = False
     output_dir = os.path.join(eval_cfg.output_dir, f"seed_{seed}")
@@ -286,7 +287,7 @@ def main(rank, eval_cfg, device_ids):
         curr_expert_action_inconsistency = np.array(expert_action_inconsistency_buffer).sum()
         expert_action_inconsistencies.append(curr_expert_action_inconsistency)
     
-    expert_action_threshold = np.max(np.array(expert_action_inconsistencies))
+    expert_action_threshold = np.percentile(np.array(expert_action_inconsistencies), action_inconsistency_percentile)
 
     # Evaluation starts here
     episode_idx = 0
@@ -637,6 +638,9 @@ def main(rank, eval_cfg, device_ids):
                         if keyboard.ctn and j < max_episode_length - Ta:
                             print("False Positive failure! Continue policy rollout.")
                             keyboard.ctn = False
+                            if inconsistency_violation:
+                                prev_expert_action_threshold = expert_action_threshold
+                                expert_action_threshold = np.inf # Temporarily ignore action inconsistency metric
                             continue
                         elif keyboard.ctn and j >= max_episode_length - Ta:
                             print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
@@ -818,6 +822,15 @@ def main(rank, eval_cfg, device_ids):
                 detach_tcp, _, _, _ = robot.get_robot_state()
                 detach_pos = np.array(detach_tcp[:3])
                 detach_rot = R.from_quat(np.array(detach_tcp[3:]), scalar_first=True)
+
+                # Based on the outcome of the episode, reset the expert action threshold
+                if expert_action_threshold == np.inf: 
+                    if keyboard.finish: # Suggests a successful rollout
+                        if np.array(action_inconsistency_buffer).sum() > prev_expert_action_threshold:
+                            success_action_inconsistency = np.array(action_inconsistency_buffer).sum()
+                            expert_action_inconsistencies.append(success_action_inconsistency)
+                    expert_action_threshold = np.percentile(np.array(expert_action_inconsistencies), action_inconsistency_percentile)
+                    print("Reset the expert action threshold to ", expert_action_threshold)
 
                 # This episode fails to accomplish the task
                 if keyboard.discard:

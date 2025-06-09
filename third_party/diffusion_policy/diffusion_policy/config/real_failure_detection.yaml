@@ -13,6 +13,7 @@ inconsistency_metric: expert
 ot_threshold: 0.03
 soft_ot_threshold: 0.01
 num_samples: 10
+action_inconsistency_percentile: 0.95
 
 # Sirius-related hyperparameters
 post_process_action_mode: False

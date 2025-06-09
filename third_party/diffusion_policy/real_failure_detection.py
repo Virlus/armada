@@ -213,81 +213,8 @@ def main(rank, eval_cfg, device_ids):
 
         human_eps_len.append(eps_side_img.shape[0])
 
-    # Derive the action inconsistency threshold by taking maximum among expert demonstrations
-    expert_action_inconsistencies = []
-    for expert_idx in human_demo_indices:
-        matched_human_episode = replay_buffer.get_episode(expert_idx)
-
-        # Fetch the latent representations of the matched human episode
-        eps_side_img = (torch.from_numpy(matched_human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-        eps_wrist_img = (torch.from_numpy(matched_human_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-        eps_state = np.zeros((matched_human_episode['tcp_pose'].shape[0], ee_pose_dim))
-        eps_state[:, :3] = matched_human_episode['tcp_pose'][:, :3]
-        eps_state[:, 3:] = obs_rot_transformer.forward(matched_human_episode['tcp_pose'][:, 3:])
-        eps_state = (torch.from_numpy(eps_state)).to(device)
-        demo_len = matched_human_episode['action'].shape[0]
-
-        # Now we need to compute inferred action inconsistency for the matched human episode as well
-        expert_init_pose = matched_human_episode['tcp_pose']
-        eps_last_p = expert_init_pose[0:1, :3].repeat(num_samples, axis=0)
-        eps_last_r = R.from_quat(expert_init_pose[0:1, 3:].repeat(num_samples, axis=0), scalar_first=True)
-
-        # Initialize the action buffer
-        last_predicted_abs_actions = None
-        expert_action_inconsistency_buffer = []
-        
-        for idx in range(demo_len // Ta):
-            human_demo_idx = idx * Ta
-            if human_demo_idx < To - 1:
-                indices = [0] * (To-1-human_demo_idx) + list(range(human_demo_idx+1))
-                policy_obs = {
-                    'side_img': eps_side_img[indices, :].unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
-                    'wrist_img': eps_wrist_img[indices, :].unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
-                    'ee_pose': eps_state[indices, :].unsqueeze(0).repeat(num_samples, 1, 1)
-                }
-            else:
-                policy_obs = {
-                    'side_img': eps_side_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
-                    'wrist_img': eps_wrist_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
-                    'ee_pose': eps_state[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0).repeat(num_samples, 1, 1)
-                }
-
-            with torch.no_grad():
-                curr_action = policy.predict_action(policy_obs)
-                np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
-                action_seq = np_action_dict['action']
-                predicted_abs_actions = np.zeros_like(action_seq[:, :, :8])
-
-            # Derive the action chunk
-            for step in range(policy.n_action_steps):
-                # Action calculation
-                curr_p_action = action_seq[:, step, :3]
-                curr_p = eps_last_p + curr_p_action
-                curr_r_action = action_rot_transformer.inverse(action_seq[:, step, 3:action_dim-1])
-                action_rot = R.from_quat(curr_r_action, scalar_first=True)
-                curr_r = eps_last_r * action_rot
-                eps_last_p = curr_p
-                eps_last_r = curr_r
-                if step == Ta - 1:
-                    actual_last_p = eps_last_p
-                    actual_last_r = eps_last_r
-                demo_gripper_action = action_seq[:, step, -1]
-                predicted_abs_actions[:, step] = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), demo_gripper_action[:, np.newaxis]), -1)
-            
-            # Calculate the action inconsistency
-            if last_predicted_abs_actions is None:
-                last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[0, :-Ta]), 0) # Prevent anomalous value in the beginning
-            action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - last_predicted_abs_actions[np.newaxis, Ta:], axis=-1))
-            last_predicted_abs_actions = predicted_abs_actions[0]
-            expert_action_inconsistency_buffer.extend([action_inconsistency] * Ta)
-            
-            eps_last_p = actual_last_p[0:1, :].repeat(num_samples, axis=0)
-            eps_last_r = R.from_quat(R.as_quat(actual_last_r, scalar_first=True)[0:1, :].repeat(num_samples, axis=0), scalar_first=True)
-
-        curr_expert_action_inconsistency = np.array(expert_action_inconsistency_buffer).sum()
-        expert_action_inconsistencies.append(curr_expert_action_inconsistency)
-    
-    expert_action_threshold = np.percentile(np.array(expert_action_inconsistencies), action_inconsistency_percentile)
+    expert_action_threshold = None
+    success_action_inconsistencies = []
 
     # Evaluation starts here
     episode_idx = 0
@@ -622,7 +549,7 @@ def main(rank, eval_cfg, device_ids):
                         greedy_ot_plan, greedy_ot_cost, expert_weight, rollout_weight, dist2expert, expert_indices, idx
                     )
 
-                    inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold
+                    inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold if expert_action_threshold is not None else False
                     ot_flag = greedy_ot_cost[idx] > ot_threshold
                     failure_flag = inconsistency_violation or ot_flag
                     
@@ -828,9 +755,12 @@ def main(rank, eval_cfg, device_ids):
                     if keyboard.finish: # Suggests a successful rollout
                         if np.array(action_inconsistency_buffer).sum() > prev_expert_action_threshold:
                             success_action_inconsistency = np.array(action_inconsistency_buffer).sum()
-                            expert_action_inconsistencies.append(success_action_inconsistency)
-                    expert_action_threshold = np.percentile(np.array(expert_action_inconsistencies), action_inconsistency_percentile)
+                            success_action_inconsistencies.append(success_action_inconsistency)
+                    expert_action_threshold = np.percentile(np.array(success_action_inconsistencies), action_inconsistency_percentile)
                     print("Reset the expert action threshold to ", expert_action_threshold)
+                elif expert_action_threshold is None:
+                    expert_action_threshold = np.array(action_inconsistency_buffer).sum()
+                    print("Initialize the expert action threshold to ", expert_action_threshold)
 
                 # This episode fails to accomplish the task
                 if keyboard.discard:

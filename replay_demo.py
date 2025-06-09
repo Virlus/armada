@@ -8,17 +8,41 @@ import numpy as np
 import time
 import os
 
+HUMAN = 0
+ROBOT = 1
+PRE_INTV = 2
+INTV = 3
+
 def main(args):
     robot = FlexivRobot()
     gripper = FlexivGripper(robot)
     replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=['wrist_cam', 'side_cam', 'tcp_pose', \
-                                                                      'joint_pos', 'action'])
+                                                                      'joint_pos', 'action', 'action_mode'])
     zarr_path = os.path.join(args.output, 'replay_buffer.zarr')
     save_buffer = ReplayBuffer.create_from_path(zarr_path, mode='a')
+
+    curr_round_start = replay_buffer.episode_ends[args.start_index-1] if args.start_index > 0 else 0
+    curr_round_end = replay_buffer.episode_ends[-1]
+
+    print("Human intervention ratio: ", np.sum(replay_buffer['action_mode'][curr_round_start:curr_round_end] == INTV) / \
+                                                     (curr_round_end - curr_round_start) * 100.0)
+    
+    import pdb; pdb.set_trace()
+
+    success_count = 0
+
+    for i in range(args.start_index, replay_buffer.n_episodes):
+        curr_action_mode = replay_buffer['action_mode'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
+        if np.sum(curr_action_mode == INTV) == 0:
+            success_count += 1
+    
+    print(f"Success rate in this round: {success_count / (replay_buffer.n_episodes - args.start_index) * 100:.2f}%")
+    import pdb; pdb.set_trace()
+
     image_save_path = os.path.join(os.path.dirname(args.demo_path), 'images')
     os.makedirs(image_save_path, exist_ok=True)
 
-    for i in range(replay_buffer.n_episodes):
+    for i in range(args.start_index, replay_buffer.n_episodes):
         robot.send_tcp_pose(robot.init_pose)
         gripper.move(gripper.max_width)
         time.sleep(2)
@@ -59,6 +83,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--demo_path', type=str, default='/mnt/workspace/DP/0518_pour_cluttered_50_bsf_failure_detection_round2_1_expert/replay_buffer.zarr')
+    parser.add_argument('-s', '--start_index', type=int, default=0)
     parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/debug')
     args = parser.parse_args()
     main(args)

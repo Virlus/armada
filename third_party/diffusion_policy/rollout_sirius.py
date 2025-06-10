@@ -163,10 +163,8 @@ def main(rank, eval_cfg, device_ids):
     # Evaluation starts here
     episode_idx = 0
     max_episode_length = 600
-    # episode_list = [x for x in range(eval_cfg.num_episode) if (x + 1) % world_size == rank]
 
     try:
-        # for episode_idx in range(eval_cfg.num_episode):
         while True: 
             if keyboard.quit:
                 break

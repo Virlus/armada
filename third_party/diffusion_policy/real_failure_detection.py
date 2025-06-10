@@ -566,7 +566,7 @@ def main(rank, eval_cfg, device_ids):
                             print("False Positive failure! Continue policy rollout.")
                             keyboard.ctn = False
                             if inconsistency_violation:
-                                prev_expert_action_threshold = expert_action_threshold
+                                # prev_expert_action_threshold = expert_action_threshold
                                 expert_action_threshold = np.inf # Temporarily ignore action inconsistency metric
                             continue
                         elif keyboard.ctn and j >= max_episode_length - Ta:
@@ -752,15 +752,17 @@ def main(rank, eval_cfg, device_ids):
 
                 # Based on the outcome of the episode, reset the expert action threshold
                 if expert_action_threshold == np.inf: 
-                    if keyboard.finish: # Suggests a successful rollout
-                        if np.array(action_inconsistency_buffer).sum() > prev_expert_action_threshold:
-                            success_action_inconsistency = np.array(action_inconsistency_buffer).sum()
-                            success_action_inconsistencies.append(success_action_inconsistency)
+                    if keyboard.finish and INTV not in action_mode: # Suggests a successful and unintervened rollout
+                        # if np.array(action_inconsistency_buffer).sum() > prev_expert_action_threshold:
+                        success_action_inconsistency = np.array(action_inconsistency_buffer).sum()
+                        success_action_inconsistencies.append(success_action_inconsistency)
                     expert_action_threshold = np.percentile(np.array(success_action_inconsistencies), action_inconsistency_percentile)
                     print("Reset the expert action threshold to ", expert_action_threshold)
                 elif expert_action_threshold is None:
-                    expert_action_threshold = np.array(action_inconsistency_buffer).sum()
-                    print("Initialize the expert action threshold to ", expert_action_threshold)
+                    if keyboard.finish and INTV not in action_mode:
+                        expert_action_threshold = np.array(action_inconsistency_buffer).sum()
+                        success_action_inconsistencies.append(expert_action_threshold)
+                        print("Initialize the expert action threshold to ", expert_action_threshold)
 
                 # This episode fails to accomplish the task
                 if keyboard.discard:

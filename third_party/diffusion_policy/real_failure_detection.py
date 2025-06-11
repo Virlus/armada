@@ -27,7 +27,7 @@ from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.model.common.rotation_transformer import RotationTransformer
-from diffusion_policy.real_world.failure_detection_util import greedy_ot_amortize
+from diffusion_policy.real_world.failure_detection_util import greedy_ot_amortize, optimal_transport_plan, rematch_expert_episode
 
 from hardware.my_device.robot import FlexivRobot, FlexivGripper
 from hardware.my_device.camera import CameraD400
@@ -145,6 +145,7 @@ def main(rank, eval_cfg, device_ids):
     ot_threshold = eval_cfg.ot_threshold
     soft_ot_threshold = eval_cfg.soft_ot_threshold
     num_samples = eval_cfg.num_samples
+    num_expert_candidates = eval_cfg.num_expert_candidates
     post_process_action_mode = eval_cfg.post_process_action_mode
     action_inconsistency_percentile = eval_cfg.action_inconsistency_percentile
 
@@ -188,7 +189,7 @@ def main(rank, eval_cfg, device_ids):
         if np.any(replay_buffer.data['action_mode'][episode_start: replay_buffer.episode_ends[i]] == HUMAN):
             human_demo_indices.append(i)
             
-    human_init_latent = torch.zeros((len(human_demo_indices), int(To*obs_feature_dim)), device=device)
+    all_human_latent = []
     human_eps_len = []
 
     for i in tqdm.tqdm(human_demo_indices, desc="Obtaining latent for human demo"):
@@ -199,19 +200,31 @@ def main(rank, eval_cfg, device_ids):
         eps_state[:, :3] = human_episode['tcp_pose'][:, :3]
         eps_state[:, 3:] = obs_rot_transformer.forward(human_episode['tcp_pose'][:, 3:])
         eps_state = (torch.from_numpy(eps_state)).to(device)
-        
-        indices = [0] * To
-        obs_dict = {
-            'side_img': eps_side_img[indices, :].unsqueeze(0),
-            'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
-            'ee_pose': eps_state[indices, :].unsqueeze(0)
-        }
-        
-        with torch.no_grad():
-            obs_features = policy.extract_latent(obs_dict)
-            human_init_latent[i] = obs_features.squeeze(0).reshape(-1)
+        demo_len = human_episode['action'].shape[0]
+
+        human_latent = torch.zeros((demo_len // Ta, int(To*obs_feature_dim)), device=device)
+        for idx in range(demo_len // Ta):
+            human_demo_idx = idx * Ta
+            if human_demo_idx < To - 1:
+                indices = [0] * (To-1-human_demo_idx) + list(range(human_demo_idx+1))
+                obs_dict = {
+                    'side_img': eps_side_img[indices, :].unsqueeze(0),
+                    'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
+                    'ee_pose': eps_state[indices, :].unsqueeze(0)
+                }
+            else:
+                obs_dict = {
+                    'side_img': eps_side_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0),
+                    'wrist_img': eps_wrist_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0), 
+                    'ee_pose': eps_state[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0)
+                }
+
+            with torch.no_grad():
+                obs_features = policy.extract_latent(obs_dict)
+                human_latent[idx] = obs_features.squeeze(0).reshape(-1)
 
         human_eps_len.append(eps_side_img.shape[0])
+        all_human_latent.append(human_latent)
 
     expert_action_threshold = None
     success_action_inconsistencies = []
@@ -301,47 +314,28 @@ def main(rank, eval_cfg, device_ids):
 
             with torch.no_grad():
                 obs_features = policy.extract_latent(curr_obs)
-                rollout_latent = obs_features.reshape(-1).unsqueeze(0)
-            
-            dist_mat = cosine_distance(human_init_latent, rollout_latent).to(device).detach()
-            matched_human_idx = human_demo_indices[torch.argmin(dist_mat, dim=0).item()]
-            matched_human_episode = replay_buffer.get_episode(matched_human_idx)
+                rollout_init_latent = obs_features.reshape(-1).unsqueeze(0)
 
-            # Fetch the latent representations of the matched human episode
-            eps_side_img = (torch.from_numpy(matched_human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-            eps_wrist_img = (torch.from_numpy(matched_human_episode['wrist_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-            eps_state = np.zeros((matched_human_episode['tcp_pose'].shape[0], ee_pose_dim))
-            eps_state[:, :3] = matched_human_episode['tcp_pose'][:, :3]
-            eps_state[:, 3:] = obs_rot_transformer.forward(matched_human_episode['tcp_pose'][:, 3:])
-            eps_state = (torch.from_numpy(eps_state)).to(device)
-            demo_len = matched_human_episode['action'].shape[0]
-            human_latent = torch.zeros((demo_len // Ta, int(To*obs_feature_dim)), device=device)
+            all_transport_costs = []
             
-            for idx in range(demo_len // Ta):
-                human_demo_idx = idx * Ta
-                if human_demo_idx < To - 1:
-                    indices = [0] * (To-1-human_demo_idx) + list(range(human_demo_idx+1))
-                    obs_dict = {
-                        'side_img': eps_side_img[indices, :].unsqueeze(0),
-                        'wrist_img': eps_wrist_img[indices, :].unsqueeze(0), 
-                        'ee_pose': eps_state[indices, :].unsqueeze(0)
-                    }
-                else:
-                    obs_dict = {
-                        'side_img': eps_side_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0),
-                        'wrist_img': eps_wrist_img[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0), 
-                        'ee_pose': eps_state[human_demo_idx-To+1: human_demo_idx+1, :].unsqueeze(0)
-                    }
+            for human_latent in tqdm.tqdm(all_human_latent, desc="Calculating OT plan with expert demos"):
+                cost_mat = cosine_distance(human_latent, rollout_init_latent).to(device).detach()
+                transport_plan = optimal_transport_plan(human_latent, rollout_init_latent, cost_mat)
+                transport_cost = torch.sum(transport_plan * cost_mat, dim=0).squeeze()
+                all_transport_costs.append(transport_cost)
 
-                with torch.no_grad():
-                    obs_features = policy.extract_latent(obs_dict)
-                    human_latent[idx] = obs_features.squeeze(0).reshape(-1)
+            all_transport_costs = torch.stack(all_transport_costs, dim=0)
+            _, candidate_expert_indices = torch.topk(all_transport_costs, k=num_expert_candidates, largest=False, sorted=True)
+            matched_human_idx = human_demo_indices[candidate_expert_indices[0]]
+            human_latent = all_human_latent[matched_human_idx]
+            demo_len = human_eps_len[matched_human_idx]
 
             # Initialize the rollout optimal transport components with an assumption of maximum episode length [Need verification]
             expert_weight = torch.ones((demo_len // Ta,), device=device) / float(demo_len // Ta)
             expert_indices = torch.arange(demo_len // Ta, device=device)
             greedy_ot_plan = torch.zeros((demo_len // Ta, max_episode_length // Ta), device=device)
             greedy_ot_cost = torch.zeros((max_episode_length // Ta,), device=device)
+            rollout_latent = torch.zeros((max_episode_length // Ta, int(To*obs_feature_dim)), device=device)
 
             # Keep track of pose from the last frame for relative action space
             if eval_cfg.random_init:
@@ -545,10 +539,12 @@ def main(rank, eval_cfg, device_ids):
                     dist2expert = cosine_distance(human_latent[expert_indices], curr_latent.unsqueeze(0)).squeeze(-1)
                     idx = j // Ta - 1
                     # Update the OT plan
+                    rollout_latent[idx] = curr_latent
                     greedy_ot_plan, greedy_ot_cost, expert_weight, expert_indices = greedy_ot_amortize(
                         greedy_ot_plan, greedy_ot_cost, expert_weight, rollout_weight, dist2expert, expert_indices, idx
                     )
 
+                    # Core failure detection module
                     inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold if expert_action_threshold is not None else False
                     ot_flag = greedy_ot_cost[idx] > ot_threshold
                     failure_flag = inconsistency_violation or ot_flag
@@ -568,6 +564,21 @@ def main(rank, eval_cfg, device_ids):
                             if inconsistency_violation:
                                 # prev_expert_action_threshold = expert_action_threshold
                                 expert_action_threshold = np.inf # Temporarily ignore action inconsistency metric
+                            elif ot_flag:
+                                # Rematch an expert demonstration for better alignment
+                                candidate_expert_latents = [all_human_latent[i] for i in candidate_expert_indices]
+                                candidate_expert_indices = rematch_expert_episode(candidate_expert_latents, candidate_expert_indices, rollout_latent[:idx+1])
+                                matched_human_idx = human_demo_indices[candidate_expert_indices[0]]
+                                human_latent = all_human_latent[matched_human_idx]
+                                demo_len = human_eps_len[matched_human_idx]
+                                # Renew the OT-related variables [TODO: consider greedy OT plan because the current one produces much too large cost!!!!!]
+                                partial_dist_mat = cosine_distance(human_latent, rollout_latent[:idx+1]).to(device).detach()
+                                partial_ot_plan = optimal_transport_plan(human_latent, rollout_latent[:idx+1], partial_dist_mat)
+                                expert_weight = torch.ones((demo_len // Ta,), device=device) / float(demo_len // Ta) - torch.sum(partial_ot_plan, dim=1)
+                                assert torch.all(expert_weight >= 0), "Expert weight should be non-negative"
+                                expert_indices = torch.nonzero(expert_weight)[:, 0]
+                                greedy_ot_plan = torch.cat((partial_ot_plan, torch.zeros((demo_len // Ta, max_episode_length // Ta - partial_ot_plan.shape[1]), device=device)), 1)
+                                greedy_ot_cost = torch.cat((torch.sum(partial_ot_plan * partial_dist_mat, dim=0), torch.zeros((max_episode_length // Ta - partial_ot_plan.shape[1],), device=device)), 0)
                             continue
                         elif keyboard.ctn and j >= max_episode_length - Ta:
                             print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
@@ -624,26 +635,27 @@ def main(rank, eval_cfg, device_ids):
 
                     last_p = curr_pos
                     last_r = curr_rot
-                    print("Please reset the scene and press 'c' to go on to human intervention")
-                    ref_side_img = cv2.cvtColor(prev_side_cam, cv2.COLOR_RGB2BGR)
-                    ref_wrist_img = cv2.cvtColor(prev_wrist_cam, cv2.COLOR_RGB2BGR)
-                    cv2.namedWindow("Rewinded side view", cv2.WINDOW_AUTOSIZE)
-                    cv2.namedWindow("Rewinded wrist view", cv2.WINDOW_AUTOSIZE)
-                    # Ensure an identical configuration to the rewound scene
-                    while not keyboard.ctn:
-                        cam_data = []
-                        for camera in cameras:
-                            color_image, _ = camera.get_data()
-                            cam_data.append(color_image)
-                        wrist_img = wrist_image_processor(torch.from_numpy(cam_data[1].copy()).\
-                                        permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-                        side_img = side_image_processor(torch.from_numpy(cam_data[0].copy()).\
-                                        permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-                        cv2.imshow("Rewinded side view", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
-                        cv2.imshow("Rewinded wrist view", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
-                        cv2.waitKey(1)
-                    keyboard.ctn = False
-                    cv2.destroyAllWindows()
+                    if "prev_side_cam" in locals():
+                        print("Please reset the scene and press 'c' to go on to human intervention")
+                        ref_side_img = cv2.cvtColor(prev_side_cam, cv2.COLOR_RGB2BGR)
+                        ref_wrist_img = cv2.cvtColor(prev_wrist_cam, cv2.COLOR_RGB2BGR)
+                        cv2.namedWindow("Rewinded side view", cv2.WINDOW_AUTOSIZE)
+                        cv2.namedWindow("Rewinded wrist view", cv2.WINDOW_AUTOSIZE)
+                        # Ensure an identical configuration to the rewound scene
+                        while not keyboard.ctn:
+                            cam_data = []
+                            for camera in cameras:
+                                color_image, _ = camera.get_data()
+                                cam_data.append(color_image)
+                            wrist_img = wrist_image_processor(torch.from_numpy(cam_data[1].copy()).\
+                                            permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
+                            side_img = side_image_processor(torch.from_numpy(cam_data[0].copy()).\
+                                            permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
+                            cv2.imshow("Rewinded side view", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
+                            cv2.imshow("Rewinded wrist view", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
+                            cv2.waitKey(1)
+                        keyboard.ctn = False
+                        cv2.destroyAllWindows()
                 else:
                     last_p = last_p[0]
                     last_r = last_r[0]

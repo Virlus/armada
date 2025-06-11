@@ -1,18 +1,19 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/pour/0526_14.01.52_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_pouring_ot_reweighted/bsf.ckpt
-train_dataset_path: /mnt/workspace/DP/0518_pour_cluttered_50_bsf_failure_detection_round2_1_expert
-save_buffer_path: /mnt/workspace/DP/0518_pour_cluttered_50_bsf_failure_detection_round2_2_expert
-output_dir: outputs/visual/0518_pour_cluttered_50_exp_round2
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/mug/0611_01.10.21_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_mug_ot_reweighted_round2/epoch=0150-train_loss=0.028.ckpt
+train_dataset_path: /mnt/workspace/DP/0604_mug_ours_failure_detection_round2_2
+save_buffer_path: /mnt/workspace/DP/0604_mug_ours_failure_detection_round3_1
+output_dir: outputs/visual/0611_mug_rollout_round3
 
 Ta: 8
 random_init: True
-seed: 3
+seed: 7
 
 # Failure detection hyperparameters
 inconsistency_metric: expert
 ot_threshold: 0.03
 soft_ot_threshold: 0.01
 num_samples: 10
+num_expert_candidates: 20
 action_inconsistency_percentile: 0.95
 
 # Sirius-related hyperparameters

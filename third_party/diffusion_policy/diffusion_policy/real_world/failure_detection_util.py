@@ -1,10 +1,14 @@
 import numpy as np
-from typing import Union, Dict, Callable, Optional
+from typing import Union, Dict, Callable, Optional, List
 import torch
 from torch import Tensor
-from diffusion_policy.model.common.rotation_transformer import RotationTransformer
+import ot
+import tqdm
 
-def cosine_distance(x, y):
+from diffusion_policy.common.replay_buffer import ReplayBuffer
+
+
+def cosine_distance(x: Tensor, y: Tensor):
     C = torch.mm(x, y.T)
     x_norm = torch.norm(x, p=2, dim=1)
     y_norm = torch.norm(y, p=2, dim=1)
@@ -14,10 +18,28 @@ def cosine_distance(x, y):
     C = (1 - C / norms)
     return C
 
-def tensor_delete(tensor, indices):
+
+def tensor_delete(tensor: Tensor, indices: Tensor):
     mask = torch.ones(tensor.numel(), dtype=torch.bool)
     mask[indices] = False
     return tensor[mask]
+
+
+def optimal_transport_plan(
+    X: Tensor,
+    Y: Tensor,
+    cost_matrix: Tensor,
+    niter: int = 1000,
+    epsilon: float = 0.1
+) -> Tensor:
+    X_pot = np.ones(X.shape[0]) * (1 / X.shape[0])
+    Y_pot = np.ones(Y.shape[0]) * (1 / Y.shape[0])
+    c_m = cost_matrix.data.detach().cpu().numpy()
+    transport_plan = ot.sinkhorn(X_pot, Y_pot, c_m, epsilon, numItermax=niter)
+    transport_plan = torch.from_numpy(transport_plan).to(X.device)
+    transport_plan.requires_grad = False
+    return transport_plan
+
 
 def greedy_ot_amortize(
     greedy_ot_plan: Tensor,
@@ -68,3 +90,19 @@ def greedy_ot_amortize(
                 dist2expert = tensor_delete(dist2expert, nearest_expert)
     
     return greedy_ot_plan, greedy_ot_cost, expert_weight, expert_indices
+
+
+def rematch_expert_episode(
+    candidate_expert_latent: List[Tensor],
+    candidate_expert_indices: Tensor,
+    curr_rollout_latent: Tensor
+) -> Tensor:
+    ot_costs = []
+    for expert_latent in tqdm.tqdm(candidate_expert_latent, desc="Rematching the current rollout with expert demos"):
+        dist_mat = cosine_distance(expert_latent, curr_rollout_latent)
+        ot_plan = optimal_transport_plan(expert_latent, curr_rollout_latent, dist_mat)
+        ot_cost = torch.sum(ot_plan * dist_mat)
+        ot_costs.append(ot_cost)
+
+    candidate_expert_indices = candidate_expert_indices[Tensor(ot_costs).argsort()]
+    return candidate_expert_indices

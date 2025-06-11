@@ -571,14 +571,14 @@ def main(rank, eval_cfg, device_ids):
                                 matched_human_idx = human_demo_indices[candidate_expert_indices[0]]
                                 human_latent = all_human_latent[matched_human_idx]
                                 demo_len = human_eps_len[matched_human_idx]
-                                # Renew the OT-related variables [TODO: consider greedy OT plan because the current one produces much too large cost!!!!!]
-                                partial_dist_mat = cosine_distance(human_latent, rollout_latent[:idx+1]).to(device).detach()
-                                partial_ot_plan = optimal_transport_plan(human_latent, rollout_latent[:idx+1], partial_dist_mat)
-                                expert_weight = torch.ones((demo_len // Ta,), device=device) / float(demo_len // Ta) - torch.sum(partial_ot_plan, dim=1)
+                                # Renew the OT-related variables [BUG: the partial rollout latent has taken up all the weight!]
+                                partial_dist_mat = torch.cat((cosine_distance(human_latent, rollout_latent[:idx+1]).to(device).detach(), torch.full((demo_len // Ta, max_episode_length // Ta - idx - 1), float('inf'), device=device)), 1)
+                                partial_ot_plan = optimal_transport_plan(human_latent, torch.cat((rollout_latent[:idx+1, :], torch.zeros((max_episode_length // Ta - idx - 1, rollout_latent.shape[1]), device=device)), 0), partial_dist_mat)
+                                expert_weight = torch.ones((demo_len // Ta,), device=device) / float(demo_len // Ta) - torch.sum(partial_ot_plan[:, :idx+1], dim=1)
                                 assert torch.all(expert_weight >= 0), "Expert weight should be non-negative"
                                 expert_indices = torch.nonzero(expert_weight)[:, 0]
-                                greedy_ot_plan = torch.cat((partial_ot_plan, torch.zeros((demo_len // Ta, max_episode_length // Ta - partial_ot_plan.shape[1]), device=device)), 1)
-                                greedy_ot_cost = torch.cat((torch.sum(partial_ot_plan * partial_dist_mat, dim=0), torch.zeros((max_episode_length // Ta - partial_ot_plan.shape[1],), device=device)), 0)
+                                greedy_ot_plan = torch.cat((partial_ot_plan[:, :idx+1], torch.zeros((demo_len // Ta, max_episode_length // Ta - idx - 1), device=device)), 1)
+                                greedy_ot_cost = torch.cat((torch.sum(partial_ot_plan[:, :idx+1] * partial_dist_mat[:, :idx+1], dim=0), torch.zeros((max_episode_length // Ta - idx - 1,), device=device)), 0)
                             continue
                         elif keyboard.ctn and j >= max_episode_length - Ta:
                             print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
@@ -796,7 +796,7 @@ def main(rank, eval_cfg, device_ids):
                     episode_id = replay_buffer.n_episodes - 1
                     print('Saved episode ', episode_id)
 
-                    # Visualize action inconsistency and observation optimal transport cost
+                    # Visualize action inconsistency and observation optimal transport cost [BUG: the visualization should be modified to the current matched expert episode]
                     action_inconsistency_buffer = np.array(action_inconsistency_buffer)
                     greedy_ot_cost = greedy_ot_cost[:len(action_inconsistency_buffer)//Ta] if len(greedy_ot_cost) >= len(action_inconsistency_buffer)//Ta \
                         else torch.cat((greedy_ot_cost, torch.zeros((len(action_inconsistency_buffer)//Ta - len(greedy_ot_cost),), device=device)))

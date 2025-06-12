@@ -571,8 +571,10 @@ def main(rank, eval_cfg, device_ids):
                                 matched_human_idx = human_demo_indices[candidate_expert_indices[0]]
                                 human_latent = all_human_latent[matched_human_idx]
                                 demo_len = human_eps_len[matched_human_idx]
-                                # Renew the OT-related variables [BUG: the partial rollout latent has taken up all the weight!]
-                                partial_dist_mat = torch.cat((cosine_distance(human_latent, rollout_latent[:idx+1]).to(device).detach(), torch.full((demo_len // Ta, max_episode_length // Ta - idx - 1), float('inf'), device=device)), 1)
+                                human_episode = replay_buffer.get_episode(matched_human_idx)
+                                eps_side_img = (torch.from_numpy(human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
+                                # Renew the OT-related variables
+                                partial_dist_mat = torch.cat((cosine_distance(human_latent, rollout_latent[:idx+1]).to(device).detach(), torch.full((demo_len // Ta, max_episode_length // Ta - idx - 1), 0, device=device)), 1)
                                 partial_ot_plan = optimal_transport_plan(human_latent, torch.cat((rollout_latent[:idx+1, :], torch.zeros((max_episode_length // Ta - idx - 1, rollout_latent.shape[1]), device=device)), 0), partial_dist_mat)
                                 expert_weight = torch.ones((demo_len // Ta,), device=device) / float(demo_len // Ta) - torch.sum(partial_ot_plan[:, :idx+1], dim=1)
                                 assert torch.all(expert_weight >= 0), "Expert weight should be non-negative"

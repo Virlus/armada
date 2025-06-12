@@ -510,6 +510,9 @@ def main(rank, eval_cfg, device_ids):
 
                     tmp_last_p = last_p
                     tmp_last_r = last_r
+
+                    # Record latency for failure detection module
+                    failure_detect_start_time = time.time()
                     
                     # Predict the entire action chunk for failure detection
                     for step in range(Ta, policy.n_action_steps):
@@ -535,14 +538,26 @@ def main(rank, eval_cfg, device_ids):
                     last_r = R.from_quat(R.as_quat(last_r, scalar_first=True)[0:1, :].repeat(num_samples, axis=0), scalar_first=True)
 
                     # Calculate the Optimal Transport plan
-                    rollout_weight = float(1. / (max_episode_length // Ta))
-                    dist2expert = cosine_distance(human_latent[expert_indices], curr_latent.unsqueeze(0)).squeeze(-1)
                     idx = j // Ta - 1
                     # Update the OT plan
                     rollout_latent[idx] = curr_latent
-                    greedy_ot_plan, greedy_ot_cost, expert_weight, expert_indices = greedy_ot_amortize(
-                        greedy_ot_plan, greedy_ot_cost, expert_weight, rollout_weight, dist2expert, expert_indices, idx
-                    )
+
+                    # Rematch an expert demonstration for better alignment
+                    candidate_expert_latents = [all_human_latent[i] for i in candidate_expert_indices]
+                    candidate_expert_indices = rematch_expert_episode(candidate_expert_latents, candidate_expert_indices, rollout_latent[:idx+1])
+                    matched_human_idx = human_demo_indices[candidate_expert_indices[0]]
+                    human_latent = all_human_latent[matched_human_idx]
+                    demo_len = human_eps_len[matched_human_idx]
+                    human_episode = replay_buffer.get_episode(matched_human_idx)
+                    eps_side_img = (torch.from_numpy(human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
+                    # Renew the OT-related variables
+                    partial_dist_mat = torch.cat((cosine_distance(human_latent, rollout_latent[:idx+1]).to(device).detach(), torch.full((demo_len // Ta, max_episode_length // Ta - idx - 1), 0, device=device)), 1)
+                    partial_ot_plan = optimal_transport_plan(human_latent, torch.cat((rollout_latent[:idx+1, :], torch.zeros((max_episode_length // Ta - idx - 1, rollout_latent.shape[1]), device=device)), 0), partial_dist_mat)
+                    expert_weight = torch.ones((demo_len // Ta,), device=device) / float(demo_len // Ta) - torch.sum(partial_ot_plan[:, :idx+1], dim=1)
+                    assert torch.all(expert_weight >= 0), "Expert weight should be non-negative"
+                    expert_indices = torch.nonzero(expert_weight)[:, 0]
+                    greedy_ot_plan = torch.cat((partial_ot_plan[:, :idx+1], torch.zeros((demo_len // Ta, max_episode_length // Ta - idx - 1), device=device)), 1)
+                    greedy_ot_cost = torch.cat((torch.sum(partial_ot_plan[:, :idx+1] * partial_dist_mat[:, :idx+1], dim=0), torch.zeros((max_episode_length // Ta - idx - 1,), device=device)), 0)
 
                     # Core failure detection module
                     inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold if expert_action_threshold is not None else False
@@ -564,23 +579,6 @@ def main(rank, eval_cfg, device_ids):
                             if inconsistency_violation:
                                 # prev_expert_action_threshold = expert_action_threshold
                                 expert_action_threshold = np.inf # Temporarily ignore action inconsistency metric
-                            elif ot_flag:
-                                # Rematch an expert demonstration for better alignment
-                                candidate_expert_latents = [all_human_latent[i] for i in candidate_expert_indices]
-                                candidate_expert_indices = rematch_expert_episode(candidate_expert_latents, candidate_expert_indices, rollout_latent[:idx+1])
-                                matched_human_idx = human_demo_indices[candidate_expert_indices[0]]
-                                human_latent = all_human_latent[matched_human_idx]
-                                demo_len = human_eps_len[matched_human_idx]
-                                human_episode = replay_buffer.get_episode(matched_human_idx)
-                                eps_side_img = (torch.from_numpy(human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
-                                # Renew the OT-related variables
-                                partial_dist_mat = torch.cat((cosine_distance(human_latent, rollout_latent[:idx+1]).to(device).detach(), torch.full((demo_len // Ta, max_episode_length // Ta - idx - 1), 0, device=device)), 1)
-                                partial_ot_plan = optimal_transport_plan(human_latent, torch.cat((rollout_latent[:idx+1, :], torch.zeros((max_episode_length // Ta - idx - 1, rollout_latent.shape[1]), device=device)), 0), partial_dist_mat)
-                                expert_weight = torch.ones((demo_len // Ta,), device=device) / float(demo_len // Ta) - torch.sum(partial_ot_plan[:, :idx+1], dim=1)
-                                assert torch.all(expert_weight >= 0), "Expert weight should be non-negative"
-                                expert_indices = torch.nonzero(expert_weight)[:, 0]
-                                greedy_ot_plan = torch.cat((partial_ot_plan[:, :idx+1], torch.zeros((demo_len // Ta, max_episode_length // Ta - idx - 1), device=device)), 1)
-                                greedy_ot_cost = torch.cat((torch.sum(partial_ot_plan[:, :idx+1] * partial_dist_mat[:, :idx+1], dim=0), torch.zeros((max_episode_length // Ta - idx - 1,), device=device)), 0)
                             continue
                         elif keyboard.ctn and j >= max_episode_length - Ta:
                             print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
@@ -605,7 +603,7 @@ def main(rank, eval_cfg, device_ids):
                                 break
                             # Rewind the OT plan
                             recovered_expert_weight = torch.zeros((demo_len // Ta,), device=device)
-                            recovered_expert_weight[expert_indices] = expert_weight
+                            recovered_expert_weight[expert_indices] = expert_weight.to(recovered_expert_weight.dtype)
                             expert_weight = recovered_expert_weight + greedy_ot_plan[:, j // Ta - 1]
                             expert_indices = torch.nonzero(expert_weight)[:, 0]
                             expert_weight = expert_weight[expert_indices]

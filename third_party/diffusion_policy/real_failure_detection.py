@@ -71,7 +71,7 @@ def postprocess_action_mode(action_mode: np.ndarray):
     return action_mode
 
 def main(rank, eval_cfg, device_ids):
-    fps = 10  # TODO
+    fps = 10
     world_size = len(device_ids)
     device_id = device_ids[rank]
     device = f"cuda:{device_id}"
@@ -739,7 +739,64 @@ def main(rank, eval_cfg, device_ids):
                             keyboard.help = True
                             break
 
-                # TODO: empty both the async queue and async result queue
+                # Empty both queues and ensure valid greedy OT cost array before human intervention
+                # First, submit a final OT matching task for the current index to ensure latest computation
+                try:
+                    async_queue.put_nowait({
+                        "task_type": "ot_matching",
+                        "idx": idx,
+                        "rollout_latent": rollout_latent.clone(),
+                        "candidate_expert_latents": [all_human_latent[i] for i in candidate_expert_indices],
+                        "candidate_expert_indices": candidate_expert_indices,
+                        "human_demo_indices": human_demo_indices,
+                        "all_human_latent": all_human_latent,
+                        "human_eps_len": human_eps_len,
+                        "replay_buffer": replay_buffer,
+                        "device": device,
+                        "Ta": Ta,
+                        "max_episode_length": max_episode_length
+                    })
+                except queue.Full:
+                    pass  # Skip if queue is full
+
+                # Wait for a short time to allow the async thread to process the final task
+                time.sleep(0.1)
+
+                # Now empty the async queue
+                while not async_queue.empty():
+                    try:
+                        async_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                
+                # Process any remaining results in the result queue to update greedy OT cost
+                # Keep checking for new results for a short time to ensure we get the final computation
+                start_wait = time.time()
+                while time.time() - start_wait < 0.5:  # Wait up to 0.5 seconds for final results
+                    try:
+                        while not async_result_queue.empty():
+                            result = async_result_queue.get_nowait()
+                            if result["task_type"] == "ot_matching" and result["idx"] <= idx:
+                                # Update with the latest OT results
+                                matched_human_idx = result["matched_human_idx"]
+                                human_latent = result["human_latent"]
+                                demo_len = result["demo_len"]
+                                eps_side_img = result["eps_side_img"]
+                                expert_weight = result["expert_weight"]
+                                expert_indices = result["expert_indices"]
+                                greedy_ot_plan = result["greedy_ot_plan"]
+                                greedy_ot_cost = result["greedy_ot_cost"]
+                    except queue.Empty:
+                        time.sleep(0.01)  # Short sleep to prevent busy waiting
+                        continue
+                    break  # If we processed all results, exit the wait loop
+                
+                # Final check to empty the result queue
+                while not async_result_queue.empty():
+                    try:
+                        async_result_queue.get_nowait()
+                    except queue.Empty:
+                        break
                 
                 if keyboard.help:
                     # Reset the signal of request for help 

@@ -810,7 +810,6 @@ def main(rank, eval_cfg, device_ids):
                     for i in range(curr_timestep):
                         # Adaptively examine the corresponding OT cost, when the cost drops below the soft threshold, we stop rewinding
                         if j % Ta == 0:
-                            print(f"Rewinded step ot cost: {greedy_ot_cost[j // Ta - 1]}")
                             if greedy_ot_cost[j // Ta - 1] < soft_ot_threshold:
                                 print("OT cost dropped below the soft threshold, stop rewinding.")
                                 break
@@ -1016,12 +1015,13 @@ def main(rank, eval_cfg, device_ids):
                     greedy_ot_plan = greedy_ot_plan[:, :len(action_inconsistency_buffer)//Ta] if greedy_ot_plan.shape[1] >= len(action_inconsistency_buffer)//Ta \
                         else torch.cat((greedy_ot_plan, torch.zeros((greedy_ot_plan.shape[0], len(action_inconsistency_buffer)//Ta - greedy_ot_plan.shape[1]), device=device)), 1)
                     ot_cost_final = greedy_ot_cost.detach().cpu().numpy()
+                    ot_entropy_final = torch.sum(-torch.log(torch.clamp(greedy_ot_plan * float(max_episode_length//Ta), min=1e-4)) * greedy_ot_plan * float(max_episode_length//Ta), dim=0).detach().cpu().numpy()
                     cell_size = 1
                     fig = plt.figure(figsize=(episode['wrist_cam'].shape[0] // Ta * cell_size, (3 + demo_len // Ta) * cell_size + 2))
                     gs = plt.GridSpec(4, 1, height_ratios=[0.083, 0.083, 0.083, 0.75], hspace=0.8)
                     action_ax = fig.add_subplot(gs[0])
                     ot_ax = fig.add_subplot(gs[1])
-                    final_ax = fig.add_subplot(gs[2])
+                    entropy_ax = fig.add_subplot(gs[2])
                     plan_ax = fig.add_subplot(gs[3])
 
                     im = action_ax.imshow(action_inconsistency_buffer[::Ta].reshape(1, -1), cmap='plasma', aspect='auto')
@@ -1034,10 +1034,10 @@ def main(rank, eval_cfg, device_ids):
                     ot_ax.set_yticks([])
                     plt.colorbar(im, ax=ot_ax, shrink=0.9)
 
-                    im = final_ax.imshow((ot_cost_final * action_inconsistency_buffer[::Ta]).reshape(1, -1), cmap='magma', aspect='auto')
-                    final_ax.set_xticks([])
-                    final_ax.set_yticks([])
-                    plt.colorbar(im, ax=final_ax, shrink=0.9)
+                    im = entropy_ax.imshow(ot_entropy_final.reshape(1, -1), cmap='magma', aspect='auto')
+                    entropy_ax.set_xticks([])
+                    entropy_ax.set_yticks([])
+                    plt.colorbar(im, ax=entropy_ax, shrink=0.9)
 
                     im = plan_ax.imshow(greedy_ot_plan[:, :len(action_inconsistency_buffer)//Ta].detach().cpu().numpy(), cmap='viridis', aspect='auto')
                     plt.colorbar(im, ax=plan_ax, shrink=0.75)
@@ -1049,7 +1049,7 @@ def main(rank, eval_cfg, device_ids):
 
                     action_ax.set_title('Action Inconsistency')
                     ot_ax.set_title('OT Cost')
-                    final_ax.set_title('Failure index')
+                    entropy_ax.set_title('OT entropy index')
                     plan_ax.set_title('OT plan')
 
                     print("Expert demonstration rendering")

@@ -1,7 +1,7 @@
 device_ids: '0'
 checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/mango_in_drawer/0612_20.33.19_train_diffusion_transformer_hybrid_dino_multi_gpu_mango_in_drawer_75_initial/epoch=0400-train_loss=0.028.ckpt
-train_dataset_path: /mnt/workspace/DP/0612_mango_in_drawer_75_failure_detection_round1_4
-save_buffer_path: /mnt/workspace/DP/0612_mango_in_drawer_75_failure_detection_round1_5
+train_dataset_path: /mnt/workspace/DP/0612_mango_in_drawer_75
+save_buffer_path: /mnt/workspace/DP/0612_mango_in_drawer_75_failure_detection_round1_1
 output_dir: outputs/visual/0612_mango_in_drawer_rollout_1
 
 Ta: 8
@@ -10,7 +10,7 @@ seed: 4
 
 # Failure detection hyperparameters
 inconsistency_metric: expert
-ot_threshold: 0.03
+ot_threshold: 0.02
 soft_ot_threshold: 0.01
 num_samples: 4
 num_expert_candidates: 50

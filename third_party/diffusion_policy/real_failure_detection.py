@@ -232,7 +232,7 @@ def main(rank, eval_cfg, device_ids):
 
     expert_action_threshold = None
     expert_ot_threshold = None
-    expert_soft_ot_threshold = None
+    expert_soft_ot_threshold = 0.
     success_action_inconsistencies = []
     success_ot_values = []
 
@@ -830,6 +830,9 @@ def main(rank, eval_cfg, device_ids):
                             expert_weight = expert_weight[expert_indices]
                             greedy_ot_plan[:, j // Ta - 1] = 0.
                             greedy_ot_cost[j // Ta - 1] = 0.
+                            if len(failure_indices) > 0:
+                                latest_failure_idx = failure_indices.pop()
+                                failure_indices.append(latest_failure_idx - 1) # Adjust failure indices due to rewinding
 
                         # Rewind the demo history
                         prev_wrist_cam = wrist_cam.pop()
@@ -1018,7 +1021,7 @@ def main(rank, eval_cfg, device_ids):
                     episode_id = replay_buffer.n_episodes - 1
                     print('Saved episode ', episode_id)
 
-                    # Visualize action inconsistency and observation optimal transport cost [BUG: the visualization should be modified to the current matched expert episode]
+                    # Visualize action inconsistency and observation optimal transport cost
                     action_inconsistency_buffer = np.array(action_inconsistency_buffer)
                     greedy_ot_cost = greedy_ot_cost[:len(action_inconsistency_buffer)//Ta] if len(greedy_ot_cost) >= len(action_inconsistency_buffer)//Ta \
                         else torch.cat((greedy_ot_cost, torch.zeros((len(action_inconsistency_buffer)//Ta - len(greedy_ot_cost),), device=device)))

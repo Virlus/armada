@@ -144,12 +144,14 @@ def main(rank, eval_cfg, device_ids):
     Ta = eval_cfg.Ta
     inconsistency_metric = eval_cfg.inconsistency_metric
     assert inconsistency_metric in ['stat', 'expert']
-    ot_threshold = eval_cfg.ot_threshold
-    soft_ot_threshold = eval_cfg.soft_ot_threshold
+    # ot_threshold = eval_cfg.ot_threshold
+    # soft_ot_threshold = eval_cfg.soft_ot_threshold
     num_samples = eval_cfg.num_samples
     num_expert_candidates = eval_cfg.num_expert_candidates
     post_process_action_mode = eval_cfg.post_process_action_mode
     action_inconsistency_percentile = eval_cfg.action_inconsistency_percentile
+    ot_percentile = eval_cfg.ot_percentile
+    soft_ot_percentile = eval_cfg.soft_ot_percentile
 
     save_img = False
     output_dir = os.path.join(eval_cfg.output_dir, f"seed_{seed}")
@@ -229,7 +231,10 @@ def main(rank, eval_cfg, device_ids):
         all_human_latent.append(human_latent)
 
     expert_action_threshold = None
+    expert_ot_threshold = None
+    expert_soft_ot_threshold = None
     success_action_inconsistencies = []
+    success_ot_values = []
 
     # Evaluation starts here
     episode_idx = 0
@@ -303,16 +308,19 @@ def main(rank, eval_cfg, device_ids):
                     
                 elif task_type == "failure_detection":
                     # Failure detection task
-                    action_inconsistency = data["action_inconsistency"]
                     action_inconsistency_buffer = data["action_inconsistency_buffer"]
                     expert_action_threshold = data["expert_action_threshold"]
                     greedy_ot_cost = data["greedy_ot_cost"]
+                    greedy_ot_plan = data["greedy_ot_plan"]
                     idx = data["idx"]
-                    ot_threshold = data["ot_threshold"]
+                    expert_ot_threshold = data["expert_ot_threshold"]
+
+                    ot_entropy = torch.sum(-torch.log(torch.clamp(greedy_ot_plan * float(max_episode_length//Ta), min=1e-4)) * greedy_ot_plan * float(max_episode_length//Ta), dim=0)
                     
                     # Perform failure detection
                     inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold if expert_action_threshold is not None else False
-                    ot_flag = greedy_ot_cost[idx] > ot_threshold
+                    # ot_flag = greedy_ot_cost[idx] > ot_threshold
+                    ot_flag = ot_entropy[idx] > expert_ot_threshold if expert_ot_threshold is not None else False
                     failure_flag = inconsistency_violation or ot_flag
                     failure_reason = "action inconsistency" if inconsistency_violation else "OT violation" if ot_flag else None
                     
@@ -699,12 +707,12 @@ def main(rank, eval_cfg, device_ids):
                                 try:
                                     async_queue.put_nowait({
                                         "task_type": "failure_detection",
-                                        "action_inconsistency": action_inconsistency,
                                         "action_inconsistency_buffer": action_inconsistency_buffer[:result["idx"]+1].copy(),
                                         "expert_action_threshold": expert_action_threshold,
                                         "greedy_ot_cost": greedy_ot_cost.clone(),
+                                        "greedy_ot_plan": greedy_ot_plan.clone(),
                                         "idx": result["idx"],
-                                        "ot_threshold": ot_threshold
+                                        "expert_ot_threshold": expert_ot_threshold,
                                     })
                                 except queue.Full:
                                     pass  # Skip if queue is full
@@ -810,7 +818,8 @@ def main(rank, eval_cfg, device_ids):
                     for i in range(curr_timestep):
                         # Adaptively examine the corresponding OT cost, when the cost drops below the soft threshold, we stop rewinding
                         if j % Ta == 0:
-                            if greedy_ot_cost[j // Ta - 1] < soft_ot_threshold:
+                            if torch.sum(-torch.log(torch.clamp(greedy_ot_plan[:, :j // Ta - 1] * float(max_episode_length // Ta), \
+                                        min=1e-4)) * greedy_ot_plan[:, :j // Ta - 1] * float(max_episode_length // Ta)) < expert_soft_ot_threshold:
                                 print("OT cost dropped below the soft threshold, stop rewinding.")
                                 break
                             # Rewind the OT plan
@@ -974,19 +983,20 @@ def main(rank, eval_cfg, device_ids):
                 detach_pos = np.array(detach_tcp[:3])
                 detach_rot = R.from_quat(np.array(detach_tcp[3:]), scalar_first=True)
 
-                # Based on the outcome of the episode, reset the expert action threshold
-                if expert_action_threshold == np.inf: 
-                    if keyboard.finish and INTV not in action_mode: # Suggests a successful and unintervened rollout
-                        # if np.array(action_inconsistency_buffer).sum() > prev_expert_action_threshold:
-                        success_action_inconsistency = np.array(action_inconsistency_buffer).sum()
-                        success_action_inconsistencies.append(success_action_inconsistency)
-                    expert_action_threshold = np.percentile(np.array(success_action_inconsistencies), action_inconsistency_percentile)
-                    print("Reset the expert action threshold to ", expert_action_threshold)
-                elif expert_action_threshold is None:
-                    if keyboard.finish and INTV not in action_mode:
-                        expert_action_threshold = np.array(action_inconsistency_buffer).sum()
-                        success_action_inconsistencies.append(expert_action_threshold)
-                        print("Initialize the expert action threshold to ", expert_action_threshold)
+                # Based on the outcome of the episode, reset the expert action threshold and OT threshold
+                if keyboard.finish and INTV not in action_mode:
+                    success_action_inconsistency = np.array(action_inconsistency_buffer).sum()
+                    success_action_inconsistencies.append(success_action_inconsistency)
+                expert_action_threshold = np.percentile(np.array(success_action_inconsistencies), action_inconsistency_percentile) if len(success_action_inconsistencies) > 0 else None
+                print("Reset the expert action threshold to ", expert_action_threshold)
+
+                if keyboard.finish and INTV not in action_mode:
+                    success_ot_values.append(torch.sum(-torch.log(torch.clamp(greedy_ot_plan * float(max_episode_length//Ta), min=1e-4)) \
+                                                * greedy_ot_plan * float(max_episode_length//Ta), dim=0).detach().cpu().numpy())
+                    expert_ot_threshold = np.percentile(np.array(success_ot_values), ot_percentile)
+                    expert_soft_ot_threshold = np.percentile(np.array(success_ot_values), soft_ot_percentile)
+                    print("Reset the expert OT threshold to ", expert_ot_threshold)
+                    print("Reset the expert soft OT threshold to ", expert_soft_ot_threshold)
 
                 # This episode fails to accomplish the task
                 if keyboard.discard:
@@ -1047,10 +1057,10 @@ def main(rank, eval_cfg, device_ids):
                     plan_ax.set_yticklabels([''] * (len(action_inconsistency_buffer)//Ta))
                     plan_ax.tick_params(axis='both', which='both', length=0)
 
-                    action_ax.set_title('Action Inconsistency')
-                    ot_ax.set_title('OT Cost')
-                    entropy_ax.set_title('OT entropy index')
-                    plan_ax.set_title('OT plan')
+                    action_ax.set_title('Action Inconsistency', fontsize=20)
+                    ot_ax.set_title('OT Cost', fontsize=20)
+                    entropy_ax.set_title('OT entropy index', fontsize=20)
+                    plan_ax.set_title('OT plan', fontsize=20)
 
                     print("Expert demonstration rendering")
                     

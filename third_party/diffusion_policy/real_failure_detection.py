@@ -628,9 +628,6 @@ def main(rank, eval_cfg, device_ids):
                     tmp_last_p = last_p
                     tmp_last_r = last_r
 
-                    # Record latency for failure detection module
-                    failure_detect_start_time = time.time()
-                    
                     # Predict the entire action chunk for failure detection
                     for step in range(Ta, policy.n_action_steps):
                         tmp_p_action = action_seq[:, step, :3]
@@ -677,24 +674,11 @@ def main(rank, eval_cfg, device_ids):
                     except queue.Full:
                         pass  # Skip if queue is full
                     
-                    # Submit failure detection task asynchronously
-                    try:
-                        async_queue.put_nowait({
-                            "task_type": "failure_detection",
-                            "action_inconsistency": action_inconsistency,
-                            "action_inconsistency_buffer": action_inconsistency_buffer.copy(),
-                            "expert_action_threshold": expert_action_threshold,
-                            "greedy_ot_cost": greedy_ot_cost.clone(),
-                            "idx": idx,
-                            "ot_threshold": ot_threshold
-                        })
-                    except queue.Full:
-                        pass  # Skip if queue is full
-                    
                     # Process any available async results
                     failure_flag = False
                     failure_reason = None
                     
+                    # Fetch results from the queue
                     try:
                         while not async_result_queue.empty():
                             result = async_result_queue.get_nowait()
@@ -709,8 +693,23 @@ def main(rank, eval_cfg, device_ids):
                                 expert_indices = result["expert_indices"]
                                 greedy_ot_plan = result["greedy_ot_plan"]
                                 greedy_ot_cost = result["greedy_ot_cost"]
+
+                                # Submit failure detection task asynchronously only after OT matching, so that timestep is aligned
+                                action_inconsistency = action_inconsistency_buffer[result["idx"]]
+                                try:
+                                    async_queue.put_nowait({
+                                        "task_type": "failure_detection",
+                                        "action_inconsistency": action_inconsistency,
+                                        "action_inconsistency_buffer": action_inconsistency_buffer[:result["idx"]+1].copy(),
+                                        "expert_action_threshold": expert_action_threshold,
+                                        "greedy_ot_cost": greedy_ot_cost.clone(),
+                                        "idx": result["idx"],
+                                        "ot_threshold": ot_threshold
+                                    })
+                                except queue.Full:
+                                    pass  # Skip if queue is full
                             
-                            elif result["task_type"] == "failure_detection" and result["idx"] == idx:
+                            elif result["task_type"] == "failure_detection" and result["idx"] <= idx:
                                 # Update with failure detection results
                                 failure_flag = result["failure_flag"]
                                 failure_reason = result["failure_reason"]
@@ -723,7 +722,9 @@ def main(rank, eval_cfg, device_ids):
                             failure_indices.append(idx)
                         else:
                             print("Maximum episode length reached!")
-                        print("Press 'c' to continue; Press 'd' to discard the demo; Press 'h' to request human intervention; Press 'f' to finish the episode.")
+
+                        print("Press 'c' to continue; Press 'd' to discard the demo; \
+                              Press 'h' to request human intervention; Press 'f' to finish the episode.")
                         while not keyboard.ctn and not keyboard.discard and not keyboard.help and not keyboard.finish:
                             time.sleep(0.1)
                         if keyboard.ctn and j < max_episode_length - Ta:
@@ -737,6 +738,8 @@ def main(rank, eval_cfg, device_ids):
                             keyboard.ctn = False
                             keyboard.help = True
                             break
+
+                # TODO: empty both the async queue and async result queue
                 
                 if keyboard.help:
                     # Reset the signal of request for help 
@@ -750,6 +753,7 @@ def main(rank, eval_cfg, device_ids):
                     for i in range(curr_timestep):
                         # Adaptively examine the corresponding OT cost, when the cost drops below the soft threshold, we stop rewinding
                         if j % Ta == 0:
+                            print(f"Rewinded step ot cost: {greedy_ot_cost[j // Ta - 1]}")
                             if greedy_ot_cost[j // Ta - 1] < soft_ot_threshold:
                                 print("OT cost dropped below the soft threshold, stop rewinding.")
                                 break

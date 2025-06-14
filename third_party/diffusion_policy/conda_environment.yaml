@@ -65,3 +65,4 @@ dependencies:
     # - r3m @ https://github.com/facebookresearch/r3m/archive/b2334e726887fa0206962d7984c69c5fb09cceab.tar.gz
     - dm-control==1.0.9
     - POT==0.9.5
+    - huggingface-hub==0.25.0

@@ -16,10 +16,10 @@ INTV = 3
 def main(args):
     robot = FlexivRobot()
     gripper = FlexivGripper(robot)
-    replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=['wrist_cam', 'side_cam', 'tcp_pose', \
-                                                                      'joint_pos', 'action', 'action_mode'])
-    zarr_path = os.path.join(args.output, 'replay_buffer.zarr')
-    save_buffer = ReplayBuffer.create_from_path(zarr_path, mode='a')
+    replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=None)
+    import pdb; pdb.set_trace()
+    # zarr_path = os.path.join(args.output, 'replay_buffer.zarr')
+    # save_buffer = ReplayBuffer.create_from_path(zarr_path, mode='a')
 
     curr_round_start = replay_buffer.episode_ends[args.start_index-1] if args.start_index > 0 else 0
     curr_round_end = replay_buffer.episode_ends[-1]
@@ -35,9 +35,32 @@ def main(args):
         curr_action_mode = replay_buffer['action_mode'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
         if np.sum(curr_action_mode == INTV) == 0:
             success_count += 1
+
+    success_rate = success_count / (replay_buffer.n_episodes - args.start_index)
     
-    print(f"Success rate in this round: {success_count / (replay_buffer.n_episodes - args.start_index) * 100:.2f}%")
+    print(f"Success rate in this round: {success_rate * 100:.2f}%")
     import pdb; pdb.set_trace()
+
+    TPR_buffer = [] # True indicates failed trajectories
+    TNR_buffer = []
+
+    for i in range(args.start_index, replay_buffer.n_episodes):
+        curr_action_mode = replay_buffer['action_mode'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
+        curr_failure_indices = replay_buffer['failure_indices'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
+        if np.sum(curr_action_mode == INTV) == 0:
+            if np.sum(curr_failure_indices) == 0:
+                TNR_buffer.append(1.0)
+            else:
+                TNR_buffer.append(0.0)
+        else:
+            if np.sum(curr_failure_indices) > 0:
+                TPR_buffer.append(1.0)
+            else:
+                TPR_buffer.append(0.0)
+
+    print(f"TPR: {np.mean(TPR_buffer) * 100:.2f}%, TNR: {np.mean(TNR_buffer) * 100:.2f}%")
+    print(f"Accuracy: {np.mean(TPR_buffer) * 50 + np.mean(TNR_buffer) * 50:.2f}%")
+    print(f"Weighted Accuracy: {np.mean(TPR_buffer) * success_rate * 100 + np.mean(TNR_buffer) * (1 - success_rate) * 100:.2f}%")
 
     image_save_path = os.path.join(os.path.dirname(args.demo_path), 'images')
     os.makedirs(image_save_path, exist_ok=True)
@@ -75,7 +98,7 @@ def main(args):
             elif key == 'c':
                 break
             elif key == 's':
-                save_buffer.add_episode(replay_buffer.get_episode(i, copy=True), compressors='disk')
+                # save_buffer.add_episode(replay_buffer.get_episode(i, copy=True), compressors='disk')
                 break
             else:
                 continue

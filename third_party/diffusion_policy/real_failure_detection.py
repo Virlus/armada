@@ -178,13 +178,12 @@ def main(rank, eval_cfg, device_ids):
 
     # Initialize demonstration buffer
     zarr_path = os.path.join(eval_cfg.train_dataset_path, 'replay_buffer.zarr')
-    dataset_keys = ['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose']
-    if 'round' in eval_cfg.train_dataset_path:
-        dataset_keys.append('action_mode')
-        replay_buffer = ReplayBuffer.copy_from_path(zarr_path, keys=dataset_keys)
-    else:
-        replay_buffer = ReplayBuffer.copy_from_path(zarr_path, keys=dataset_keys)
+    # dataset_keys = ['wrist_cam', 'side_cam', 'joint_pos', 'action', 'tcp_pose']
+    replay_buffer = ReplayBuffer.copy_from_path(zarr_path, keys=None)
+    if 'action_mode' not in replay_buffer.keys():
         replay_buffer.data['action_mode'] = np.full((replay_buffer.n_steps, ), HUMAN)
+    if 'failure_indices' not in replay_buffer.keys():
+        replay_buffer.data['failure_indices'] = np.zeros((replay_buffer.n_steps, ), dtype=np.bool_)
 
     # Distinguish original human demonstrations from rollouts with human intervention
     human_demo_indices = []
@@ -230,11 +229,25 @@ def main(rank, eval_cfg, device_ids):
         human_eps_len.append(eps_side_img.shape[0])
         all_human_latent.append(human_latent)
 
-    expert_action_threshold = None
-    expert_ot_threshold = None
-    expert_soft_ot_threshold = 0.
-    success_action_inconsistencies = []
-    success_ot_values = []
+    # Initialize failure-detection-related hyperparameters
+    match_round = re.search(r'round(\d)', eval_cfg.train_dataset_path)
+    training_set_num_round = int(match_round.group(1)) if match_round else 0
+
+    if training_set_num_round != num_round: # Re-initialize buffers for the current policy
+        print("Re-initializing success statistics for the current round.")
+        expert_action_threshold = None
+        expert_ot_threshold = None
+        expert_soft_ot_threshold = 0.
+        success_action_inconsistencies = []
+        success_ot_values = np.zeros((0,))
+    else: # Load the previous success statistics
+        print("Loading success statistics from the previous round.")
+        prev_success_states = np.load(os.path.join(eval_cfg.train_dataset_path, 'success_stats.npz'))
+        success_action_inconsistencies = list(prev_success_states['action_inconsistencies'])
+        success_ot_values = prev_success_states['ot_values']
+        expert_action_threshold = np.percentile(success_action_inconsistencies, action_inconsistency_percentile)
+        expert_ot_threshold = np.percentile(success_ot_values, ot_percentile)
+        expert_soft_ot_threshold = np.percentile(success_ot_values, soft_ot_percentile)
 
     # Evaluation starts here
     episode_idx = 0
@@ -994,10 +1007,10 @@ def main(rank, eval_cfg, device_ids):
                 print("Reset the expert action threshold to ", expert_action_threshold)
 
                 if keyboard.finish and INTV not in action_mode:
-                    success_ot_values.append(torch.sum(-torch.log(torch.clamp(greedy_ot_plan * float(max_episode_length//Ta), min=1e-4)) \
-                                                * greedy_ot_plan * float(max_episode_length//Ta), dim=0).detach().cpu().numpy())
-                    expert_ot_threshold = np.percentile(np.array(success_ot_values), ot_percentile)
-                    expert_soft_ot_threshold = np.percentile(np.array(success_ot_values), soft_ot_percentile)
+                    success_ot_values = np.concatenate((success_ot_values, torch.sum(-torch.log(torch.clamp(greedy_ot_plan * float(max_episode_length//Ta), min=1e-4)) \
+                                                * greedy_ot_plan * float(max_episode_length//Ta), dim=0).detach().cpu().numpy()[:j//Ta]))
+                    expert_ot_threshold = np.percentile(success_ot_values, ot_percentile)
+                    expert_soft_ot_threshold = np.percentile(success_ot_values, soft_ot_percentile)
                     print("Reset the expert OT threshold to ", expert_ot_threshold)
                     print("Reset the expert soft OT threshold to ", expert_soft_ot_threshold)
 
@@ -1017,6 +1030,11 @@ def main(rank, eval_cfg, device_ids):
                         episode['action_mode'] = postprocess_action_mode(np.array(action_mode))
                     else:
                         episode['action_mode'] = np.array(action_mode)
+                    assert episode['action_mode'].shape[0] % Ta == 0, "A Ta-step chunking is required for the entire demo"
+                    failure_signal = np.zeros((episode['action_mode'].shape[0] // Ta,), dtype=np.bool_)
+                    if len(failure_indices) > 0:
+                        failure_signal[failure_indices] = 1
+                    episode['failure_indices'] = np.repeat(failure_signal, Ta)
                     replay_buffer.add_episode(episode, compressors='disk')
                     episode_id = replay_buffer.n_episodes - 1
                     print('Saved episode ', episode_id)
@@ -1127,6 +1145,12 @@ def main(rank, eval_cfg, device_ids):
         # Save the replay buffer to a new path
         save_zarr_path = os.path.join(eval_cfg.save_buffer_path, 'replay_buffer.zarr')
         replay_buffer.save_to_path(save_zarr_path)
+        success_stats = {
+            'action_inconsistencies': np.array(success_action_inconsistencies),
+            'ot_values': success_ot_values
+        }
+        np.savez(os.path.join(eval_cfg.save_buffer_path, 'success_stats.npz'), **success_stats)
+        print("Saved replay buffer and success statistics to", save_zarr_path)
         torch.distributed.destroy_process_group()
 
 

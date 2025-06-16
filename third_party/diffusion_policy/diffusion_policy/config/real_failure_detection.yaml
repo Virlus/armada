@@ -1,7 +1,7 @@
 device_ids: '0'
 checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/mug/0611_13.17.19_train_diffusion_transformer_hybrid_dino_multi_gpu_mug_dagger_new_round2/epoch=0150-train_loss=0.030.ckpt
-train_dataset_path: /mnt/workspace/DP/0604_mug_ours_dagger_new_failure_detection_round3_1
-save_buffer_path: /mnt/workspace/DP/0604_mug_ours_dagger_new_failure_detection_round3_2
+train_dataset_path: /mnt/workspace/DP/0604_mug_ours_dagger_new_failure_detection_round3_1_action_90_ot_cost_95
+save_buffer_path: /mnt/workspace/DP/0604_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95
 output_dir: outputs/visual/0616_mug_rollout_easier_round3
 
 Ta: 8
@@ -12,8 +12,8 @@ seed: 11
 inconsistency_metric: expert
 num_samples: 4
 num_expert_candidates: 50
-action_inconsistency_percentile: 95
-ot_percentile: 99
+action_inconsistency_percentile: 90
+ot_percentile: 95
 soft_ot_percentile: 25
 
 # Sirius-related hyperparameters

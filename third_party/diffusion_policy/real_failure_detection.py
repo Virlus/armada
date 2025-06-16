@@ -332,8 +332,8 @@ def main(rank, eval_cfg, device_ids):
                     
                     # Perform failure detection
                     inconsistency_violation = np.array(action_inconsistency_buffer).sum() > expert_action_threshold if expert_action_threshold is not None else False
-                    # ot_flag = greedy_ot_cost[idx] > ot_threshold
-                    ot_flag = ot_entropy[idx] > expert_ot_threshold if expert_ot_threshold is not None else False
+                    ot_flag = greedy_ot_cost[idx] > expert_ot_threshold if expert_ot_threshold is not None else False
+                    # ot_flag = ot_entropy[idx] > expert_ot_threshold if expert_ot_threshold is not None else False
                     failure_flag = inconsistency_violation or ot_flag
                     failure_reason = "action inconsistency" if inconsistency_violation else "OT violation" if ot_flag else None
                     
@@ -720,7 +720,7 @@ def main(rank, eval_cfg, device_ids):
                                 try:
                                     async_queue.put_nowait({
                                         "task_type": "failure_detection",
-                                        "action_inconsistency_buffer": action_inconsistency_buffer[:result["idx"]+1].copy(),
+                                        "action_inconsistency_buffer": action_inconsistency_buffer[:int(result["idx"]+1)*Ta].copy(),
                                         "expert_action_threshold": expert_action_threshold,
                                         "greedy_ot_cost": greedy_ot_cost.clone(),
                                         "greedy_ot_plan": greedy_ot_plan.clone(),
@@ -740,7 +740,6 @@ def main(rank, eval_cfg, device_ids):
                     if failure_flag or j >= max_episode_length - Ta:
                         if failure_flag:
                             print(f"Failure detected! Due to {failure_reason}")
-                            failure_indices.append(idx)
                         else:
                             print("Maximum episode length reached!")
 
@@ -748,6 +747,8 @@ def main(rank, eval_cfg, device_ids):
                               Press 'h' to request human intervention; Press 'f' to finish the episode.")
                         while not keyboard.ctn and not keyboard.discard and not keyboard.help and not keyboard.finish:
                             time.sleep(0.1)
+                        if failure_flag and not keyboard.finish:
+                            failure_indices.append(idx)
                         if keyboard.ctn and j < max_episode_length - Ta:
                             print("False Positive failure! Continue policy rollout.")
                             keyboard.ctn = False
@@ -831,8 +832,7 @@ def main(rank, eval_cfg, device_ids):
                     for i in range(curr_timestep):
                         # Adaptively examine the corresponding OT cost, when the cost drops below the soft threshold, we stop rewinding
                         if j % Ta == 0:
-                            if torch.sum(-torch.log(torch.clamp(greedy_ot_plan[:, :j // Ta - 1] * float(max_episode_length // Ta), \
-                                        min=1e-4)) * greedy_ot_plan[:, :j // Ta - 1] * float(max_episode_length // Ta)) < expert_soft_ot_threshold:
+                            if greedy_ot_cost[j // Ta - 1] < expert_soft_ot_threshold:
                                 print("OT cost dropped below the soft threshold, stop rewinding.")
                                 break
                             # Rewind the OT plan
@@ -845,6 +845,7 @@ def main(rank, eval_cfg, device_ids):
                             greedy_ot_cost[j // Ta - 1] = 0.
                             if len(failure_indices) > 0 and failure_flag: # Should not rewind the failure indices if timeout
                                 latest_failure_idx = failure_indices.pop()
+                                failure_indices = [i for i in failure_indices if i < latest_failure_idx - 1] # Automatically delete those to be overwritten by rewinding
                                 failure_indices.append(latest_failure_idx - 1) # Adjust failure indices due to rewinding
 
                         # Rewind the demo history
@@ -1007,8 +1008,9 @@ def main(rank, eval_cfg, device_ids):
                 print("Reset the expert action threshold to ", expert_action_threshold)
 
                 if keyboard.finish and INTV not in action_mode:
-                    success_ot_values = np.concatenate((success_ot_values, torch.sum(-torch.log(torch.clamp(greedy_ot_plan * float(max_episode_length//Ta), min=1e-4)) \
-                                                * greedy_ot_plan * float(max_episode_length//Ta), dim=0).detach().cpu().numpy()[:j//Ta]))
+                    # success_ot_values = np.concatenate((success_ot_values, torch.sum(-torch.log(torch.clamp(greedy_ot_plan * float(max_episode_length//Ta), min=1e-4)) \
+                    #                             * greedy_ot_plan * float(max_episode_length//Ta), dim=0).detach().cpu().numpy()[:j//Ta]))
+                    success_ot_values = np.concatenate((success_ot_values, greedy_ot_cost[:j//Ta].detach().cpu().numpy()))
                     expert_ot_threshold = np.percentile(success_ot_values, ot_percentile)
                     expert_soft_ot_threshold = np.percentile(success_ot_values, soft_ot_percentile)
                     print("Reset the expert OT threshold to ", expert_ot_threshold)

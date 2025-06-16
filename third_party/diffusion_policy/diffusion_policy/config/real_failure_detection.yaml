@@ -11,10 +11,10 @@ seed: 11
 # Failure detection hyperparameters
 inconsistency_metric: expert
 num_samples: 4
-num_expert_candidates: 25
+num_expert_candidates: 50
 action_inconsistency_percentile: 95
 ot_percentile: 99
-soft_ot_percentile: 50
+soft_ot_percentile: 25
 
 # Sirius-related hyperparameters
 post_process_action_mode: False

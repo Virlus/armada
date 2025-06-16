@@ -62,6 +62,8 @@ def main(args):
     print(f"Accuracy: {np.mean(TPR_buffer) * 50 + np.mean(TNR_buffer) * 50:.2f}%")
     print(f"Weighted Accuracy: {np.mean(TPR_buffer) * success_rate * 100 + np.mean(TNR_buffer) * (1 - success_rate) * 100:.2f}%")
 
+    import pdb; pdb.set_trace()
+
     image_save_path = os.path.join(os.path.dirname(args.demo_path), 'images')
     os.makedirs(image_save_path, exist_ok=True)
 

@@ -843,7 +843,7 @@ def main(rank, eval_cfg, device_ids):
                             expert_weight = expert_weight[expert_indices]
                             greedy_ot_plan[:, j // Ta - 1] = 0.
                             greedy_ot_cost[j // Ta - 1] = 0.
-                            if len(failure_indices) > 0:
+                            if len(failure_indices) > 0 and failure_flag: # Should not rewind the failure indices if timeout
                                 latest_failure_idx = failure_indices.pop()
                                 failure_indices.append(latest_failure_idx - 1) # Adjust failure indices due to rewinding
 

@@ -17,7 +17,7 @@ from hardware.my_device.sigma import Sigma7
 from hardware.my_device.keyboard import Keyboard
 from hardware.my_device.logitechG29_wheel import Controller
 
-from third_party.diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
+from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 
 camera_serial = ["135122075425", "135122070361"]
 

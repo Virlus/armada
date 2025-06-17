@@ -71,17 +71,16 @@ class PolicyInteraction:
             tmp_state[3:] = self.obs_rot_transformer.forward(state[3:])
             state = tmp_state
             
-        return torch.from_numpy(state)
+        return torch.from_numpy(state).to(self.device)
     
     def update_observation(self, side_img, wrist_img, state):
         """Update observation history with new images and state"""
         # Process state if needed
         if not isinstance(state, torch.Tensor):
             state = self.preprocess_robot_state(state, self.state_type)
-            
         # Update observation history
-        self.policy_img_0_history = torch.cat([self.policy_img_0_history[1:], side_img.unsqueeze(0)], dim=0)
-        self.policy_img_1_history = torch.cat([self.policy_img_1_history[1:], wrist_img.unsqueeze(0)], dim=0)
+        self.policy_img_0_history = torch.cat([self.policy_img_0_history[1:], side_img.to(self.device).unsqueeze(0)], dim=0)
+        self.policy_img_1_history = torch.cat([self.policy_img_1_history[1:], wrist_img.to(self.device).unsqueeze(0)], dim=0)
         self.policy_state_history = torch.cat([self.policy_state_history[1:], state.unsqueeze(0)], dim=0)
     
     def get_policy_observation(self):

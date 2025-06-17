@@ -374,6 +374,28 @@ def main(rank, eval_cfg, device_ids):
                         action.append(np.concatenate((curr_p_action, curr_r_action, [demo_gripper_action]), 0))
                         action_mode.append(ROBOT)
 
+                        if step == Ta - To + 1:
+                            # Comply with Policy Observation buffer timesteps
+                            img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+                            img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+                            if 'ee_pose' in cfg.shape_meta['obs']:
+                                state = robot.get_robot_state()[0]
+                            else:
+                                state = robot.get_robot_state()[1]
+                            state = np.array(state)
+                            if obs_rot_transformer is not None:
+                                tmp_state = np.zeros((ee_pose_dim,))
+                                tmp_state[:3] = state[:3]
+                                tmp_state[3:] = obs_rot_transformer.forward(state[3:])
+                                state = tmp_state
+                            state = torch.from_numpy(state)
+                            policy_img_0_history[:-1] = policy_img_0_history[1:]
+                            policy_img_0_history[-1] = img_0
+                            policy_img_1_history[:-1] = policy_img_1_history[1:]
+                            policy_img_1_history[-1] = img_1
+                            policy_state_history[:-1] = policy_state_history[1:]
+                            policy_state_history[-1] = state
+
                         time.sleep(max(1 / fps - (time.time() - start_time), 0))
                         j += 1
 

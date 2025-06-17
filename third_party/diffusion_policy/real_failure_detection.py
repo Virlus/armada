@@ -562,11 +562,6 @@ def main(rank, eval_cfg, device_ids):
                     policy_img_1_history[-1] = img_1
                     policy_state_history[:-1] = policy_state_history[1:]
                     policy_state_history[-1] = state
-                    curr_obs = {
-                        'side_img': policy_img_0_history.unsqueeze(0),
-                        'wrist_img': policy_img_1_history.unsqueeze(0),
-                        state_type: policy_state_history.unsqueeze(0)
-                    }
 
                     policy_obs = {
                         'side_img': policy_img_0_history.unsqueeze(0).repeat(num_samples, 1, 1, 1, 1),
@@ -576,8 +571,9 @@ def main(rank, eval_cfg, device_ids):
 
                     # Predict eef actions
                     with torch.no_grad():
-                        curr_action = policy.predict_action(policy_obs)
-                        curr_latent = policy.extract_latent(curr_obs).reshape(-1)
+                        curr_action, curr_latent = policy.predict_action(policy_obs, return_latent=True)
+                        curr_latent = curr_latent[0].reshape(-1)
+                        # curr_latent = policy.extract_latent(curr_obs).reshape(-1)
                     np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
                     action_seq = np_action_dict['action']
                     predicted_abs_actions = np.zeros_like(action_seq[:, :, :8])

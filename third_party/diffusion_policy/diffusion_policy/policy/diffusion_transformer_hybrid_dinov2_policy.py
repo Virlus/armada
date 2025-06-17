@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union
 import math
 import torch
 import torch.nn as nn
@@ -145,7 +145,7 @@ class DiffusionTransformerHybridDinov2Policy(BaseImagePolicy):
         nobs_features = nobs_features.reshape(B, To, -1)
         return nobs_features
 
-    def predict_action(self, obs_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def predict_action(self, obs_dict: Dict[str, torch.Tensor], return_latent: bool = False) -> Union[Dict[str, torch.Tensor], Tuple[Dict[str, torch.Tensor], torch.Tensor]]:
         """
         obs_dict: must include "obs" key
         result: must include "action" key
@@ -213,6 +213,8 @@ class DiffusionTransformerHybridDinov2Policy(BaseImagePolicy):
             'action': action,
             'action_pred': action_pred
         }
+        if return_latent:
+            return result, cond
         return result
 
     # ========= training  ============

@@ -1,5 +1,5 @@
 from hardware.my_device.robot import FlexivRobot, FlexivGripper
-from third_party.diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
+from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 
 from scipy.spatial.transform import Rotation as R
 from PIL import Image

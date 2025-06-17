@@ -1,0 +1,11 @@
+device_ids: '0'
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/mug/0611_01.40.58_train_diffusion_transformer_hybrid_dino_multi_gpu_mug_dagger_round1/epoch=0150-train_loss=0.040.ckpt
+output_dir: outputs/visual/0611_mug_rollout_round3
+
+Ta: 8
+num_episode: 20
+random_init: True
+seed: 6
+
+policy:
+  num_inference_steps: 8

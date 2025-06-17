@@ -1,0 +1,12 @@
+device_ids: '0'
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/mug/0611_11.33.37_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_mug_sirius_round2/epoch=0150-train_loss=0.026.ckpt
+train_dataset_path: /mnt/workspace/DP/0604_mug_sirius_round2_2
+save_buffer_path: /mnt/workspace/DP/debug_round3
+output_dir: diffusion_policy/outputs/visual/0609_mug_rollout_round2
+
+Ta: 8
+random_init: True
+seed: 5
+
+policy:
+  num_inference_steps: 8

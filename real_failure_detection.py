@@ -485,7 +485,7 @@ def main(rank, eval_cfg, device_ids):
                     for i in range(curr_timestep):
                         # Adaptively check if OT cost dropped below soft threshold to stop rewinding
                         if j % Ta == 0 and j > 0:
-                            if greedy_ot_cost[j // Ta - 1] < failure_detector.expert_soft_ot_threshold:
+                            if torch.sum(greedy_ot_cost[:j // Ta]) < failure_detector.expert_soft_ot_threshold:
                                 print("OT cost dropped below the soft threshold, stop rewinding.")
                                 break
                             

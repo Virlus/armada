@@ -25,7 +25,7 @@ from diffusion_policy.diffusion_policy.model.common.rotation_transformer import 
 
 from robot_env import RobotEnv, postprocess_action_mode
 from failure_detection import FailureDetector
-from policy_utils import PolicyInteraction
+from util.episode_utils import EpisodeManager
 from util.image_utils import process_image, create_failure_visualization
 
 # Sirius-specific macros
@@ -125,7 +125,7 @@ def main(rank, eval_cfg, device_ids):
     robot_env = RobotEnv(camera_serial, img_shape, fps)
     
     # Initialize policy interaction helper
-    policy_interaction = PolicyInteraction(
+    episode_manager = EpisodeManager(
         policy=policy,
         obs_rot_transformer=obs_rot_transformer,
         action_rot_transformer=action_rot_transformer,
@@ -247,10 +247,10 @@ def main(rank, eval_cfg, device_ids):
             robot_state = robot_env.reset_robot(eval_cfg.random_init, random_init_pose)
             
             # Initialize policy observation history
-            policy_interaction.reset_observation_history()
+            episode_manager.reset_observation_history()
             
             # Update initial observations
-            policy_interaction.update_observation(
+            episode_manager.update_observation(
                 robot_state['side_img'] / 255.0,
                 robot_state['wrist_img'] / 255.0,
                 robot_state['tcp_pose'] if state_type == 'ee_pose' else robot_state['joint_pos']
@@ -258,13 +258,13 @@ def main(rank, eval_cfg, device_ids):
             
             # Initialize the action pose tracking
             if eval_cfg.random_init and random_init_pose is not None:
-                policy_interaction.initialize_pose(random_init_pose[:3], random_init_pose[3:])
+                episode_manager.initialize_pose(random_init_pose[:3], random_init_pose[3:])
             else:
-                policy_interaction.initialize_pose(robot_env.robot.init_pose[:3], robot_env.robot.init_pose[3:])
+                episode_manager.initialize_pose(robot_env.robot.init_pose[:3], robot_env.robot.init_pose[3:])
                 
             # Match the current rollout with the closest expert episode by initial visual latent vector
-            rollout_init_latent = policy_interaction.extract_latent().unsqueeze(0)
-            candidate_expert_indices = policy_interaction.find_matching_expert_demo(
+            rollout_init_latent = episode_manager.extract_latent().unsqueeze(0)
+            candidate_expert_indices = episode_manager.find_matching_expert_demo(
                 rollout_init_latent, 
                 all_human_latent, 
                 human_demo_indices,
@@ -308,14 +308,14 @@ def main(rank, eval_cfg, device_ids):
                     robot_state = robot_env.get_robot_state()
                     
                     # Update observation history
-                    policy_interaction.update_observation(
+                    episode_manager.update_observation(
                         robot_state['side_img'] / 255.0,
                         robot_state['wrist_img'] / 255.0,
                         robot_state['tcp_pose'] if state_type == 'ee_pose' else robot_state['joint_pos']
                     )
                     
                     # Get action sequence for execution
-                    policy_obs = policy_interaction.get_policy_observation()
+                    policy_obs = episode_manager.get_policy_observation()
                     with torch.no_grad():
                         curr_action, curr_latent = policy.predict_action(policy_obs, return_latent=True)
                         curr_latent = curr_latent[0].reshape(-1)
@@ -332,7 +332,7 @@ def main(rank, eval_cfg, device_ids):
                         
                         # Get absolute action for this step
                         deployed_action, gripper_action, curr_p, curr_r, curr_p_action, curr_r_action = \
-                            policy_interaction.get_absolute_action_for_step(action_seq, step)
+                            episode_manager.get_absolute_action_for_step(action_seq, step)
                         predicted_abs_actions[:, step] = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), gripper_action[:, np.newaxis]), -1)
                         
                         # Execute action on robot
@@ -351,7 +351,7 @@ def main(rank, eval_cfg, device_ids):
                         
                         # Update policy observation if needed
                         if step >= Ta - To + 1:
-                            policy_interaction.update_observation(
+                            episode_manager.update_observation(
                                 state_data['side_img'] / 255.0,
                                 state_data['wrist_img'] / 255.0,
                                 state_data['tcp_pose'] if state_type == 'ee_pose' else state_data['joint_pos']
@@ -360,7 +360,7 @@ def main(rank, eval_cfg, device_ids):
                         time.sleep(max(1 / fps - (time.time() - start_time), 0))
                         j += 1
 
-                    action_inconsistency = policy_interaction.imagine_future_action(action_seq, predicted_abs_actions)
+                    action_inconsistency = episode_manager.imagine_future_action(action_seq, predicted_abs_actions)
                     
                     # Track action inconsistency for failure detection
                     action_inconsistency_buffer.extend([action_inconsistency] * Ta)
@@ -537,8 +537,8 @@ def main(rank, eval_cfg, device_ids):
                         
                         while not robot_env.keyboard.ctn:
                             state_data = robot_env.get_robot_state()
-                            wrist_img = state_data['wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8)
-                            side_img = state_data['side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+                            wrist_img = cv2.cvtColor(state_data['wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
+                            side_img = cv2.cvtColor(state_data['side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
                             cv2.imshow("Rewinded side view", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
                             cv2.imshow("Rewinded wrist view", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
                             cv2.waitKey(1)
@@ -549,8 +549,8 @@ def main(rank, eval_cfg, device_ids):
                     last_p = curr_pos
                     last_r = curr_rot
                 else:
-                    last_p = policy_interaction.last_p[0]
-                    last_r = policy_interaction.last_r[0]
+                    last_p = episode_manager.last_p[0]
+                    last_r = episode_manager.last_r[0]
                 
                 print("============ Human intervention =============")
                 # ============================================================
@@ -564,7 +564,7 @@ def main(rank, eval_cfg, device_ids):
                         continue
                     
                     # Update observation history with latest state
-                    policy_interaction.update_observation(
+                    episode_manager.update_observation(
                         teleop_data['side_img'] / 255.0,
                         teleop_data['wrist_img'] / 255.0,
                         teleop_data['tcp_pose'] if state_type == 'ee_pose' else teleop_data['joint_pos']
@@ -582,7 +582,7 @@ def main(rank, eval_cfg, device_ids):
                     j += 1
                 
                 # Reset pose for policy after human intervention
-                policy_interaction.initialize_pose(last_p, last_r.as_quat(scalar_first=True))
+                episode_manager.initialize_pose(last_p, last_r.as_quat(scalar_first=True))
                 
                 # Reset signals
                 robot_env.keyboard.infer = False

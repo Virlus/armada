@@ -104,7 +104,7 @@ def rematch_expert_episode(
     curr_rollout_latent: Tensor
 ) -> Tensor:
     ot_costs = []
-    for expert_latent in tqdm.tqdm(candidate_expert_latent, desc="Rematching the current rollout with expert demos"):
+    for expert_latent in candidate_expert_latent:
         dist_mat = cosine_distance(expert_latent, curr_rollout_latent)
         ot_plan = optimal_transport_plan(expert_latent, curr_rollout_latent, dist_mat)
         ot_cost = torch.sum(ot_plan * dist_mat)

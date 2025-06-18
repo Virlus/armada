@@ -277,18 +277,3 @@ class FailureDetector:
             'action_inconsistencies': np.array(self.success_action_inconsistencies),
             'ot_values': self.success_ot_values
         }
-    
-    def calculate_action_inconsistency(self, predicted_abs_actions, last_predicted_abs_actions):
-        """Calculate action inconsistency between consecutive predicted actions"""
-        if last_predicted_abs_actions is None:
-            # Prevent anomalous value in the beginning
-            last_pred = np.concatenate((np.zeros((self.Ta, 8)), predicted_abs_actions[0, :-self.Ta]), 0)
-        else:
-            last_pred = last_predicted_abs_actions
-            
-        action_inconsistency = np.mean(np.linalg.norm(
-            predicted_abs_actions[:, :-self.Ta] - last_pred[np.newaxis, self.Ta:], 
-            axis=-1
-        ))
-        
-        return action_inconsistency 

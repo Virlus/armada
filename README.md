@@ -40,5 +40,5 @@ python visualize_traj.py
 If you would like to verify the correctness of human teleoperation, please run the following command:
 
 ```
-python replay_demo.py -p ${your demo path}
+python test/replay_demo.py -p ${your demo path}
 ```

@@ -3,7 +3,7 @@ import numpy as np
 from typing import Dict, Tuple, List, Any, Optional
 from scipy.spatial.transform import Rotation as R
 
-class PolicyInteraction:
+class EpisodeManager:
     def __init__(self, policy, obs_rot_transformer, action_rot_transformer, 
                  obs_feature_dim, img_shape, state_type, state_shape, action_dim,
                  To, Ta, device, num_samples=10):

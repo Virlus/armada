@@ -1,0 +1,99 @@
+defaults:
+  - _self_
+  - task: mytask
+
+device_ids: '0'
+output_dir: /home/yuwenye/project/human-in-the-loop/baseline_data/training/0604_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95
+
+name: baseline_diffusion_transformer_real_hybrid_dino_multi_gpu_workspace_save_data
+_target_: diffusion_policy.workspace.baseline_diffusion_transformer_real_hybrid_dino_multi_gpu_workspace_save_data.BaselineDiffusionTransformerHybridDinoMultiGPUWorkspaceSaveData
+
+task_name: ${task.name}
+shape_meta: ${task.shape_meta}
+exp_name: "default"
+
+horizon: 16
+n_obs_steps: 2
+n_action_steps: 15
+n_latency_steps: 0
+dataset_obs_steps: ${n_obs_steps}
+past_action_visible: False
+keypoint_visible_rate: 1.0
+obs_as_cond: True
+
+policy:
+  _target_: diffusion_policy.policy.diffusion_transformer_hybrid_dinov2_policy.DiffusionTransformerHybridDinov2Policy
+
+  shape_meta: ${shape_meta}
+  
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    # beta_schedule is important
+    # this is the best we found
+    beta_schedule: squaredcos_cap_v2
+    clip_sample: True
+    set_alpha_to_one: True
+    steps_offset: 0
+    prediction_type: epsilon # or sample
+
+  obs_encoder:
+    _target_: diffusion_policy.model.hybrid.dinov2_obs_encoder.Dinov2ObsEncoder
+    img_size: 518
+    patch_size: 14
+    init_values: 1.0
+    ffn_layer: mlp
+    block_chunks: 0
+    num_register_tokens: 4
+    interpolate_antialias: True
+    interpolate_offset: 0.0
+    proprio_shape: ${shape_meta.obs.ee_pose.shape}
+    # pretrained_path: /home/yuwenye/common/dinov2/dinov2_vitb14_reg4_pretrain.pth
+    pretrained_path: null
+
+  horizon: ${horizon}
+  n_action_steps: ${eval:'${n_action_steps}+${n_latency_steps}'}
+  n_obs_steps: ${n_obs_steps}
+  num_inference_steps: 100
+
+  crop_shape: [224, 224]
+
+  n_layer: 8
+  n_cond_layers: 0  # >0: use transformer encoder for cond, otherwise use MLP
+  n_head: 4
+  n_emb: 256
+  p_drop_emb: 0.0
+  p_drop_attn: 0.3
+  causal_attn: True
+  time_as_cond: True # if false, use BERT like encoder only arch, time as input
+  obs_as_cond: ${obs_as_cond}
+  rel_ee_pose: ${task.dataset.rel_ee_pose}
+
+  # scheduler.step params
+  # predict_epsilon: True
+
+ema:
+  _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
+  update_after_step: 0
+  inv_gamma: 1.0
+  power: 0.75
+  min_value: 0.0
+  max_value: 0.9999
+
+dataloader:
+  batch_size: 64
+  num_workers: 4
+  # shuffle: True
+  pin_memory: True
+  persistent_workers: True
+  prefetch_factor: 4
+  drop_last: False
+
+training:
+  device: "cuda:0"
+  seed: 42
+  resume: True
+  resume_path: outputs/2025.06.11/13.17.19_train_diffusion_transformer_hybrid_dino_multi_gpu_mug_dagger_new_round2
+  use_ema: True

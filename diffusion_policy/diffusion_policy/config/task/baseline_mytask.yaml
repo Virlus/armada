@@ -1,0 +1,46 @@
+name: baseline_extract_training_data
+
+image_shape: [3, 224, 224]
+dataset_path: /home/yuwenye/project/human-in-the-loop/baseline_data/rollout/0604_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95
+
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    wrist_img:
+      shape: ${task.image_shape}
+      type: rgb
+    side_img:
+      shape: ${task.image_shape}
+      type: rgb
+    # qpos:
+    #   shape: [7]
+    #   type: low_dim
+    # rel_ee_pose:
+    #   shape: 
+    #     - ${eval:'9*${n_obs_steps}-9'}
+    #   type: low_dim
+    ee_pose:
+      shape: [9]
+      type: low_dim
+      rotation_rep: rotation_6d
+  action: 
+    shape: [10]
+    rotation_rep: rotation_6d
+
+env_runner:
+  _target_: diffusion_policy.env_runner.myrunner.MyRunner
+
+dataset:
+  _target_: diffusion_policy.dataset.mydataset.MyDataset
+  zarr_path: /home/yuwenye/project/human-in-the-loop/baseline_data/rollout/0604_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95/replay_buffer.zarr
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  seed: 42
+  val_ratio: 0.00
+  max_train_episodes: 100000
+  rel_ee_pose: False
+  n_obs_steps: ${n_obs_steps}
+  shape_meta: ${shape_meta}
+  random_crop: True
+  image_shape: ${task.image_shape}

@@ -14,6 +14,8 @@ from torch.multiprocessing import Process
 from data_loader import adjust_xshape
 from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply, dict_apply_with_key
+from timeseries_cp.utils.data_utils import RegressionType
+from timeseries_cp.methods.functional_predictor import FunctionalPredictor, ModulationType
 import CFM.net_CFM as Net
 
 
@@ -126,10 +128,14 @@ def main(rank, cfg, device_ids):
     logpZO_list = []
     for idx in range(replay_buffer.n_episodes): 
         logpZO = get_episode_and_return_logpZO(dataset, policy, baseline_model, replay_buffer, idx, episode_length, device=device, To=To)
-        print(f"Current episode logpZO: {logpZO.reshape(-1)}")
+        # print(f"Current episode logpZO: {logpZO.reshape(-1)}")
         logpZO_list.append(logpZO.reshape(-1))
-    logpZO_list = torch.stack(logpZO_list, dim=0) # (n_episodes, episode_length)
-    
+    logpZO_list = torch.stack(logpZO_list, dim=0).detach().cpu().numpy() # (n_episodes, episode_length)
+    n_train = int(logpZO_list.shape[0] * 0.3)
+
+    predictor = FunctionalPredictor(modulation_type=ModulationType.Tfunc, regression_type=RegressionType.Mean)
+    target_traj = predictor.get_one_sided_prediction_band(logpZO_list[:n_train], logpZO_list[-n_train:], alpha=0.05, lower_bound=False).flatten()
+    print(target_traj)
     torch.distributed.destroy_process_group()
 
 

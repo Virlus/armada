@@ -14,7 +14,6 @@ import dill
 import time
 import tqdm
 import matplotlib.pyplot as plt
-import os.path as osp
 import cv2
 from scipy.spatial.transform import Rotation as R
 
@@ -26,7 +25,7 @@ from diffusion_policy.diffusion_policy.model.common.rotation_transformer import 
 from robot_env import RobotEnv, postprocess_action_mode
 from failure_detection import FailureDetector
 from util.episode_utils import EpisodeManager
-from util.image_utils import process_image, create_failure_visualization
+from util.image_utils import create_failure_visualization
 
 # Sirius-specific macros
 HUMAN = 0

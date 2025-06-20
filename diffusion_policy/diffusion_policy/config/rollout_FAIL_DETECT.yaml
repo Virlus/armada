@@ -1,0 +1,17 @@
+device_ids: '0'
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0611_13.17.19_train_diffusion_transformer_hybrid_dino_multi_gpu_mug_dagger_new_round2/epoch=0150-train_loss=0.030.ckpt
+train_dataset_path: /mnt/workspace/DP/0604_mug/0604_mug_ours_dagger_new_failure_detection_round2_2
+save_buffer_path: /mnt/workspace/DP/0604_mug/0620_baseline_round3_1
+output_dir: diffusion_policy/outputs/visual/0611_mug_rollout_round3
+
+Ta: 8
+random_init: True
+seed: 6
+
+# Failure detection hyperparameters
+baseline_model_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0604_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95/baseline.pt
+baseline_stats_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0604_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95/target_traj.npz
+post_process_action_mode: False
+
+policy:
+  num_inference_steps: 8

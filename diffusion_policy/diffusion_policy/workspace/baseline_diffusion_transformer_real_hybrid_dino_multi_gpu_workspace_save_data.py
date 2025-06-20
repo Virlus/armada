@@ -49,6 +49,7 @@ class BaselineDiffusionTransformerHybridDinoMultiGPUWorkspaceSaveData(BaseWorksp
 
     def __init__(self, cfg: OmegaConf, rank, world_size, device_id, device='cuda:0', output_dir=None):
         super().__init__(cfg, output_dir=cfg.output_dir)
+        mkdir_p(cfg.output_dir)
 
         # set seed
         seed = cfg.training.seed
@@ -117,7 +118,7 @@ class BaselineDiffusionTransformerHybridDinoMultiGPUWorkspaceSaveData(BaseWorksp
                 # Get latent representation of observations
                 this_nobs = dict_apply(nobs, 
                     lambda x: x[:,:mod.n_obs_steps,...].reshape(-1,*x.shape[2:]))
-                nobs_features = mod.obs_encoder(this_nobs)
+                nobs_features = mod.obs_encoder.get_dense_feats(this_nobs)
                 # reshape back to B, Do
                 global_cond = nobs_features.reshape(batch_size, -1)
 

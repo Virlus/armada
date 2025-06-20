@@ -100,6 +100,17 @@ class Dinov2ObsEncoder(nn.Module):
         encoder_output = torch.cat(feats, dim=-1)
         return encoder_output
     
+    def get_dense_feats(self, obs):
+        feats = []
+        for key, encoder in self.obskey2enc.items():
+            if key in obs and encoder is not None:
+                obs_feat = encoder[0](obs[key])
+                feats.append(obs_feat)
+            elif encoder is None:
+                feats.append(obs[key])
+        dense_feats = torch.cat(feats, dim=-1)
+        return dense_feats
+    
     def output_shape(self):
         feat_dim = 0
         for key, encoder in self.obskey2enc.items():

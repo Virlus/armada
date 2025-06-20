@@ -3,7 +3,7 @@ defaults:
   - task: baseline_mytask
 
 device_ids: '0'
-output_dir: /home/yuwenye/project/human-in-the-loop/baseline_data/training/0604_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95
+output_dir: /home/yuwenye/project/human-in-the-loop/baseline_data/training/0620_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95_dense_feats
 
 name: baseline_diffusion_transformer_real_hybrid_dino_multi_gpu_workspace_save_data
 _target_: diffusion_policy.workspace.baseline_diffusion_transformer_real_hybrid_dino_multi_gpu_workspace_save_data.BaselineDiffusionTransformerHybridDinoMultiGPUWorkspaceSaveData

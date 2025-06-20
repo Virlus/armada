@@ -329,8 +329,11 @@ def main(rank, eval_cfg, device_ids):
                     for step in range(Ta):
                         start_time = time.time()  # Track time for fps control
 
-                        # Get robot state after action
-                        state_data = robot_env.get_robot_state()
+                        # Get robot state
+                        if step == 0:
+                            state_data = robot_state
+                        else:
+                            state_data = robot_env.get_robot_state()
                         
                         # Get absolute action for this step
                         deployed_action, gripper_action, curr_p, curr_r, curr_p_action, curr_r_action = \
@@ -548,6 +551,7 @@ def main(rank, eval_cfg, device_ids):
                     # Transform sigma device from current robot pose
                     translate = curr_pos - detach_pos
                     rotation = detach_rot.inv() * curr_rot
+                    robot_env.sigma.resume()
                     robot_env.sigma.transform_from_robot(translate, rotation)
                 else:
                     last_p = episode_manager.last_p[0]

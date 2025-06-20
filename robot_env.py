@@ -47,7 +47,7 @@ class RobotEnv:
         self.wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
         
         # Keep track of throttle usage for human intervention
-        self.last_throttle = True
+        self.last_throttle = False
         
     def reset_robot(self, random_init=False, random_init_pose=None):
         if random_init and random_init_pose is not None:
@@ -61,6 +61,7 @@ class RobotEnv:
         
         # Reset the sigma pose as well
         self.sigma.reset()
+        self.last_throttle = False
         if random_init and random_init_pose is not None:
             random_p_drift = random_init_pose[:3] - self.robot.init_pose[:3]
             random_r_drift = R.from_quat(self.robot.init_pose[3:7], scalar_first=True).inv() * R.from_quat(random_init_pose[3:7], scalar_first=True)
@@ -218,6 +219,44 @@ class RobotEnv:
             camera.release()
         self.sigma.cleanup()
         pygame.quit()
+
+
+if __name__ == "__main__": # Test the robustness of Sigma teleoperation
+    # Example usage of RobotEnv
+    robot_env = RobotEnv(camera_serial=["135122075425", "135122070361"], img_shape=(3, 224, 224), fps=10)
+    robot_env.reset_robot()
+    
+    last_p = robot_env.robot.init_pose[:3]
+    last_r = R.from_quat(robot_env.robot.init_pose[3:7], scalar_first=True)
+    
+    while True:
+        processed_data, last_p, last_r = robot_env.human_teleop_step(last_p, last_r)
+        if processed_data is None:
+            continue
+        
+        if robot_env.keyboard.infer:
+            detach_pos, detach_rot = robot_env.detach_sigma()
+            random_p = robot_env.robot.init_pose[:3] + (np.random.rand(3) - np.array([0.5, 0.5, 0])) * np.ones((3,)) * 0.3
+            random_r = (R.from_quat(robot_env.robot.init_pose[3:7], scalar_first=True) * R.from_euler('xyz', (np.random.rand(3) - 0.5) * np.pi / 6, degrees=False)).as_quat(scalar_first=True)
+            robot_env.deploy_action(np.concatenate((random_p, random_r),0), robot_env.gripper.max_width)
+            time.sleep(3)
+
+            robot_env.keyboard.infer = False
+
+            while not robot_env.keyboard.ctn:
+                cv2.waitKey(1)
+            robot_env.keyboard.ctn = False
+
+            robot_env.sigma.resume()
+            translate = random_p - detach_pos
+            rotation = detach_rot.inv() * R.from_quat(random_r,scalar_first=True)
+            robot_env.sigma.transform_from_robot(translate, rotation)
+        
+        # Break condition for demo
+        if robot_env.keyboard.quit:
+            break
+    
+    robot_env.cleanup()
 
 
 def postprocess_action_mode(action_mode: np.ndarray):

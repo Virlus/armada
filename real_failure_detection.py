@@ -328,6 +328,9 @@ def main(rank, eval_cfg, device_ids):
                     
                     for step in range(Ta):
                         start_time = time.time()  # Track time for fps control
+
+                        # Get robot state after action
+                        state_data = robot_env.get_robot_state()
                         
                         # Get absolute action for this step
                         deployed_action, gripper_action, curr_p, curr_r, curr_p_action, curr_r_action = \
@@ -336,9 +339,6 @@ def main(rank, eval_cfg, device_ids):
                         
                         # Execute action on robot
                         robot_env.deploy_action(deployed_action, gripper_action[0])
-                        
-                        # Get robot state after action
-                        state_data = robot_env.get_robot_state()
                         
                         # Save to episode buffers
                         wrist_cam.append(state_data['wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
@@ -478,7 +478,8 @@ def main(rank, eval_cfg, device_ids):
                     
                     # Rewind the robot while human resets the environment
                     curr_timestep = j
-                    curr_tcp = robot_env.get_robot_state()['tcp_pose']
+                    # curr_tcp = robot_env.get_robot_state()['tcp_pose']
+                    curr_tcp = predicted_abs_actions[0, Ta-1, :7] # Use the last target action for rewinding instead of the current robot state
                     curr_pos = curr_tcp[:3]
                     curr_rot = R.from_quat(curr_tcp[3:], scalar_first=True)
                     for i in range(curr_timestep):
@@ -515,16 +516,9 @@ def main(rank, eval_cfg, device_ids):
                         curr_pos, curr_rot = robot_env.rewind_robot(
                             curr_pos,
                             curr_rot,
-                            prev_action[:3],
-                            prev_action[3:7],
-                            prev_action[7]
+                            prev_action
                         )
                         j -= 1
-                    
-                    # Transform sigma device from current robot pose
-                    translate = curr_pos - detach_pos
-                    rotation = detach_rot.inv() * curr_rot
-                    robot_env.sigma.transform_from_robot(translate, rotation)
                     
                     # Prepare for human intervention by showing reference scene
                     if "prev_side_cam" in locals():
@@ -543,10 +537,18 @@ def main(rank, eval_cfg, device_ids):
                             cv2.waitKey(1)
                         robot_env.keyboard.ctn = False
                         cv2.destroyAllWindows()
+
+                        # Remove the reference images and action buffers
+                        del prev_wrist_cam, prev_side_cam, prev_action
                         
                     # Get current pose for human teleop
                     last_p = curr_pos
                     last_r = curr_rot
+
+                    # Transform sigma device from current robot pose
+                    translate = curr_pos - detach_pos
+                    rotation = detach_rot.inv() * curr_rot
+                    robot_env.sigma.transform_from_robot(translate, rotation)
                 else:
                     last_p = episode_manager.last_p[0]
                     last_r = episode_manager.last_r[0]

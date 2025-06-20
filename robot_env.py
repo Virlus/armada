@@ -195,8 +195,12 @@ class RobotEnv:
         
         return processed_data, diff_p, diff_r
     
-    def rewind_robot(self, curr_pos, curr_rot, p_action, r_action, gripper_action):
+    def rewind_robot(self, curr_pos, curr_rot, inverse_action):
         """Rewind the robot by applying inverse actions"""
+
+        p_action = inverse_action[:3]
+        r_action = inverse_action[3:7]
+        gripper_action = inverse_action[7]
         
         # Apply inverse action
         curr_pos = curr_pos - p_action

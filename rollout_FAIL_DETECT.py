@@ -293,7 +293,7 @@ def main(rank, eval_cfg, device_ids):
                     # [TODO] Add baseline failure detection logic here
                     normalized_obs = policy.normalizer.normalize(policy_obs)
                     this_nobs = dict_apply(normalized_obs, lambda x: x[:, :policy.n_obs_steps, ...].reshape(-1, *x.shape[2:]))
-                    nobs_features = policy.obs_encoder(this_nobs)
+                    nobs_features = policy.obs_encoder.get_dense_feats(this_nobs)
                     global_cond = nobs_features.reshape(1, -1)
                     curr_logp = logpZO_UQ(baseline_model, global_cond, None)
                     print(curr_logp.item(), logpZO_upper_bound[j // Ta - 1])

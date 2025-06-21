@@ -89,7 +89,7 @@ def get_episode_and_return_logpZO(dataset, policy, baseline_model, replay_buffer
         batch = dict_apply(torch_data, lambda x: x.to(device, non_blocking=True))
         normalized_data = policy.normalizer.normalize(batch['obs'])
         this_nobs = dict_apply(normalized_data, lambda x: x[:,:policy.n_obs_steps,...].reshape(-1,*x.shape[2:]))
-        nobs_features = policy.obs_encoder(this_nobs)
+        nobs_features = policy.obs_encoder.get_dense_feats(this_nobs)
         global_cond = nobs_features.reshape(1, -1)
         curr_logpZO.append(logpZO_UQ(baseline_model, global_cond, None, input_dim))
     

@@ -24,30 +24,16 @@ from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
-from hardware.my_device.robot import FlexivRobot, FlexivGripper
-from hardware.my_device.camera import CameraD400
-from hardware.my_device.keyboard import Keyboard
-from hardware.my_device.sigma import Sigma7
-from hardware.my_device.logitechG29_wheel import Controller
-
-camera_serial = ["135122075425", "135122070361"]
+from robot_env import RobotEnv, postprocess_action_mode
+from util.episode_utils import EpisodeManager
 
 # Sirius-specific macros
 HUMAN = 0
 ROBOT = 1
 PRE_INTV = 2
 INTV = 3
-INTV_STEPS = 15
 
-def postprocess_action_mode(action_mode: np.ndarray):
-    # Postprocessing for action mode identification
-    for i in range(1, len(action_mode)):
-        if action_mode[i] == INTV and action_mode[i-1] == ROBOT:
-            pre_intv_indices = np.arange(max(0, i-INTV_STEPS), i)
-            pre_intv_indices = pre_intv_indices[np.where(action_mode[pre_intv_indices] == INTV, False, True)]
-            action_mode[pre_intv_indices] = PRE_INTV
-
-    return action_mode
+camera_serial = ["135122075425", "135122070361"]
 
 def main(rank, eval_cfg, device_ids):
     fps = 10  # TODO
@@ -63,9 +49,6 @@ def main(rank, eval_cfg, device_ids):
     # load checkpoint
     payload = torch.load(open(eval_cfg.checkpoint_path, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
-    # rel_ee_pose = cfg.task.dataset.rel_ee_pose # Determines the action space
-    rel_ee_pose = True # Hacked because currently the action space is always relative
-    # cfg.shape_meta = eval_cfg.shape_meta # Hacked for the same reason as above
 
     # rotation transformation for action space and observation space
     action_dim = cfg.shape_meta['action']['shape'][0]
@@ -88,12 +71,9 @@ def main(rank, eval_cfg, device_ids):
     cfg.output_dir = eval_cfg.output_dir
     if 'obs_encoder' in cfg.policy:
         cfg.policy.obs_encoder.pretrained_path = None
-    # if rank == 0:
-    #     pathlib.Path(cfg.output_dir).mkdir(parents=True, exist_ok=True)
 
     cls = hydra.utils.get_class(cfg._target_)
     workspace = cls(cfg, rank, world_size, device_id, device)
-    # workspace = cls(cfg)
     workspace: BaseWorkspace
     workspace.load_payload(payload, exclude_keys=None, include_keys=None)
 
@@ -114,14 +94,6 @@ def main(rank, eval_cfg, device_ids):
     else:
         state_shape = cfg.task['shape_meta']['obs']['qpos']['shape']
 
-    BICUBIC = InterpolationMode.BICUBIC
-    # image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
-    side_image_processor = Compose([
-        Resize((img_shape[1]+8, img_shape[2]+8), interpolation=BICUBIC),
-        CenterCrop((img_shape[1], img_shape[2]))
-    ])
-    wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
-
     # Overwritten by evaluation config specifically
     seed = eval_cfg.seed
     np.random.seed(seed)
@@ -141,14 +113,24 @@ def main(rank, eval_cfg, device_ids):
     assert match_round
     num_round = int(match_round.group(1))
     
-    # Initialize hardware
-    robot = FlexivRobot()
-    gripper = FlexivGripper(robot)
-    cameras = [CameraD400(s) for s in camera_serial]
-    keyboard = Keyboard()
-    sigma = Sigma7()
-    pygame.init()
-    controller = Controller(0)
+    # Initialize robot environment
+    robot_env = RobotEnv(camera_serial=camera_serial, img_shape=img_shape, fps=fps)
+
+    # Initialize EpisodeManager
+    episode_manager = EpisodeManager(
+        policy=policy,
+        obs_rot_transformer=obs_rot_transformer,
+        action_rot_transformer=action_rot_transformer,
+        obs_feature_dim=ee_pose_dim,
+        img_shape=img_shape,
+        state_type=state_type,
+        state_shape=state_shape,
+        action_dim=action_dim,
+        To=To,
+        Ta=Ta,
+        device=device,
+        num_samples=1  # Single sample for rollout
+    )
 
     # Initialize demonstration buffer
     zarr_path = os.path.join(eval_cfg.train_dataset_path, 'replay_buffer.zarr')
@@ -166,17 +148,15 @@ def main(rank, eval_cfg, device_ids):
 
     try:
         while True: 
-            if keyboard.quit:
+            if robot_env.keyboard.quit:
                 break
-            # if episode_idx not in episode_list:
-            #     continue
             print(f"Rollout episode: {episode_idx}")
 
             # Reset keyboard states
-            keyboard.finish = False
-            keyboard.help = False
-            keyboard.infer = False
-            keyboard.discard = False
+            robot_env.keyboard.finish = False
+            robot_env.keyboard.help = False
+            robot_env.keyboard.infer = False
+            robot_env.keyboard.discard = False
             time.sleep(1)
 
             # Initialize episode buffers
@@ -187,97 +167,45 @@ def main(rank, eval_cfg, device_ids):
             wrist_cam = []
             side_cam = []
 
-            # Reset the robot to home pose
+            # Reset the robot using RobotEnv
             if eval_cfg.random_init:
-                random_init_pose = robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
-                robot.send_tcp_pose(random_init_pose)
+                random_init_pose = robot_env.robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
+                robot_env.reset_robot(random_init=True, random_init_pose=random_init_pose)
             else:
-                robot.send_tcp_pose(robot.init_pose)
-            time.sleep(2)
-            gripper.move(gripper.max_width)
-            time.sleep(0.5)
-            print("Reset!")
-            # Reset the sigma pose as well
-            sigma.reset()
-            if eval_cfg.random_init:
-                random_p_drift = random_init_pose[:3] - robot.init_pose[:3]
-                random_r_drift = R.from_quat(robot.init_pose[3:7], scalar_first=True).inv() * R.from_quat(random_init_pose[3:7], scalar_first=True)
-                sigma.transform_from_robot(random_p_drift, random_r_drift)
+                robot_env.reset_robot()
 
-            # Initialize obs history buffer
-            policy_img_0_history = torch.zeros((To, *img_shape), device=device)
-            policy_img_1_history = torch.zeros((To, *img_shape), device=device)
-            policy_state_history = torch.zeros((To, *state_shape), device=device)
+            # Reset episode manager and initialize observation history
+            episode_manager.reset_observation_history()
 
+            # Get initial state using RobotEnv
+            robot_state = robot_env.get_robot_state()
             if 'ee_pose' in cfg.shape_meta['obs']:
-                state = robot.get_robot_state()[0]
+                initial_state = robot_state['tcp_pose']
             else:
-                state = robot.get_robot_state()[1]
-            state = np.array(state)
+                initial_state = robot_state['joint_pos']
 
-            if obs_rot_transformer is not None:
-                tmp_state = np.zeros((ee_pose_dim,))
-                tmp_state[:3] = state[:3]
-                tmp_state[3:] = obs_rot_transformer.forward(state[3:])
-                state = tmp_state
-            state = torch.from_numpy(state)
-            cam_data = []
-            for camera in cameras:
-                color_image, _ = camera.get_data()
-                cam_data.append(color_image)
-            original_img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
-            original_img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
-            policy_img_0 = original_img_0 / 255.
-            policy_img_1 = original_img_1 / 255.
+            # Use processed images from RobotEnv
+            policy_img_0 = robot_state['side_img'] / 255.
+            policy_img_1 = robot_state['wrist_img'] / 255.
 
-            for idx in range(policy_state_history.shape[0]):
-                policy_img_0_history[idx] = policy_img_0
-                policy_img_1_history[idx] = policy_img_1
-                policy_state_history[idx] = state
+            # Initialize observation history using EpisodeManager
+            for idx in range(To):
+                episode_manager.update_observation(policy_img_0, policy_img_1, initial_state)
 
-            # Keep track of pose from the last frame for relative action space
+            # Initialize pose tracking in EpisodeManager
             if eval_cfg.random_init:
-                last_p = random_init_pose[:3]
-                last_r = R.from_quat(random_init_pose[3:7], scalar_first=True)
+                episode_manager.initialize_pose(random_init_pose[:3], random_init_pose[3:7])
             else:
-                last_p = robot.init_pose[:3]
-                last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
+                episode_manager.initialize_pose(robot_env.robot.init_pose[:3], robot_env.robot.init_pose[3:7])
             
-            # Strictly align with previous scenes
+            # Strictly align with previous scenes using RobotEnv
             if save_img or not os.path.isfile(os.path.join(output_dir, f"side_{episode_idx}.png")):
-                cam_data = []
-                for camera in cameras:
-                    color_image, _ = camera.get_data()
-                    cam_data.append(color_image)
-                side_img = cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)
-                wrist_img = cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)
-                Image.fromarray(side_img).save(os.path.join(output_dir, f"side_{episode_idx}.png"))
-                Image.fromarray(wrist_img).save(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
+                robot_env.save_scene_images(output_dir, episode_idx)
             else:
-                ref_side_img = cv2.imread(os.path.join(output_dir, f"side_{episode_idx}.png"))
-                ref_wrist_img = cv2.imread(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
-                cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
-                cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
-                # Ensure an identical configuration
-                while not keyboard.ctn:
-                    cam_data = []
-                    for camera in cameras:
-                        color_image, _ = camera.get_data()
-                        cam_data.append(color_image)
-                    side_img = cam_data[0].copy()
-                    wrist_img = cam_data[1].copy()
-                    cv2.imshow("Side", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
-                    cv2.imshow("Wrist", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
-                    cv2.waitKey(1)
-                keyboard.ctn = False
-                cv2.destroyAllWindows()
+                robot_env.align_scene(output_dir, episode_idx)
 
-            # Keep track of throttle usage for human intervention (Default to True because the teleop should follow up from arbitrary pose)
-            last_throttle = True
-            sigma.detach()
-            detach_tcp, _, _, _ = robot.get_robot_state()
-            detach_pos = np.array(detach_tcp[:3])
-            detach_rot = R.from_quat(np.array(detach_tcp[3:]), scalar_first=True)
+            # Detach sigma and get initial pose
+            detach_pos, detach_rot = robot_env.detach_sigma()
             j = 0 # Episode timestep
 
             while True:
@@ -285,231 +213,134 @@ def main(rank, eval_cfg, device_ids):
                 #                   Policy inference loop
                 # ===========================================================
                 print("=========== Policy inference ============")
-                while not keyboard.finish and not keyboard.discard and not keyboard.help:
+                while not robot_env.keyboard.finish and not robot_env.keyboard.discard and not robot_env.keyboard.help:
                     if j >= max_episode_length:
                         break
 
                     start_time = time.time()
+                    # Get state using RobotEnv
+                    robot_state = robot_env.get_robot_state()
                     if 'ee_pose' in cfg.shape_meta['obs']:
-                        state = robot.get_robot_state()[0]
+                        state = robot_state['tcp_pose']
                     else:
-                        state = robot.get_robot_state()[1]
-                    state = np.array(state)
+                        state = robot_state['joint_pos']
+                    
+                    # Use processed images from RobotEnv
+                    img_0 = robot_state['side_img'] / 255.
+                    img_1 = robot_state['wrist_img'] / 255.
 
-                    if obs_rot_transformer is not None:
-                        tmp_state = np.zeros((ee_pose_dim,))
-                        tmp_state[:3] = state[:3]
-                        tmp_state[3:] = obs_rot_transformer.forward(state[3:])
-                        state = tmp_state
-                    state = torch.from_numpy(state)
-                    cam_data = []
-                    for camera in cameras:
-                        color_image, _ = camera.get_data()
-                        cam_data.append(color_image)
-                    img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
-                    img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+                    # Update observation history using EpisodeManager
+                    episode_manager.update_observation(img_0, img_1, state)
 
-                    # Update the observation history
-                    policy_img_0_history[:-1] = policy_img_0_history[1:]
-                    policy_img_0_history[-1] = img_0
-                    policy_img_1_history[:-1] = policy_img_1_history[1:]
-                    policy_img_1_history[-1] = img_1
-                    policy_state_history[:-1] = policy_state_history[1:]
-                    policy_state_history[-1] = state
-                    curr_obs = {
-                        'side_img': policy_img_0_history.unsqueeze(0),
-                        'wrist_img': policy_img_1_history.unsqueeze(0),
-                        state_type: policy_state_history.unsqueeze(0)
-                    }
-
-                    # Predict qpos actions
+                    # Get policy observation and predict actions
+                    curr_obs = episode_manager.get_policy_observation()
                     curr_action = policy.predict_action(curr_obs)
                     np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
                     action_seq = np_action_dict['action'][0][:Ta]
 
-                    # Derive the action chunk
-                    if not rel_ee_pose:
-                        p_chunk = action_seq[:, :3]
-                        quat_chunk = action_rot_transformer.inverse(action_seq[:, 3:action_dim-1])
-                        r_chunk = R.from_quat(quat_chunk, scalar_first=True)
-
                     for step in range(Ta):
                         if step > 0:
                             start_time = time.time()
-                        # Action calculation
-                        if rel_ee_pose:
-                            curr_p_action = action_seq[step, :3]
-                            curr_p = last_p + curr_p_action
-                            curr_r_action = action_rot_transformer.inverse(action_seq[step, 3:action_dim-1])
-                            action_rot = R.from_quat(curr_r_action, scalar_first=True)
-                            curr_r = last_r * action_rot
-                            last_p = curr_p
-                            last_r = curr_r
-                        else:
-                            curr_p = p_chunk[step]
-                            curr_r = r_chunk[step]
 
-                        # Record demo data
-                        cam_data = []
-                        for camera in cameras:
-                            color_image, depth_image = camera.get_data()
-                            cam_data.append((color_image, depth_image))
-                        tcpPose, jointPose, _, _ = robot.get_robot_state()
-                        # demo_gripper_action = 1 if action_seq[step, 7] >= 0.5 else 0
-                        demo_gripper_action = action_seq[step, -1]
+                        if step > 0:
+                            robot_state = robot_env.get_robot_state()
+                        
+                        # Get absolute action using EpisodeManager
+                        deployed_action, gripper_action, curr_p, curr_r, curr_p_action, curr_r_action = episode_manager.get_absolute_action_for_step(
+                            action_seq[np.newaxis, :], step
+                        )
 
-                        robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat(scalar_first=True)), 0))
-                        # target_width = gripper.max_width if action_seq[step, 7] < 0.5 else 0 # Threshold could be adjusted at inference time
-                        gripper.move(demo_gripper_action)
+                        # Get current robot state for recording
+                        tcpPose = robot_state['tcp_pose']
+                        jointPose = robot_state['joint_pos']
+                        
+                        # Deploy action using RobotEnv
+                        robot_env.deploy_action(deployed_action, gripper_action[0])
 
                         # Save demonstrations to the buffer
-                        wrist_image = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
-                                        permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-                        side_image = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).\
-                                                    permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-                        wrist_cam.append(wrist_image)
-                        side_cam.append(side_image)
+                        wrist_cam.append(robot_state['wrist_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
+                        side_cam.append(robot_state['side_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
                         tcp_pose.append(tcpPose)
                         joint_pos.append(jointPose)
-                        action.append(np.concatenate((curr_p_action, curr_r_action, [demo_gripper_action]), 0))
+                        action.append(np.concatenate((curr_p_action, curr_r_action, [gripper_action[0]])))
                         action_mode.append(ROBOT)
 
-                        if step == Ta - To + 1:
-                            # Comply with Policy Observation buffer timesteps
-                            img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
-                            img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
+                        if step >= Ta - To + 1:
+                            img_0 = robot_state['side_img'] / 255.
+                            img_1 = robot_state['wrist_img'] / 255.
                             if 'ee_pose' in cfg.shape_meta['obs']:
-                                state = robot.get_robot_state()[0]
+                                state = robot_state['tcp_pose']
                             else:
-                                state = robot.get_robot_state()[1]
-                            state = np.array(state)
-                            if obs_rot_transformer is not None:
-                                tmp_state = np.zeros((ee_pose_dim,))
-                                tmp_state[:3] = state[:3]
-                                tmp_state[3:] = obs_rot_transformer.forward(state[3:])
-                                state = tmp_state
-                            state = torch.from_numpy(state)
-                            policy_img_0_history[:-1] = policy_img_0_history[1:]
-                            policy_img_0_history[-1] = img_0
-                            policy_img_1_history[:-1] = policy_img_1_history[1:]
-                            policy_img_1_history[-1] = img_1
-                            policy_state_history[:-1] = policy_state_history[1:]
-                            policy_state_history[-1] = state
+                                state = robot_state['joint_pos']
+                            episode_manager.update_observation(img_0, img_1, state)
 
                         time.sleep(max(1 / fps - (time.time() - start_time), 0))
                         j += 1
 
                 # Reset the signal of request for help 
-                keyboard.help = False
+                robot_env.keyboard.help = False
                 # Compensate for the transformation of robot tcp pose during sigma detachment
-                resume_tcp, _, _, _ = robot.get_robot_state()
-                resume_pos = np.array(resume_tcp[:3])
-                resume_rot = R.from_quat(np.array(resume_tcp[3:]), scalar_first=True)
+                resume_pos = episode_manager.last_p[0]
+                resume_rot = episode_manager.last_r[0]
                 translate = resume_pos - detach_pos
                 rotation = detach_rot.inv() * resume_rot
-                sigma.transform_from_robot(translate, rotation)
+                robot_env.sigma.resume()
+                robot_env.sigma.transform_from_robot(translate, rotation)
 
                 print("============ Human intervention =============")
                 # ============================================================
                 #                   Human intervention loop
                 # ============================================================
-                while not keyboard.finish and not keyboard.discard and not keyboard.infer:
+                # Get current pose for human teleoperation
+                current_p = episode_manager.last_p[0]
+                current_r = episode_manager.last_r[0]
+                
+                while not robot_env.keyboard.finish and not robot_env.keyboard.discard and not robot_env.keyboard.infer:
                     if j >= max_episode_length:
                         break
                     
-                    start_time = time.time()
-                    cam_data = []
-                    for camera in cameras:
-                        color_image, depth_image = camera.get_data()
-                        cam_data.append((color_image, depth_image))
-                    tcpPose, jointPose, _, _ = robot.get_robot_state()
-
-                    diff_p, diff_r, width = sigma.get_control()
-                    diff_p = robot.init_pose[:3] + diff_p
-                    diff_r = R.from_quat(robot.init_pose[3:7], scalar_first=True) * diff_r
-                    curr_p_action = diff_p - last_p
-                    curr_r_action = last_r.inv() * diff_r
-                    last_p = diff_p
-                    last_r = diff_r
-
-                    # Get throttle pedal state
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            keyboard.quit = True
-                    throttle = controller.get_throttle()
-                    # If throttle is activated, freeze the robot while adjusting the teleop device.
-                    if throttle < -0.9:
-                        if not last_throttle:
-                            sigma.detach()
-                            last_throttle = True
+                    # Use RobotEnv's human teleoperation step
+                    processed_data, current_p, current_r = robot_env.human_teleop_step(current_p, current_r)
+                    
+                    # If teleoperation is paused (throttle activated), continue
+                    if processed_data is None:
                         continue
-                    if last_throttle:
-                        last_throttle = False
-                        sigma.resume()
-                        last_p, last_r, _ = sigma.get_control()
-                        last_p = last_p + robot.init_pose[:3]
-                        last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True) * last_r
-                        continue
-
-                    # Send command.
-                    robot.send_tcp_pose(np.concatenate((diff_p, diff_r.as_quat(scalar_first=True)), 0))
-                    gripper.move_from_sigma(width)
-                    gripper_action = gripper.max_width * width / 1000
-                    # gripper_action = 1 if width < 500 else 0
-
-                    # Renew policy obs buffer for the next inference
-                    if 'ee_pose' in cfg.shape_meta['obs']:
-                        state = tcpPose
-                    else:
-                        state = jointPose
-                    state = np.array(state)
-
-                    if obs_rot_transformer is not None:
-                        tmp_state = np.zeros((ee_pose_dim,))
-                        tmp_state[:3] = state[:3]
-                        tmp_state[3:] = obs_rot_transformer.forward(state[3:])
-                        state = tmp_state
-                    state = torch.from_numpy(state)
-
-                    img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
-                    img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
-                    policy_img_0_history[:-1] = policy_img_0_history[1:]
-                    policy_img_0_history[-1] = img_0
-                    policy_img_1_history[:-1] = policy_img_1_history[1:]
-                    policy_img_1_history[-1] = img_1
-                    policy_state_history[:-1] = policy_state_history[1:]
-                    policy_state_history[-1] = state
                     
                     # Save demonstrations to the buffer
-                    wrist_image = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
-                                        permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-                    side_image = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).\
-                                                permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-                    wrist_cam.append(wrist_image)
-                    side_cam.append(side_image)
-                    tcp_pose.append(tcpPose)
-                    joint_pos.append(jointPose)
-                    action.append(np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])))
-                    action_mode.append(INTV)
+                    wrist_cam.append(processed_data['wrist_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
+                    side_cam.append(processed_data['side_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
+                    tcp_pose.append(processed_data['tcp_pose'])
+                    joint_pos.append(processed_data['joint_pos'])
+                    action.append(processed_data['action'])
+                    action_mode.append(processed_data['action_mode'])
+                    
+                    # Update policy observation buffer using EpisodeManager
+                    if 'ee_pose' in cfg.shape_meta['obs']:
+                        state = processed_data['tcp_pose']
+                    else:
+                        state = processed_data['joint_pos']
 
-                    time.sleep(max(1 / fps - (time.time() - start_time), 0))
+                    img_0 = processed_data['side_img'] / 255.
+                    img_1 = processed_data['wrist_img'] / 255.
+                    episode_manager.update_observation(img_0, img_1, state)
+                    
                     j += 1
 
+                # Update EpisodeManager pose tracking after human intervention
+                episode_manager.last_p = current_p[np.newaxis, :]
+                episode_manager.last_r = R.from_quat(current_r.as_quat(scalar_first=True)[np.newaxis, :], scalar_first=True)
+
                 # Reset the signal of request for inference
-                keyboard.infer = False
+                robot_env.keyboard.infer = False
                 # Detach the teleop device except when human intervention
-                sigma.detach()
-                last_throttle = True
-                detach_tcp, _, _, _ = robot.get_robot_state()
-                detach_pos = np.array(detach_tcp[:3])
-                detach_rot = R.from_quat(np.array(detach_tcp[3:]), scalar_first=True)
+                detach_pos, detach_rot = robot_env.detach_sigma()
 
                 # This episode fails to accomplish the task
-                if j >= max_episode_length or keyboard.discard:
+                if j >= max_episode_length or robot_env.keyboard.discard:
                     break
 
                 # Save the demonstrations to the replay buffer
-                if keyboard.finish:
+                if robot_env.keyboard.finish:
                     episode = dict()
                     episode['wrist_cam'] = np.stack(wrist_cam, axis=0)
                     episode['side_cam'] = np.stack(side_cam, axis=0)
@@ -522,12 +353,8 @@ def main(rank, eval_cfg, device_ids):
                     print('Saved episode ', episode_id)
                     break
 
-            # robot.send_joint_pose(robot.home_joint_pos)
-            # time.sleep(2)
-            robot.send_tcp_pose(robot.init_pose)
-            time.sleep(3)
-            gripper.move(gripper.max_width)
-            time.sleep(0.5)
+            # Reset robot using RobotEnv
+            robot_env.reset_robot()
             print("Reset!")
             
             episode_idx += 1

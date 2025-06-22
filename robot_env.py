@@ -212,13 +212,6 @@ class RobotEnv:
         self.gripper.move(gripper_action)
         
         return curr_pos, curr_rot
-    
-    def cleanup(self):
-        """Clean up resources"""
-        for camera in self.cameras:
-            camera.release()
-        self.sigma.cleanup()
-        pygame.quit()
 
 
 if __name__ == "__main__": # Test the robustness of Sigma teleoperation

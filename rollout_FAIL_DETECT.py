@@ -197,11 +197,12 @@ def main(rank, eval_cfg, device_ids):
             episode_manager.reset_observation_history()
             
             # Update initial observations
-            episode_manager.update_observation(
-                robot_state['side_img'] / 255.0,
-                robot_state['wrist_img'] / 255.0,
-                robot_state['tcp_pose'] if state_type == 'ee_pose' else robot_state['joint_pos']
-            )
+            for _ in range(To):
+                episode_manager.update_observation(
+                    robot_state['side_img'] / 255.0,
+                    robot_state['wrist_img'] / 255.0,
+                    robot_state['tcp_pose'] if state_type == 'ee_pose' else robot_state['joint_pos']
+                )
             
             # Initialize the action pose tracking
             if eval_cfg.random_init and random_init_pose is not None:

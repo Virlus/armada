@@ -259,6 +259,28 @@ class FailureDetector:
                 
         return self.expert_action_threshold, self.expert_ot_threshold, self.expert_soft_ot_threshold
     
+    def update_percentile_fp(self, ot_fp=False, action_fp=False):
+        if ot_fp:
+            self.ot_percentile = min(self.ot_percentile + 2.5, 100)
+        if action_fp:
+            self.action_inconsistency_percentile = min(self.action_inconsistency_percentile + 2.5, 100)
+        self.expert_action_threshold = np.percentile(
+            np.array(self.success_action_inconsistencies), 
+            self.action_inconsistency_percentile
+        )
+        self.expert_ot_threshold = np.percentile(self.success_ot_values, self.ot_percentile)
+        return self.expert_action_threshold, self.expert_ot_threshold
+    
+    def update_percentile_fn(self):
+        self.ot_percentile = max(self.ot_percentile - 2.5, 0)
+        self.action_inconsistency_percentile = max(self.action_inconsistency_percentile - 2.5, 0)
+        self.expert_action_threshold = np.percentile(
+            np.array(self.success_action_inconsistencies), 
+            self.action_inconsistency_percentile
+        )
+        self.expert_ot_threshold = np.percentile(self.success_ot_values, self.ot_percentile)
+        return self.expert_action_threshold, self.expert_ot_threshold
+    
     def load_success_statistics(self, success_stats):
         """Load success statistics from a saved file"""
         self.success_action_inconsistencies = list(success_stats['action_inconsistencies'])

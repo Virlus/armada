@@ -16,6 +16,7 @@ import tqdm
 import matplotlib.pyplot as plt
 import cv2
 from scipy.spatial.transform import Rotation as R
+from collections import defaultdict, OrderedDict
 
 from diffusion_policy.diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
@@ -32,6 +33,10 @@ HUMAN = 0
 ROBOT = 1
 PRE_INTV = 2
 INTV = 3
+
+# Failure detection macros
+ACTION_INCONSISTENCY = 1
+OT = 2
 
 def main(rank, eval_cfg, device_ids):
     fps = 10
@@ -291,7 +296,7 @@ def main(rank, eval_cfg, device_ids):
             detach_pos, detach_rot = robot_env.detach_sigma()
             
             j = 0  # Episode timestep
-            failure_indices = []
+            failure_logs = OrderedDict(int)
             
             while True:
                 if j >= max_episode_length - Ta:
@@ -389,6 +394,7 @@ def main(rank, eval_cfg, device_ids):
                     # Process any available async results
                     failure_flag = False
                     failure_reason = None
+                    failure_type = None
                     
                     # Get results from the failure detector
                     results = failure_detector.get_results()
@@ -417,6 +423,10 @@ def main(rank, eval_cfg, device_ids):
                             # Update with failure detection results
                             failure_flag = result["failure_flag"]
                             failure_reason = result["failure_reason"]
+                            if failure_reason == "action inconsistency":
+                                failure_type = ACTION_INCONSISTENCY
+                            elif failure_reason == "OT violation":
+                                failure_type = OT
                     
                     if failure_flag or j >= max_episode_length - Ta:
                         if failure_flag:
@@ -429,7 +439,7 @@ def main(rank, eval_cfg, device_ids):
                             time.sleep(0.1)
                             
                         if failure_flag and not robot_env.keyboard.finish:
-                            failure_indices.append(idx)
+                            failure_logs[idx] =  failure_type
                             
                         if robot_env.keyboard.ctn and j < max_episode_length - Ta:
                             print("False Positive failure! Continue policy rollout.")
@@ -501,10 +511,13 @@ def main(rank, eval_cfg, device_ids):
                             greedy_ot_cost[j // Ta - 1] = 0.
                             
                             # Adjust failure indices if needed
-                            if len(failure_indices) > 0 and failure_flag:
-                                latest_failure_idx = failure_indices.pop()
-                                failure_indices = [i for i in failure_indices if i < latest_failure_idx - 1]
-                                failure_indices.append(latest_failure_idx - 1)
+                            if len(failure_logs) > 0 and failure_flag:
+                                latest_failure_timestep, latest_failure_type = failure_logs.popitem()
+                                for timestep, failure_type in failure_logs.items():
+                                    if timestep >= latest_failure_timestep - 1:
+                                        failure_logs.move_to_end(timestep)
+                                        _, _ = failure_logs.popitem()
+                                failure_logs[latest_failure_timestep - 1] = latest_failure_type
                         
                         # Get previous action data to rewind
                         prev_wrist_cam = wrist_cam.pop()
@@ -592,18 +605,36 @@ def main(rank, eval_cfg, device_ids):
                 # Reset signals
                 robot_env.keyboard.infer = False
                 detach_pos, detach_rot = robot_env.detach_sigma()
+
+                # Identify if the rollout is successful
+                success = robot_env.keyboard.finish and INTV not in action_mode
                 
                 # Update thresholds based on episode outcome
-                if robot_env.keyboard.finish and INTV not in action_mode:
+                if success:
                     success_action_inconsistency = np.array(action_inconsistency_buffer).sum()
                     failure_detector.update_thresholds(
                         success_action_inconsistency=success_action_inconsistency,
                         greedy_ot_cost=greedy_ot_cost, 
                         timesteps=j//Ta
                     )
+                    if len(failure_logs) > 0: # False positive
+                        ot_fp = OT in failure_logs.values()
+                        action_fp = ACTION_INCONSISTENCY in failure_logs.values()
+                        assert ot_fp or action_fp
+                        failure_detector.update_percentile_fp(ot_fp=ot_fp, action_fp=action_fp)
+                        
+                        print("False positive trajectory! Lowering percentiles...")
+                    
                     print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 
-                          f"OT={failure_detector.expert_ot_threshold}, "
-                          f"soft OT={failure_detector.expert_soft_ot_threshold}")
+                    f"OT={failure_detector.expert_ot_threshold}, "
+                    f"soft OT={failure_detector.expert_soft_ot_threshold}")
+                else:
+                    if len(failure_logs) == 0: # False negative
+                        failure_detector.update_percentile_fn()
+                        print("False negative trajectory! Raising percentiles...")
+                        print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 
+                              f"OT={failure_detector.expert_ot_threshold}, "
+                              f"soft OT={failure_detector.expert_soft_ot_threshold}")
                 
                 # If episode discarded, break to next episode
                 if robot_env.keyboard.discard:
@@ -627,8 +658,8 @@ def main(rank, eval_cfg, device_ids):
                     
                     # Set failure indices in episode data
                     failure_signal = np.zeros((episode['action_mode'].shape[0] // Ta,), dtype=np.bool_)
-                    if len(failure_indices) > 0:
-                        failure_signal[failure_indices] = 1
+                    if len(failure_logs) > 0:
+                        failure_signal[list(failure_logs.keys())] = 1
                     episode['failure_indices'] = np.repeat(failure_signal, Ta)
                     
                     # Add episode to replay buffer
@@ -648,7 +679,7 @@ def main(rank, eval_cfg, device_ids):
                         episode=episode,
                         eps_side_img=eps_side_img,
                         demo_len=demo_len,
-                        failure_indices=failure_indices
+                        failure_indices=list(failure_logs.keys())
                     )
                     plt.savefig(f'{eval_cfg.save_buffer_path}/episode_{episode_id}.png', bbox_inches='tight')
                     break

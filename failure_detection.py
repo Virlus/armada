@@ -17,18 +17,15 @@ class FailureDetector:
         Ta: int,
         action_inconsistency_percentile: float = 95.0,
         ot_percentile: float = 95.0,
-        soft_ot_percentile: float = 80.0,
         max_queue_size: int = 2
     ):
         self.Ta = Ta
         self.action_inconsistency_percentile = action_inconsistency_percentile
         self.ot_percentile = ot_percentile
-        self.soft_ot_percentile = soft_ot_percentile
         
         # Initialize thresholds
         self.expert_action_threshold = None
         self.expert_ot_threshold = None
-        self.expert_soft_ot_threshold = 0.0
         
         # Initialize success statistics
         self.success_action_inconsistencies = []
@@ -255,9 +252,8 @@ class FailureDetector:
             ))
             
             self.expert_ot_threshold = np.percentile(self.success_ot_values, self.ot_percentile)
-            self.expert_soft_ot_threshold = np.percentile(self.success_ot_values, self.soft_ot_percentile)
                 
-        return self.expert_action_threshold, self.expert_ot_threshold, self.expert_soft_ot_threshold
+        return self.expert_action_threshold, self.expert_ot_threshold
     
     def update_percentile_fp(self, ot_fp=False, action_fp=False):
         if ot_fp:
@@ -287,7 +283,6 @@ class FailureDetector:
         self.success_ot_values = success_stats['ot_values']
         self.expert_action_threshold = np.percentile(self.success_action_inconsistencies, self.action_inconsistency_percentile)
         self.expert_ot_threshold = np.percentile(self.success_ot_values, self.ot_percentile)
-        self.expert_soft_ot_threshold = np.percentile(self.success_ot_values, self.soft_ot_percentile)
         
     def get_success_statistics(self):
         """Get the current success statistics for saving"""

@@ -23,16 +23,11 @@ from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
-from robot_env import RobotEnv, postprocess_action_mode
+from robot_env import RobotEnv, HUMAN, ROBOT, PRE_INTV, INTV, postprocess_action_mode
 from failure_detection import FailureDetector
 from util.episode_utils import EpisodeManager
 from util.image_utils import create_failure_visualization
 
-# Sirius-specific macros
-HUMAN = 0
-ROBOT = 1
-PRE_INTV = 2
-INTV = 3
 
 # Failure detection macros
 ACTION_INCONSISTENCY = 1
@@ -108,7 +103,7 @@ def main(rank, eval_cfg, device_ids):
     post_process_action_mode = eval_cfg.post_process_action_mode
     action_inconsistency_percentile = eval_cfg.action_inconsistency_percentile
     ot_percentile = eval_cfg.ot_percentile
-    soft_ot_percentile = eval_cfg.soft_ot_percentile
+    soft_ot_ratio = eval_cfg.soft_ot_ratio
 
     save_img = False
     output_dir = os.path.join(eval_cfg.output_dir, f"seed_{seed}")
@@ -148,8 +143,7 @@ def main(rank, eval_cfg, device_ids):
     failure_detector = FailureDetector(
         Ta=Ta,
         action_inconsistency_percentile=action_inconsistency_percentile,
-        ot_percentile=ot_percentile,
-        soft_ot_percentile=soft_ot_percentile
+        ot_percentile=ot_percentile
     )
     failure_detector.start_async_processing()
     
@@ -499,7 +493,7 @@ def main(rank, eval_cfg, device_ids):
                     for i in range(curr_timestep):
                         # Adaptively check if OT cost dropped below soft threshold to stop rewinding
                         if j % Ta == 0 and j > 0:
-                            if torch.sum(greedy_ot_cost[:j // Ta]) < failure_detector.expert_soft_ot_threshold:
+                            if torch.sum(greedy_ot_cost[:j // Ta]) < soft_ot_ratio * torch.sum(greedy_ot_cost[:curr_timestep // Ta]):
                                 print("OT cost dropped below the soft threshold, stop rewinding.")
                                 break
                             
@@ -627,15 +621,13 @@ def main(rank, eval_cfg, device_ids):
                         print("False positive trajectory! Lowering percentiles...")
                     
                     print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 
-                    f"OT={failure_detector.expert_ot_threshold}, "
-                    f"soft OT={failure_detector.expert_soft_ot_threshold}")
+                    f"OT={failure_detector.expert_ot_threshold}")
                 else:
                     if len(failure_logs) == 0: # False negative
                         failure_detector.update_percentile_fn()
                         print("False negative trajectory! Raising percentiles...")
                         print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 
-                              f"OT={failure_detector.expert_ot_threshold}, "
-                              f"soft OT={failure_detector.expert_soft_ot_threshold}")
+                              f"OT={failure_detector.expert_ot_threshold}")
                 
                 # If episode discarded, break to next episode
                 if robot_env.keyboard.discard:

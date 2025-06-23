@@ -23,15 +23,10 @@ from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
-from robot_env import RobotEnv, postprocess_action_mode
+from robot_env import RobotEnv, HUMAN, ROBOT, PRE_INTV, INTV, postprocess_action_mode
 from util.episode_utils import EpisodeManager
 from FAIL_DETECT.eval import get_baseline_model, logpZO_UQ
 
-# Sirius-specific macros
-HUMAN = 0
-ROBOT = 1
-PRE_INTV = 2
-INTV = 3
 
 def main(rank, eval_cfg, device_ids):
     fps = 10
@@ -291,7 +286,7 @@ def main(rank, eval_cfg, device_ids):
                         time.sleep(max(1 / fps - (time.time() - start_time), 0))
                         j += 1
 
-                    # [TODO] Add baseline failure detection logic here
+                    # FAIL-DETECT: Baseline failure detection module
                     normalized_obs = policy.normalizer.normalize(policy_obs)
                     this_nobs = dict_apply(normalized_obs, lambda x: x[:, :policy.n_obs_steps, ...].reshape(-1, *x.shape[2:]))
                     nobs_features = policy.obs_encoder.get_dense_feats(this_nobs)
@@ -334,7 +329,6 @@ def main(rank, eval_cfg, device_ids):
                     curr_pos = curr_tcp[:3]
                     curr_rot = R.from_quat(curr_tcp[3:], scalar_first=True)
                     for i in range(curr_timestep):
-                        # Adaptively check if OT cost dropped below soft threshold to stop rewinding
                         if j % Ta == 0 and j > 0:
                             if i // Ta >= 3:
                                 print("Stop rewinding.")

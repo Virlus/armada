@@ -24,14 +24,9 @@ from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
-from robot_env import RobotEnv, postprocess_action_mode
+from robot_env import RobotEnv, HUMAN, ROBOT, PRE_INTV, INTV, postprocess_action_mode
 from util.episode_utils import EpisodeManager
 
-# Sirius-specific macros
-HUMAN = 0
-ROBOT = 1
-PRE_INTV = 2
-INTV = 3
 
 camera_serial = ["135122075425", "135122070361"]
 

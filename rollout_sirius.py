@@ -197,7 +197,7 @@ def main(rank, eval_cfg, device_ids):
             if save_img or not os.path.isfile(os.path.join(output_dir, f"side_{episode_idx}.png")):
                 robot_env.save_scene_images(output_dir, episode_idx)
             else:
-                robot_env.align_scene(output_dir, episode_idx)
+                robot_env.align_scene_with_file(output_dir, episode_idx)
 
             # Detach sigma and get initial pose
             detach_pos, detach_rot = robot_env.detach_sigma()

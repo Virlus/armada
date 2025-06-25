@@ -88,7 +88,7 @@ def main(args):
         time.sleep(2)
         
         if refer:
-            robot_env.align_scene(reference_path, i - args.start_index)
+            robot_env.align_scene_with_file(reference_path, i - args.start_index)
 
         last_p = curr_init_pose[:3]
         last_r = R.from_quat(curr_init_pose[3:7], scalar_first=True)

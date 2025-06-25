@@ -209,7 +209,7 @@ def main(rank, eval_cfg, device_ids):
             if save_img or not os.path.isfile(os.path.join(output_dir, f"side_{episode_idx}.png")):
                 robot_env.save_scene_images(output_dir, episode_idx)
             else:
-                robot_env.align_scene(output_dir, episode_idx)
+                robot_env.align_scene_with_file(output_dir, episode_idx)
             
             # Detach the teleop device for initial robot control
             detach_pos, detach_rot = robot_env.detach_sigma()
@@ -355,18 +355,7 @@ def main(rank, eval_cfg, device_ids):
                         print("Please reset the scene and press 'c' to go on to human intervention")
                         ref_side_img = cv2.cvtColor(prev_side_cam, cv2.COLOR_RGB2BGR)
                         ref_wrist_img = cv2.cvtColor(prev_wrist_cam, cv2.COLOR_RGB2BGR)
-                        cv2.namedWindow("Rewinded side view", cv2.WINDOW_AUTOSIZE)
-                        cv2.namedWindow("Rewinded wrist view", cv2.WINDOW_AUTOSIZE)
-                        
-                        while not robot_env.keyboard.ctn:
-                            state_data = robot_env.get_robot_state()
-                            wrist_img = cv2.cvtColor(state_data['wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
-                            side_img = cv2.cvtColor(state_data['side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
-                            cv2.imshow("Rewinded side view", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
-                            cv2.imshow("Rewinded wrist view", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
-                            cv2.waitKey(1)
-                        robot_env.keyboard.ctn = False
-                        cv2.destroyAllWindows()
+                        robot_env.align_with_reference(ref_side_img, ref_wrist_img)
 
                         # Remove the reference images and action buffers
                         del prev_wrist_cam, prev_side_cam, prev_action

@@ -109,10 +109,8 @@ class RobotEnv:
         Image.fromarray(wrist_img).save(f"{output_dir}/wrist_{episode_idx}.png")
         return side_img, wrist_img
     
-    def align_scene(self, output_dir, episode_idx):
+    def align_with_reference(self, ref_side_img, ref_wrist_img):
         """Align current scene with reference images"""
-        ref_side_img = cv2.imread(f"{output_dir}/side_{episode_idx}.png")
-        ref_wrist_img = cv2.imread(f"{output_dir}/wrist_{episode_idx}.png")
         cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
         cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
         
@@ -129,6 +127,12 @@ class RobotEnv:
         
         self.keyboard.ctn = False
         cv2.destroyAllWindows()
+    
+    def align_scene_with_file(self, output_dir, episode_idx):
+        """Align current scene with reference images from a given file path"""
+        ref_side_img = cv2.imread(f"{output_dir}/side_{episode_idx}.png")
+        ref_wrist_img = cv2.imread(f"{output_dir}/wrist_{episode_idx}.png")
+        self.align_with_reference(ref_side_img, ref_wrist_img)
     
     def detach_sigma(self):
         """Detach sigma device and store TCP pose"""
@@ -248,8 +252,6 @@ if __name__ == "__main__": # Test the robustness of Sigma teleoperation
         # Break condition for demo
         if robot_env.keyboard.quit:
             break
-    
-    robot_env.cleanup()
 
 
 def postprocess_action_mode(action_mode: np.ndarray):

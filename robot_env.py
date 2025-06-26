@@ -109,18 +109,19 @@ class RobotEnv:
         Image.fromarray(wrist_img).save(f"{output_dir}/wrist_{episode_idx}.png")
         return side_img, wrist_img
     
-    def align_with_reference(self, ref_side_img, ref_wrist_img):
+    def align_with_reference(self, ref_side_img, ref_wrist_img, raw=False):
         """Align current scene with reference images"""
         cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
         cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
         
         while not self.keyboard.ctn:
-            cam_data = []
-            for camera in self.cameras:
-                color_image, _ = camera.get_data()
-                cam_data.append(color_image)
-            side_img = cam_data[0].copy()
-            wrist_img = cam_data[1].copy()
+            state_data = self.get_robot_state()
+            if raw:
+                side_img = state_data['side_img_raw']
+                wrist_img = state_data['wrist_img_raw']
+            else:
+                side_img = cv2.cvtColor(state_data['side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
+                wrist_img = cv2.cvtColor(state_data['wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
             cv2.imshow("Side", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
             cv2.imshow("Wrist", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
             cv2.waitKey(1)
@@ -132,7 +133,7 @@ class RobotEnv:
         """Align current scene with reference images from a given file path"""
         ref_side_img = cv2.imread(f"{output_dir}/side_{episode_idx}.png")
         ref_wrist_img = cv2.imread(f"{output_dir}/wrist_{episode_idx}.png")
-        self.align_with_reference(ref_side_img, ref_wrist_img)
+        self.align_with_reference(ref_side_img, ref_wrist_img, raw=True)
     
     def detach_sigma(self):
         """Detach sigma device and store TCP pose"""

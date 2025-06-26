@@ -291,7 +291,7 @@ def main(rank, eval_cfg, device_ids):
             detach_pos, detach_rot = robot_env.detach_sigma()
             
             j = 0  # Episode timestep
-            failure_logs = OrderedDict(int)
+            failure_logs = OrderedDict()
             
             while True:
                 if j >= max_episode_length - Ta:
@@ -486,14 +486,14 @@ def main(rank, eval_cfg, device_ids):
                     
                     # Rewind the robot while human resets the environment
                     curr_timestep = j
-                    # curr_tcp = robot_env.get_robot_state()['tcp_pose']
+                    soft_ot_threshold = soft_ot_ratio * torch.sum(greedy_ot_cost[:curr_timestep // Ta])
                     curr_tcp = predicted_abs_actions[0, Ta-1, :7] # Use the last target action for rewinding instead of the current robot state
                     curr_pos = curr_tcp[:3]
                     curr_rot = R.from_quat(curr_tcp[3:], scalar_first=True)
                     for i in range(curr_timestep):
                         # Adaptively check if OT cost dropped below soft threshold to stop rewinding
                         if j % Ta == 0 and j > 0:
-                            if torch.sum(greedy_ot_cost[:j // Ta]) < soft_ot_ratio * torch.sum(greedy_ot_cost[:curr_timestep // Ta]):
+                            if torch.sum(greedy_ot_cost[:j // Ta]) < soft_ot_threshold:
                                 print("OT cost dropped below the soft threshold, stop rewinding.")
                                 break
                             
@@ -590,6 +590,10 @@ def main(rank, eval_cfg, device_ids):
                 robot_env.keyboard.infer = False
                 detach_pos, detach_rot = robot_env.detach_sigma()
 
+                # If episode discarded, break to next episode
+                if robot_env.keyboard.discard:
+                    break
+
                 # Identify if the rollout is successful
                 success = robot_env.keyboard.finish and INTV not in action_mode
                 
@@ -617,10 +621,6 @@ def main(rank, eval_cfg, device_ids):
                         print("False negative trajectory! Raising percentiles...")
                         print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 
                               f"OT={failure_detector.expert_ot_threshold}")
-                
-                # If episode discarded, break to next episode
-                if robot_env.keyboard.discard:
-                    break
                 
                 # Save episode data if finished
                 if robot_env.keyboard.finish:

@@ -611,14 +611,14 @@ def main(rank, eval_cfg, device_ids):
                         assert ot_fp or action_fp
                         failure_detector.update_percentile_fp(ot_fp=ot_fp, action_fp=action_fp)
                         
-                        print("False positive trajectory! Lowering percentiles...")
+                        print("False positive trajectory! Raising percentiles...")
                     
                     print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 
                     f"OT={failure_detector.expert_ot_threshold}")
                 else:
                     if len(failure_logs) == 0: # False negative
                         failure_detector.update_percentile_fn()
-                        print("False negative trajectory! Raising percentiles...")
+                        print("False negative trajectory! Lowering percentiles...")
                         print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 
                               f"OT={failure_detector.expert_ot_threshold}")
                 

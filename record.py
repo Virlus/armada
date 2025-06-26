@@ -1,140 +1,54 @@
 import time
 import os
-from PIL import Image
 import numpy as np
-from scipy.spatial.transform import Rotation as R
-import cv2
-from typing import List
 import argparse
-import torch
-from torchvision.transforms import Compose, Resize
-from torchvision.transforms import InterpolationMode
-import pygame
 
-from hardware.my_device.camera import CameraD400
-from hardware.my_device.robot import FlexivRobot, FlexivGripper
-from hardware.my_device.sigma import Sigma7
-from hardware.my_device.keyboard import Keyboard
-from hardware.my_device.logitechG29_wheel import Controller
+from robot_env import RobotEnv
 
 from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 
 camera_serial = ["135122075425", "135122070361"]
 
 
-def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper, cameras:List[CameraD400], sigma:Sigma7, \
-           keyboard: Keyboard, controller: Controller, image_processor: Compose):
-    start_time = int(time.time() * 1000) # doesn't matter
-    
-    # color_image, depth_image = camera.get_data()
-    # color_image: 480,640,3  0~255
-    # depth_image: 480,640  0~4681 [mm]
-
+def record(replay_buffer:ReplayBuffer, robot_env:RobotEnv):
     tcp_pose = []
     joint_pos = []
     action = []
     wrist_cam = []
     side_cam = []
 
-    keyboard.start = False
-    keyboard.discard = False
-    keyboard.finish = False
+    robot_env.keyboard.start = False
+    robot_env.keyboard.discard = False
+    robot_env.keyboard.finish = False
     cnt = 0
-    start_time = time.time()
 
-    # robot.send_joint_pose(robot.home_joint_pos)
-    # time.sleep(2)
-    robot.send_tcp_pose(robot.init_pose)
-    time.sleep(4)
-    gripper.move(gripper.max_width)
-    time.sleep(0.5)
-    sigma.reset()
-    
-    last_throttle = False
-    last_p = robot.init_pose[:3]
-    last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
+    robot_env.reset_robot()
 
-    seed = int(time.time())
+    seed = int(time.time()*1000)
     np.random.seed(seed)
 
-    while not keyboard.quit and not keyboard.discard and not keyboard.finish:
-        time.sleep(max(0.1 - (time.time() - start_time), 0))
-        start_time = time.time()
-        cam_data = []
-        for camera in cameras:
-            color_image, depth_image = camera.get_data()
-            cam_data.append((color_image, depth_image))
-        tcpPose, jointPose, _, _ = robot.get_robot_state()
-        # gripper_state = gripper.get_gripper_state()
-        
-        diff_p, diff_r, width = sigma.get_control()
-        diff_p = robot.init_pose[:3] + diff_p
-        diff_r = R.from_quat(robot.init_pose[3:7], scalar_first=True) * diff_r
-        curr_p_action = diff_p - last_p
-        curr_r_action = last_r.inv() * diff_r
-        last_p = diff_p
-        last_r = diff_r
-
-        # Get throttle pedal state
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                keyboard.quit = True
-        throttle = controller.get_throttle()
-        # If throttle is activated, freeze the robot while adjusting the teleop device.
-        if throttle < -0.9:
-            if not last_throttle:
-                sigma.detach()
-                last_throttle = True
-            continue
-
-        if last_throttle:
-            last_throttle = False
-            sigma.resume()
-            last_p, last_r, _ = sigma.get_control()
-            last_p = last_p + robot.init_pose[:3]
-            last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True) * last_r
-            continue
-
-        # Send command.
-        robot.send_tcp_pose(np.concatenate((diff_p, diff_r.as_quat(scalar_first=True)), 0))
-        gripper.move_from_sigma(width)
-        gripper_action = gripper.max_width * width / 1000
-        # gripper_action = 1 if width < 500 else 0
-        if not keyboard.start:
+    while not robot_env.keyboard.quit and not robot_env.keyboard.discard and not robot_env.keyboard.finish:
+        transition_data = robot_env.human_teleop_step()
+        if not robot_env.keyboard.start:
             continue
 
         # Initialize at the beginning of the episode
         if cnt == 0:
-            random_init_pose = robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
-            robot.send_tcp_pose(random_init_pose)
-            # robot.send_tcp_pose(robot.init_pose)
-            time.sleep(1.5)
-            gripper.move(gripper.max_width)
-            time.sleep(0.5)
-            last_throttle = False
-            sigma.reset()
+            random_init_pose = robot_env.robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
+            robot_env.reset_robot(random_init=True, random_init_pose=random_init_pose)
             cnt += 1
-            last_p = random_init_pose[:3]
-            last_r = R.from_quat(random_init_pose[3:7], scalar_first=True)
-            random_p_drift = random_init_pose[:3] - robot.init_pose[:3]
-            random_r_drift = R.from_quat(robot.init_pose[3:7], scalar_first=True).inv() * R.from_quat(random_init_pose[3:7], scalar_first=True)
-            sigma.transform_from_robot(random_p_drift, random_r_drift)
             print("Episode start!")
             continue
+        
+        wrist_cam.append(transition_data['wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+        side_cam.append(transition_data['side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+        tcp_pose.append(transition_data['tcp_pose'])
+        joint_pos.append(transition_data['joint_pos'])
+        action.append(transition_data['action'])
 
-        wrist_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1][0].copy(), cv2.COLOR_BGR2RGB)).\
-                                      permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-        side_image = image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0][0].copy(), cv2.COLOR_BGR2RGB)).\
-                                      permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-        wrist_cam.append(wrist_image)
-        side_cam.append(side_image)
-        tcp_pose.append(tcpPose)
-        joint_pos.append(jointPose)
-        action.append(np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])))
-
-    if not keyboard.start or keyboard.quit or keyboard.discard:
+    if not robot_env.keyboard.start or robot_env.keyboard.quit or robot_env.keyboard.discard:
         print('WARNING: discard the demo!')
-        gripper.move(gripper.max_width)
+        robot_env.gripper.move(robot_env.gripper.max_width)
         time.sleep(0.5)
         return
     
@@ -148,36 +62,25 @@ def record(replay_buffer:ReplayBuffer, robot:FlexivRobot, gripper:FlexivGripper,
     episode_id = replay_buffer.n_episodes - 1
     print('Saved episode ', episode_id)
 
-    gripper.move(gripper.max_width)
+    robot_env.gripper.move(robot_env.gripper.max_width)
     time.sleep(0.5)
 
 
 def main(args):
-    robot = FlexivRobot()
-    gripper = FlexivGripper(robot)
-    camera = [CameraD400(s) for s in camera_serial]
-    sigma = Sigma7()
-    keyboard = Keyboard()
-
-    pygame.init()
-    controller = Controller(0)
-
+    robot_env = RobotEnv(camera_serial=camera_serial, img_shape=[3]+args.resolution, fps=args.fps)
     zarr_path = os.path.join(args.output, 'replay_buffer.zarr')
     replay_buffer = ReplayBuffer.create_from_path(zarr_path, mode='a')
-    # Image processing
-    img_res = args.resolution
-    BICUBIC = InterpolationMode.BICUBIC
-    image_processor = Compose([Resize(img_res, interpolation=BICUBIC)])
-    while not keyboard.quit:
+    while not robot_env.keyboard.quit:
         print("start recording...")
-        record(replay_buffer, robot, gripper, camera, sigma, keyboard, controller, image_processor)
-        if not keyboard.quit:
+        record(replay_buffer, robot_env)
+        if not robot_env.keyboard.quit:
             print("reset the environment...")
             time.sleep(15)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/0514_pour')
+    parser.add_argument('-o', '--output', type=str, required=True)
     parser.add_argument('-res', '--resolution', nargs='+', type=int)
+    parser.add_argument('--fps', type=float, default=10.0)
     args = parser.parse_args()
     main(args)

@@ -2,6 +2,7 @@ import time
 import os
 import numpy as np
 import argparse
+from scipy.spatial.transform import Rotation as R
 
 from robot_env import RobotEnv
 
@@ -23,19 +24,23 @@ def record(replay_buffer:ReplayBuffer, robot_env:RobotEnv):
     cnt = 0
 
     robot_env.reset_robot()
+    last_p = robot_env.robot.init_pose[:3]
+    last_r = R.from_quat(robot_env.robot.init_pose[3:7], scalar_first=True)
 
-    seed = int(time.time()*1000)
+    seed = int(time.time())
     np.random.seed(seed)
 
     while not robot_env.keyboard.quit and not robot_env.keyboard.discard and not robot_env.keyboard.finish:
-        transition_data = robot_env.human_teleop_step()
-        if not robot_env.keyboard.start:
+        transition_data, last_p, last_r = robot_env.human_teleop_step(last_p, last_r)
+        if not robot_env.keyboard.start or transition_data is None:
             continue
 
         # Initialize at the beginning of the episode
         if cnt == 0:
             random_init_pose = robot_env.robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
             robot_env.reset_robot(random_init=True, random_init_pose=random_init_pose)
+            last_p = random_init_pose[:3]
+            last_r = R.from_quat(random_init_pose[3:7], scalar_first=True)
             cnt += 1
             print("Episode start!")
             continue

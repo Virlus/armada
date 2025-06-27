@@ -22,7 +22,7 @@ import CFM.net_CFM as Net
 def get_baseline_model(ckpt_file, input_dim=10, device='cuda:0'):
     net = Net.get_unet(input_dim).to(device)
     ckpt = torch.load(ckpt_file)
-    net.load_state_dict(ckpt['model'])
+    net.load_state_dict(ckpt['model'], strict=True)
     return net.eval()
 
 

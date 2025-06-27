@@ -302,7 +302,7 @@ class SiriusMyDataset(BaseImageDataset):
         sample = self.sampler.sample_sequence(idx)
         data = self._sample_to_data(sample)
         torch_data = dict_apply(data, torch.from_numpy)
-        torch_data = dict_apply_with_key(torch_data, self._image_postprocess, ['side_img'])
+        # torch_data = dict_apply_with_key(torch_data, self._image_postprocess, ['side_img'])
         return torch_data
 
 

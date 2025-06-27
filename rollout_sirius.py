@@ -13,11 +13,6 @@ import numpy as np
 import dill
 import time
 from scipy.spatial.transform import Rotation as R
-import cv2
-from torchvision.transforms import Compose, Resize, CenterCrop
-from torchvision.transforms import InterpolationMode
-import pygame
-from PIL import Image
 
 from diffusion_policy.diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer

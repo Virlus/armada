@@ -73,8 +73,11 @@ class MyDataset(BaseImageDataset):
                 
         if random_crop:
             self.crop_randomizer = transforms.Compose([
-                transforms.Resize((image_shape[1]+8, image_shape[2]+8), interpolation=transforms.InterpolationMode.BICUBIC),
+                # transforms.Resize((image_shape[1]+8, image_shape[2]+8), interpolation=transforms.InterpolationMode.BICUBIC),
                 transforms.RandomCrop((image_shape[1], image_shape[2]))
+            ])
+            self.image_resizer = transforms.Compose([
+                transforms.Resize((image_shape[1], image_shape[2]), interpolation=transforms.InterpolationMode.BICUBIC)
             ])
         else:
             self.crop_randomizer = None
@@ -227,8 +230,6 @@ class MyDataset(BaseImageDataset):
                 'obs': {
                     'wrist_img': wrist_img, # T, 3, 480, 640
                     'side_img': side_img, # T, 3, 480, 640
-                    # 'qpos': qpos, # T, 7
-                    # 'rel_ee_pose': rel_ee_pose,  # T, 9
                     'ee_pose': ee_pose, # T, self.ee_pose_dim
                 },
                 # 'action': action_sample.astype(np.float32) # T, 8
@@ -237,14 +238,18 @@ class MyDataset(BaseImageDataset):
 
         return data
     
-    def _image_postprocess(self, img):
+    def side_image_postprocess(self, img):
         return self.crop_randomizer(img) if self.crop_randomizer is not None else img
+    
+    def wrist_image_postprocess(self, img):
+        return self.image_resizer(img) if self.image_resizer is not None else img
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.sampler.sample_sequence(idx)
         data = self._sample_to_data(sample)
         torch_data = dict_apply(data, torch.from_numpy)
-        # torch_data = dict_apply_with_key(torch_data, self._image_postprocess, ['side_img'])
+        torch_data = dict_apply_with_key(torch_data, self.side_image_postprocess, ['side_img'])
+        torch_data = dict_apply_with_key(torch_data, self.wrist_image_postprocess, ['wrist_img'])
         return torch_data
 
 

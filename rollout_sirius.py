@@ -175,8 +175,8 @@ def main(rank, eval_cfg, device_ids):
                 initial_state = robot_state['joint_pos']
 
             # Use processed images from RobotEnv
-            policy_img_0 = robot_state['side_img'] / 255.
-            policy_img_1 = robot_state['wrist_img'] / 255.
+            policy_img_0 = robot_state['policy_side_img'] / 255.
+            policy_img_1 = robot_state['policy_wrist_img'] / 255.
 
             # Initialize observation history using EpisodeManager
             for idx in range(To):
@@ -216,8 +216,8 @@ def main(rank, eval_cfg, device_ids):
                         state = robot_state['joint_pos']
                     
                     # Use processed images from RobotEnv
-                    img_0 = robot_state['side_img'] / 255.
-                    img_1 = robot_state['wrist_img'] / 255.
+                    img_0 = robot_state['policy_side_img'] / 255.
+                    img_1 = robot_state['policy_wrist_img'] / 255.
 
                     # Update observation history using EpisodeManager
                     episode_manager.update_observation(img_0, img_1, state)
@@ -248,16 +248,16 @@ def main(rank, eval_cfg, device_ids):
                         robot_env.deploy_action(deployed_action, gripper_action[0])
 
                         # Save demonstrations to the buffer
-                        wrist_cam.append(robot_state['wrist_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
-                        side_cam.append(robot_state['side_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
+                        wrist_cam.append(robot_state['demo_wrist_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
+                        side_cam.append(robot_state['demo_side_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
                         tcp_pose.append(tcpPose)
                         joint_pos.append(jointPose)
                         action.append(np.concatenate((curr_p_action, curr_r_action, [gripper_action[0]])))
                         action_mode.append(ROBOT)
 
                         if step >= Ta - To + 1:
-                            img_0 = robot_state['side_img'] / 255.
-                            img_1 = robot_state['wrist_img'] / 255.
+                            img_0 = robot_state['policy_side_img'] / 255.
+                            img_1 = robot_state['policy_wrist_img'] / 255.
                             if 'ee_pose' in cfg.shape_meta['obs']:
                                 state = robot_state['tcp_pose']
                             else:
@@ -297,8 +297,8 @@ def main(rank, eval_cfg, device_ids):
                         continue
                     
                     # Save demonstrations to the buffer
-                    wrist_cam.append(processed_data['wrist_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
-                    side_cam.append(processed_data['side_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
+                    wrist_cam.append(processed_data['demo_wrist_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
+                    side_cam.append(processed_data['demo_side_img'].permute(1,2,0).detach().cpu().numpy().astype(np.uint8))
                     tcp_pose.append(processed_data['tcp_pose'])
                     joint_pos.append(processed_data['joint_pos'])
                     action.append(processed_data['action'])
@@ -310,8 +310,8 @@ def main(rank, eval_cfg, device_ids):
                     else:
                         state = processed_data['joint_pos']
 
-                    img_0 = processed_data['side_img'] / 255.
-                    img_1 = processed_data['wrist_img'] / 255.
+                    img_0 = processed_data['policy_side_img'] / 255.
+                    img_1 = processed_data['policy_wrist_img'] / 255.
                     episode_manager.update_observation(img_0, img_1, state)
                     
                     j += 1

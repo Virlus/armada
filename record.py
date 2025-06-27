@@ -45,8 +45,8 @@ def record(replay_buffer:ReplayBuffer, robot_env:RobotEnv):
             print("Episode start!")
             continue
         
-        wrist_cam.append(transition_data['wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-        side_cam.append(transition_data['side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+        wrist_cam.append(transition_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+        side_cam.append(transition_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
         tcp_pose.append(transition_data['tcp_pose'])
         joint_pos.append(transition_data['joint_pos'])
         action.append(transition_data['action'])

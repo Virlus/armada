@@ -40,11 +40,15 @@ class RobotEnv:
         
         # Setup image processors
         BICUBIC = InterpolationMode.BICUBIC
-        self.side_image_processor = Compose([
+        self.policy_side_image_processor = Compose([
             Resize((img_shape[1]+8, img_shape[2]+8), interpolation=BICUBIC),
             CenterCrop((img_shape[1], img_shape[2]))
         ])
-        self.wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
+        self.policy_wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
+
+        self.demo_image_processor = Compose([
+            Resize((img_shape[1]+8, img_shape[2]+8), interpolation=BICUBIC),
+        ])
         
         # Keep track of throttle usage for human intervention
         self.last_throttle = False
@@ -81,14 +85,18 @@ class RobotEnv:
             cam_data.append(color_image)
             
         # Process images
-        side_img = self.side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
-        wrist_img = self.wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
+        policy_side_img = self.policy_side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
+        policy_wrist_img = self.policy_wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
+        demo_side_img = self.demo_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
+        demo_wrist_img = self.demo_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1))
         
         return {
             'tcp_pose': tcp_pose,
             'joint_pos': joint_pos,
-            'side_img': side_img,
-            'wrist_img': wrist_img,
+            'policy_side_img': policy_side_img,
+            'policy_wrist_img': policy_wrist_img,
+            'demo_side_img': demo_side_img,
+            'demo_wrist_img': demo_wrist_img,
             'side_img_raw': cam_data[0].copy(),
             'wrist_img_raw': cam_data[1].copy()
         }
@@ -120,8 +128,8 @@ class RobotEnv:
                 side_img = state_data['side_img_raw']
                 wrist_img = state_data['wrist_img_raw']
             else:
-                side_img = cv2.cvtColor(state_data['side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
-                wrist_img = cv2.cvtColor(state_data['wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
+                side_img = cv2.cvtColor(state_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
+                wrist_img = cv2.cvtColor(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
             cv2.imshow("Side", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
             cv2.imshow("Wrist", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
             cv2.waitKey(1)
@@ -188,8 +196,10 @@ class RobotEnv:
         
         # Save demo data for return
         processed_data = {
-            'wrist_img': state_data['wrist_img'],
-            'side_img': state_data['side_img'],
+            'policy_wrist_img': state_data['policy_wrist_img'],
+            'policy_side_img': state_data['policy_side_img'],
+            'demo_wrist_img': state_data['demo_wrist_img'],
+            'demo_side_img': state_data['demo_side_img'],
             'tcp_pose': tcp_pose,
             'joint_pos': joint_pos,
             'action': np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])),

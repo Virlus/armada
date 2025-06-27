@@ -150,7 +150,7 @@ def main(rank, eval_cfg, device_ids):
             human_demo_indices.append(i)
     human_eps_len = []
 
-    for i in tqdm.tqdm(human_demo_indices, desc="Obtaining latent for human demo"):
+    for i in human_demo_indices:
         human_episode = replay_buffer.get_episode(i)
         eps_side_img = (torch.from_numpy(human_episode['side_cam']).permute(0, 3, 1, 2) / 255.0).to(device)
         human_eps_len.append(eps_side_img.shape[0])
@@ -194,8 +194,8 @@ def main(rank, eval_cfg, device_ids):
             # Update initial observations
             for _ in range(To):
                 episode_manager.update_observation(
-                    robot_state['side_img'] / 255.0,
-                    robot_state['wrist_img'] / 255.0,
+                    robot_state['policy_side_img'] / 255.0,
+                    robot_state['policy_wrist_img'] / 255.0,
                     robot_state['tcp_pose'] if state_type == 'ee_pose' else robot_state['joint_pos']
                 )
             
@@ -232,8 +232,8 @@ def main(rank, eval_cfg, device_ids):
                     
                     # Update observation history
                     episode_manager.update_observation(
-                        robot_state['side_img'] / 255.0,
-                        robot_state['wrist_img'] / 255.0,
+                        robot_state['policy_side_img'] / 255.0,
+                        robot_state['policy_wrist_img'] / 255.0,
                         robot_state['tcp_pose'] if state_type == 'ee_pose' else robot_state['joint_pos']
                     )
                     
@@ -268,8 +268,8 @@ def main(rank, eval_cfg, device_ids):
                         robot_env.deploy_action(deployed_action, gripper_action[0])
                         
                         # Save to episode buffers
-                        wrist_cam.append(state_data['wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-                        side_cam.append(state_data['side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+                        wrist_cam.append(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+                        side_cam.append(state_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
                         tcp_pose.append(state_data['tcp_pose'])
                         joint_pos.append(state_data['joint_pos'])
                         action.append(np.concatenate((curr_p_action, curr_r_action, [gripper_action[0]])))
@@ -278,8 +278,8 @@ def main(rank, eval_cfg, device_ids):
                         # Update policy observation if needed
                         if step >= Ta - To + 1:
                             episode_manager.update_observation(
-                                state_data['side_img'] / 255.0,
-                                state_data['wrist_img'] / 255.0,
+                                state_data['policy_side_img'] / 255.0,
+                                state_data['policy_wrist_img'] / 255.0,
                                 state_data['tcp_pose'] if state_type == 'ee_pose' else state_data['joint_pos']
                             )
                         
@@ -386,14 +386,14 @@ def main(rank, eval_cfg, device_ids):
                     
                     # Update observation history with latest state
                     episode_manager.update_observation(
-                        teleop_data['side_img'] / 255.0,
-                        teleop_data['wrist_img'] / 255.0,
+                        teleop_data['policy_side_img'] / 255.0,
+                        teleop_data['policy_wrist_img'] / 255.0,
                         teleop_data['tcp_pose'] if state_type == 'ee_pose' else teleop_data['joint_pos']
                     )
                     
                     # Store demo data
-                    wrist_cam.append(teleop_data['wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-                    side_cam.append(teleop_data['side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+                    wrist_cam.append(teleop_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+                    side_cam.append(teleop_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
                     tcp_pose.append(teleop_data['tcp_pose'])
                     joint_pos.append(teleop_data['joint_pos'])
                     action.append(teleop_data['action'])

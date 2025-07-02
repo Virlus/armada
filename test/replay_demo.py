@@ -22,7 +22,7 @@ def main(args):
     camera_serial = ["135122075425", "135122070361"]
     img_shape = [3, 224, 224]
     fps = 10
-    # robot_env = RobotEnv(camera_serial, img_shape, fps)
+    robot_env = RobotEnv(camera_serial, img_shape, fps)
     replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=None)
 
     # If there exists visual reference for initial state, load it before rollout
@@ -32,9 +32,11 @@ def main(args):
     else:
         refer = False
 
+    ## =================================================== Calculate human intervention ratio and success rate ======================================================= ###
+
     import pdb; pdb.set_trace()
-    # zarr_path = os.path.join(args.output, 'replay_buffer.zarr')
-    # save_buffer = ReplayBuffer.create_from_path(zarr_path, mode='a')
+    zarr_path = os.path.join(args.output, 'replay_buffer.zarr')
+    save_buffer = ReplayBuffer.create_from_path(zarr_path, mode='a')
 
     curr_round_start = replay_buffer.episode_ends[args.start_index-1] if args.start_index > 0 else 0
     curr_round_end = replay_buffer.episode_ends[-1]
@@ -56,28 +58,36 @@ def main(args):
     print(f"Success rate in this round: {success_rate * 100:.2f}%")
     import pdb; pdb.set_trace()
 
-    TPR_buffer = [] # True indicates failed trajectories
-    TNR_buffer = []
+    ## ============================================================================================================================================================ ###
 
-    for i in range(args.start_index, replay_buffer.n_episodes):
-        curr_action_mode = replay_buffer['action_mode'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
-        curr_failure_indices = replay_buffer['failure_indices'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
-        if np.sum(curr_action_mode == INTV) == 0:
-            if np.sum(curr_failure_indices) == 0:
-                TNR_buffer.append(1.0)
-            else:
-                TNR_buffer.append(0.0)
-        else:
-            if np.sum(curr_failure_indices) > 0:
-                TPR_buffer.append(1.0)
-            else:
-                TPR_buffer.append(0.0)
+    ### ==================================================== Calculate TPR and TNR for failure-detection-embodied rollouts ========================================= ###
 
-    print(f"TPR: {np.mean(TPR_buffer) * 100:.2f}%, TNR: {np.mean(TNR_buffer) * 100:.2f}%")
-    print(f"Accuracy: {np.mean(TPR_buffer) * 50 + np.mean(TNR_buffer) * 50:.2f}%")
-    print(f"Weighted Accuracy: {np.mean(TPR_buffer) * success_rate * 100 + np.mean(TNR_buffer) * (1 - success_rate) * 100:.2f}%")
+    # TPR_buffer = [] # True indicates failed trajectories
+    # TNR_buffer = []
 
-    import pdb; pdb.set_trace()
+    # for i in range(args.start_index, replay_buffer.n_episodes):
+    #     curr_action_mode = replay_buffer['action_mode'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
+    #     curr_failure_indices = replay_buffer['failure_indices'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
+    #     if np.sum(curr_action_mode == INTV) == 0:
+    #         if np.sum(curr_failure_indices) == 0:
+    #             TNR_buffer.append(1.0)
+    #         else:
+    #             TNR_buffer.append(0.0)
+    #     else:
+    #         if np.sum(curr_failure_indices) > 0:
+    #             TPR_buffer.append(1.0)
+    #         else:
+    #             TPR_buffer.append(0.0)
+
+    # print(f"TPR: {np.mean(TPR_buffer) * 100:.2f}%, TNR: {np.mean(TNR_buffer) * 100:.2f}%")
+    # print(f"Accuracy: {np.mean(TPR_buffer) * 50 + np.mean(TNR_buffer) * 50:.2f}%")
+    # print(f"Weighted Accuracy: {np.mean(TPR_buffer) * success_rate * 100 + np.mean(TNR_buffer) * (1 - success_rate) * 100:.2f}%")
+
+    # import pdb; pdb.set_trace()
+
+    ### ============================================================================================================================================================ ###
+
+    ### ============================================== Replay on real robot while saving image observations ===================================================== ###
 
     # image_save_path = os.path.join(os.path.dirname(args.demo_path), 'images')
     # os.makedirs(image_save_path, exist_ok=True)
@@ -128,11 +138,13 @@ def main(args):
     #     robot_env.keyboard.start = False
     #     robot_env.keyboard.quit = False
 
+    ### ============================================================================================================================================================ ###
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--demo_path', type=str, required=True)
     parser.add_argument('-s', '--start_index', type=int, required=True)
     parser.add_argument('-ref', '--reference', type=str, default='')
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/debug_0619')
+    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/debug')
     args = parser.parse_args()
     main(args)

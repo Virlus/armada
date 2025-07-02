@@ -148,7 +148,9 @@ def main(rank, eval_cfg, device_ids):
     failure_detector = FailureDetector(
         Ta=Ta,
         action_inconsistency_percentile=action_inconsistency_percentile,
-        ot_percentile=ot_percentile
+        ot_percentile=ot_percentile,
+        max_queue_size=3,
+        episode_manager=episode_manager
     )
     failure_detector.start_async_processing()
     
@@ -367,13 +369,15 @@ def main(rank, eval_cfg, device_ids):
                         time.sleep(max(1 / fps - (time.time() - start_time), 0))
                         j += 1
 
-                    action_inconsistency = episode_manager.imagine_future_action(action_seq, predicted_abs_actions)
-                    
-                    # Track action inconsistency for failure detection
-                    action_inconsistency_buffer.extend([action_inconsistency] * Ta)
+                    # Submit action inconsistency task asynchronously
+                    idx = j // Ta - 1
+                    failure_detector.submit_action_inconsistency_task(
+                        action_seq=action_seq,
+                        predicted_abs_actions=predicted_abs_actions,
+                        idx=idx
+                    )
                     
                     # Update rollout latent for this timestep
-                    idx = j // Ta - 1
                     rollout_latent[idx] = curr_latent
                     
                     # Submit OT matching task asynchronously
@@ -418,6 +422,10 @@ def main(rank, eval_cfg, device_ids):
                                 greedy_ot_plan=greedy_ot_plan.clone(),
                                 max_episode_length=max_episode_length
                             )
+
+                        elif result["task_type"] == "action_inconsistency" and result["idx"] <= idx:
+                            # Track action inconsistency for failure detection
+                            action_inconsistency_buffer.extend([result["action_inconsistency"]] * Ta)
                         
                         elif result["task_type"] == "failure_detection" and result["idx"] <= idx:
                             # Update with failure detection results

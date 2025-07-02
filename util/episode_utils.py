@@ -116,6 +116,10 @@ class EpisodeManager:
     
         self.last_p = curr_p
         self.last_r = curr_r
+
+        if step == self.Ta - 1:
+            self.last_r = R.from_quat(R.as_quat(self.last_r, scalar_first=True)[0:1, :].repeat(self.num_samples, axis=0), scalar_first=True)
+            self.last_p = self.last_p[0:1, :].repeat(self.num_samples, axis=0)
         
         # Return deployed action
         deployed_action = np.concatenate((curr_p[0], curr_r[0].as_quat(scalar_first=True)), 0)
@@ -140,8 +144,6 @@ class EpisodeManager:
             self.last_predicted_abs_actions = np.concatenate((np.zeros((self.Ta, 8)), predicted_abs_actions[0, :-self.Ta]), 0) # Prevent anomalous value in the beginning
         action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-self.Ta] - self.last_predicted_abs_actions[np.newaxis, self.Ta:], axis=-1))
         self.last_predicted_abs_actions = predicted_abs_actions[0]
-        self.last_r = R.from_quat(R.as_quat(self.last_r, scalar_first=True)[0:1, :].repeat(self.num_samples, axis=0), scalar_first=True)
-        self.last_p = self.last_p[0:1, :].repeat(self.num_samples, axis=0)
         return action_inconsistency
     
     def find_matching_expert_demo(self, rollout_init_latent, all_human_latent, human_demo_indices, num_expert_candidates):

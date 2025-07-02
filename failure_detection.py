@@ -10,6 +10,7 @@ from util.failure_detection_util import (
     optimal_transport_plan, 
     rematch_expert_episode
 )
+from util.episode_utils import EpisodeManager
 
 class FailureDetector:
     def __init__(
@@ -17,12 +18,13 @@ class FailureDetector:
         Ta: int,
         action_inconsistency_percentile: float = 95.0,
         ot_percentile: float = 95.0,
-        max_queue_size: int = 2
+        max_queue_size: int = 2,
+        episode_manager: EpisodeManager = None
     ):
         self.Ta = Ta
         self.action_inconsistency_percentile = action_inconsistency_percentile
         self.ot_percentile = ot_percentile
-        
+        self.episode_manager = episode_manager
         # Initialize thresholds
         self.expert_action_threshold = None
         self.expert_ot_threshold = None
@@ -107,6 +109,19 @@ class FailureDetector:
                         torch.sum(partial_ot_plan[:, :idx+1] * partial_dist_mat[:, :idx+1], dim=0), 
                         torch.zeros((max_episode_length // Ta - idx - 1,), device=data["device"])
                     ), 0)
+
+                elif task_type == "action_inconsistency":
+                    action_seq = data["action_seq"]
+                    predicted_abs_actions = data["predicted_abs_actions"]
+                    idx = data["idx"]
+                    action_inconsistency = self.episode_manager.imagine_future_action(action_seq, predicted_abs_actions)
+                    result = {
+                        "task_type": "action_inconsistency",
+                        "action_inconsistency": action_inconsistency,
+                        "idx": idx
+                    }
+                    self.async_result_queue.put(result)
+                    continue
                     
                 elif task_type == "failure_detection":
                     # Failure detection task
@@ -173,6 +188,19 @@ class FailureDetector:
                 "device": device,
                 "Ta": self.Ta,
                 "max_episode_length": max_episode_length
+            })
+            return True
+        except queue.Full:
+            return False
+        
+    def submit_action_inconsistency_task(self, action_seq, predicted_abs_actions, idx):
+        """Submit an action inconsistency task for asynchronous processing"""
+        try:
+            self.async_queue.put_nowait({
+                "task_type": "action_inconsistency",
+                "action_seq": action_seq,
+                "predicted_abs_actions": predicted_abs_actions,
+                "idx": idx
             })
             return True
         except queue.Full:

@@ -520,6 +520,11 @@ def main(rank, eval_cfg, device_ids):
                                 print("OT cost dropped below the soft threshold, stop rewinding.")
                                 failure_detector.last_predicted_abs_actions = None
                                 break
+
+                            if action_mode[-1] == INTV:
+                                print("Human intervention detected, stop rewinding.")
+                                failure_detector.last_predicted_abs_actions = None
+                                break
                             
                             # Rewind the OT plan
                             recovered_expert_weight = torch.zeros((demo_len // Ta,), device=device)

@@ -351,6 +351,8 @@ class FailureDetector:
         """Load success statistics from a saved file"""
         self.success_action_inconsistencies = list(success_stats['action_inconsistencies'])
         self.success_ot_values = success_stats['ot_values']
+        self.action_inconsistency_percentile = success_stats['action_inconsistency_percentile'] if 'action_inconsistency_percentile' in success_stats else self.action_inconsistency_percentile
+        self.ot_percentile = success_stats['ot_percentile'] if 'ot_percentile' in success_stats else self.ot_percentile
         self.expert_action_threshold = np.percentile(self.success_action_inconsistencies, self.action_inconsistency_percentile)
         self.expert_ot_threshold = np.percentile(self.success_ot_values, self.ot_percentile)
         
@@ -358,5 +360,7 @@ class FailureDetector:
         """Get the current success statistics for saving"""
         return {
             'action_inconsistencies': np.array(self.success_action_inconsistencies),
-            'ot_values': self.success_ot_values
+            'ot_values': self.success_ot_values,
+            'action_inconsistency_percentile': self.action_inconsistency_percentile,
+            'ot_percentile': self.ot_percentile
         }

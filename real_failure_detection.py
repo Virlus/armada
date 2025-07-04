@@ -629,7 +629,7 @@ def main(rank, eval_cfg, device_ids):
                     print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 
                     f"OT={failure_detector.expert_ot_threshold}")
                 else:
-                    if len(failure_logs) == 0: # False negative
+                    if len(failure_logs) == 0 and len(failure_detector.success_ot_values) > 0: # False negative
                         failure_detector.update_percentile_fn()
                         print("False negative trajectory! Lowering percentiles...")
                         print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 

@@ -84,7 +84,8 @@ def get_episode_and_return_logpZO(dataset, policy, baseline_model, replay_buffer
             }
         }
         torch_data = dict_apply(data, torch.from_numpy)
-        torch_data = dict_apply_with_key(torch_data, dataset._image_postprocess, ['side_img'])
+        torch_data = dict_apply_with_key(torch_data, dataset.side_image_postprocess, ['side_img'])
+        torch_data = dict_apply_with_key(torch_data, dataset.wrist_image_postprocess, ['wrist_img'])
         torch_data = dict_apply(torch_data, lambda x: x.unsqueeze(0))
         batch = dict_apply(torch_data, lambda x: x.to(device, non_blocking=True))
         normalized_data = policy.normalizer.normalize(batch['obs'])

@@ -227,6 +227,7 @@ def main(rank, eval_cfg, device_ids):
                 # ===========================================================
                 print("=========== Policy inference ============")
                 while not robot_env.keyboard.finish and not robot_env.keyboard.discard and not robot_env.keyboard.help:
+                    start_time = time.time()  # Track time for fps control
                     # Get robot state and observations
                     robot_state = robot_env.get_robot_state()
                     
@@ -251,8 +252,9 @@ def main(rank, eval_cfg, device_ids):
                     predicted_abs_actions = np.zeros_like(action_seq[:, :, :8])
                     
                     for step in range(Ta):
-                        start_time = time.time()  # Track time for fps control
-
+                        if step > 0:
+                            start_time = time.time()
+                            
                         # Get robot state
                         if step == 0:
                             state_data = robot_state

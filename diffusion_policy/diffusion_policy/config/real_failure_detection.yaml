@@ -10,8 +10,8 @@ seed: 0
 
 # Failure detection hyperparameters
 inconsistency_metric: expert
-num_samples: 16
-num_expert_candidates: 50
+num_samples: 4
+num_expert_candidates: 5
 action_inconsistency_percentile: 90
 ot_percentile: 95
 soft_ot_ratio: 0.5

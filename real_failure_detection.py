@@ -304,12 +304,16 @@ def main(rank, eval_cfg, device_ids):
                 if j >= max_episode_length - Ta:
                     print("Maximum episode length reached, turning to human for help.")
                     robot_env.keyboard.help = True
+
+                inference_start_time = time.time()
                 
                 # ===========================================================
                 #                   Policy inference loop
                 # ===========================================================
                 print("=========== Policy inference ============")
                 while not robot_env.keyboard.finish and not robot_env.keyboard.discard and not robot_env.keyboard.help:
+                    print(f"Policy loop time: {time.time() - inference_start_time} seconds")
+                    start_time = time.time()
                     # Get robot state and observations
                     robot_state = robot_env.get_robot_state()
                     
@@ -319,12 +323,16 @@ def main(rank, eval_cfg, device_ids):
                         robot_state['policy_wrist_img'] / 255.0,
                         robot_state['tcp_pose'] if state_type == 'ee_pose' else robot_state['joint_pos']
                     )
+
+                    inference_start_time = time.time()
                     
                     # Get action sequence for execution
                     policy_obs = episode_manager.get_policy_observation()
                     with torch.no_grad():
                         curr_action, curr_latent = policy.predict_action(policy_obs, return_latent=True)
                         curr_latent = curr_latent[0].reshape(-1)
+
+                    print(f"Policy inference time: {time.time() - inference_start_time} seconds")
                         
                     # Get first Ta actions and execute on robot
                     np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
@@ -334,8 +342,8 @@ def main(rank, eval_cfg, device_ids):
                     predicted_abs_actions = np.zeros_like(action_seq[:, :, :8])
                     
                     for step in range(Ta):
-                        start_time = time.time()  # Track time for fps control
-
+                        if step > 0:
+                            start_time = time.time()
                         # Get robot state
                         if step == 0:
                             state_data = robot_state

@@ -4,6 +4,7 @@ import threading
 import queue
 import time
 from typing import List, Dict, Tuple, Optional, Any
+from scipy.spatial.transform import Rotation as R
 
 from util.failure_detection_util import (
     cosine_distance, 
@@ -24,7 +25,10 @@ class FailureDetector:
         self.Ta = Ta
         self.action_inconsistency_percentile = action_inconsistency_percentile
         self.ot_percentile = ot_percentile
-        self.episode_manager = episode_manager
+        # Initialize from episode manager
+        self.action_rot_transformer = episode_manager.action_rot_transformer
+        self.action_dim = episode_manager.action_dim
+        self.Ta = episode_manager.Ta
         # Initialize thresholds
         self.expert_action_threshold = None
         self.expert_ot_threshold = None
@@ -38,6 +42,9 @@ class FailureDetector:
         self.async_result_queue = queue.Queue()
         self.async_thread_stop = threading.Event()
         self.async_thread = None
+
+        # Initialize last predicted abs actions
+        self.last_predicted_abs_actions = None
         
     def start_async_processing(self):
         """Start the asynchronous processing thread"""
@@ -114,7 +121,27 @@ class FailureDetector:
                     action_seq = data["action_seq"]
                     predicted_abs_actions = data["predicted_abs_actions"]
                     idx = data["idx"]
-                    action_inconsistency = self.episode_manager.imagine_future_action(action_seq, predicted_abs_actions)
+                    last_p = data["last_p"]
+                    last_r = data["last_r"]
+                    Ta = data["Ta"]
+                    action_rot_transformer = data["action_rot_transformer"]
+                    action_dim = data["action_dim"]
+                    # Calculate action inconsistency
+                    tmp_last_p = last_p
+                    tmp_last_r = last_r
+                    for step in range(Ta, action_seq.shape[1]):
+                        curr_p_action = action_seq[:, step, :3]
+                        curr_p = tmp_last_p + curr_p_action
+                        curr_r_action = action_rot_transformer.inverse(action_seq[:, step, 3:action_dim-1])
+                        action_rot = R.from_quat(curr_r_action, scalar_first=True)
+                        curr_r = tmp_last_r * action_rot
+                        predicted_abs_actions[:, step] = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), action_seq[:, step, -1:]), -1)
+                        tmp_last_p = curr_p
+                        tmp_last_r = curr_r
+                    if self.last_predicted_abs_actions is None:
+                        self.last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[0, :-Ta]), 0) # Prevent anomalous value in the beginning
+                    action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - self.last_predicted_abs_actions[np.newaxis, Ta:], axis=-1))
+                    self.last_predicted_abs_actions = predicted_abs_actions[0]
                     result = {
                         "task_type": "action_inconsistency",
                         "action_inconsistency": action_inconsistency,
@@ -193,14 +220,19 @@ class FailureDetector:
         except queue.Full:
             return False
         
-    def submit_action_inconsistency_task(self, action_seq, predicted_abs_actions, idx):
+    def submit_action_inconsistency_task(self, action_seq, predicted_abs_actions, idx, last_p, last_r):
         """Submit an action inconsistency task for asynchronous processing"""
         try:
             self.async_queue.put_nowait({
                 "task_type": "action_inconsistency",
                 "action_seq": action_seq,
                 "predicted_abs_actions": predicted_abs_actions,
-                "idx": idx
+                "action_rot_transformer": self.action_rot_transformer,
+                "action_dim": self.action_dim,
+                "Ta": self.Ta,
+                "idx": idx,
+                "last_p": last_p,
+                "last_r": last_r
             })
             return True
         except queue.Full:

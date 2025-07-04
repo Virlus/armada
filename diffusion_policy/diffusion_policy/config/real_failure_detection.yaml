@@ -1,16 +1,16 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0618_14.28.23_train_diffusion_transformer_hybrid_dino_multi_gpu_mug_ours_dagger_epoch_150_round2/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/0604_mug/0604_mug_ours_dagger_new_adaptive_failure_detection_round3_1
-save_buffer_path: /mnt/workspace/DP/0604_mug/0604_mug_ours_dagger_new_adaptive_failure_detection_round3_2
-output_dir: diffusion_policy/outputs/visual/0611_mug_rollout_round3
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0627_20.08.05_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_mug_initial/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/mug/0627_mug
+save_buffer_path: /mnt/workspace/DP/mug/0627_mug_ours_dagger_asynced_round1
+output_dir: diffusion_policy/outputs/visual/0627_mug_rollout_round1
 
 Ta: 8
 random_init: True
-seed: 7
+seed: 0
 
 # Failure detection hyperparameters
 inconsistency_metric: expert
-num_samples: 4
+num_samples: 16
 num_expert_candidates: 50
 action_inconsistency_percentile: 90
 ot_percentile: 95

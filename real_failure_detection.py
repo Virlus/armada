@@ -374,7 +374,9 @@ def main(rank, eval_cfg, device_ids):
                     failure_detector.submit_action_inconsistency_task(
                         action_seq=action_seq,
                         predicted_abs_actions=predicted_abs_actions,
-                        idx=idx
+                        idx=idx,
+                        last_p=episode_manager.last_p,
+                        last_r=episode_manager.last_r
                     )
                     
                     # Update rollout latent for this timestep
@@ -508,6 +510,7 @@ def main(rank, eval_cfg, device_ids):
                         if j % Ta == 0 and j > 0:
                             if torch.sum(greedy_ot_cost[:j // Ta]) < soft_ot_threshold:
                                 print("OT cost dropped below the soft threshold, stop rewinding.")
+                                failure_detector.last_predicted_abs_actions = None
                                 break
                             
                             # Rewind the OT plan

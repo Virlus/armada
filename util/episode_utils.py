@@ -126,26 +126,6 @@ class EpisodeManager:
         
         return deployed_action, gripper_action, curr_p, curr_r, curr_p_action[0], curr_r_action[0]
     
-    def imagine_future_action(self, action_seq, predicted_abs_actions):
-        """Derive the rest of the action chunk and calculate the action inconsistency"""
-        tmp_last_p = self.last_p
-        tmp_last_r = self.last_r
-        for step in range(self.Ta, action_seq.shape[1]):
-            curr_p_action = action_seq[:, step, :3]
-            curr_p = tmp_last_p + curr_p_action
-            curr_r_action = self.action_rot_transformer.inverse(action_seq[:, step, 3:self.action_dim-1])
-            action_rot = R.from_quat(curr_r_action, scalar_first=True)
-            curr_r = tmp_last_r * action_rot
-            predicted_abs_actions[:, step] = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), action_seq[:, step, -1:]), -1)
-            tmp_last_p = curr_p
-            tmp_last_r = curr_r
-        
-        if self.last_predicted_abs_actions is None:
-            self.last_predicted_abs_actions = np.concatenate((np.zeros((self.Ta, 8)), predicted_abs_actions[0, :-self.Ta]), 0) # Prevent anomalous value in the beginning
-        action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-self.Ta] - self.last_predicted_abs_actions[np.newaxis, self.Ta:], axis=-1))
-        self.last_predicted_abs_actions = predicted_abs_actions[0]
-        return action_inconsistency
-    
     def find_matching_expert_demo(self, rollout_init_latent, all_human_latent, human_demo_indices, num_expert_candidates):
         """Find the most similar expert demonstration"""
         from util.failure_detection_util import cosine_distance, optimal_transport_plan

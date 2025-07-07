@@ -1,8 +1,11 @@
-
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../"))
 import cv2
 import numpy as np
 import pyrealsense2 as rs
 import pdb
+from .macros import CAM_SERIAL
 
 class RealSenseCapture:
     def __init__(self):
@@ -23,7 +26,7 @@ class CameraD400(object):
         self.config = rs.config()
         if serial is not None:
             self.config.enable_device(serial)
-        if is_calib or serial == "135122075425" or serial == "135122070361":
+        if is_calib or serial in CAM_SERIAL:
             self.config.enable_stream(rs.stream.depth, 640, 480,rs.format.z16,30)
             self.config.enable_stream(rs.stream.color, 640, 480,rs.format.bgr8,30)
         else:
@@ -184,8 +187,7 @@ if __name__ == "__main__":
     BICUBIC = InterpolationMode.BICUBIC
     image_processor = Compose([Resize((224, 224), interpolation=BICUBIC)])
     # live_application()
-    camera_serial = ["135122075425", "135122070361"]
-    cameras = [CameraD400(s) for s in camera_serial]
+    cameras = [CameraD400(s) for s in CAM_SERIAL]
     for camera in cameras:
         color_image, depth_image = camera.get_data()
 

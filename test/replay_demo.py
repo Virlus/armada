@@ -4,6 +4,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from hardware.my_device.robot import FlexivRobot, FlexivGripper
 from robot_env import RobotEnv
+from hardware.my_device.macros import CAM_SERIAL
 from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 
 from scipy.spatial.transform import Rotation as R
@@ -19,10 +20,9 @@ INTV = 3
 
 def main(args):
     # Initialize robot environment
-    camera_serial = ["135122075425", "135122070361"]
     img_shape = [3, 224, 224]
     fps = 10
-    # robot_env = RobotEnv(camera_serial, img_shape, fps)
+    # robot_env = RobotEnv(camera_serial=CAM_SERIAL, img_shape=img_shape, fps=fps)
     replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=None)
 
     # If there exists visual reference for initial state, load it before rollout

@@ -13,6 +13,7 @@ from hardware.my_device.camera import CameraD400
 from hardware.my_device.keyboard import Keyboard
 from hardware.my_device.sigma import Sigma7
 from hardware.my_device.logitechG29_wheel import Controller
+from hardware.my_device.macros import CAM_SERIAL
 
 # Sirius-specific macros
 HUMAN = 0
@@ -22,9 +23,7 @@ INTV = 3
 INTV_STEPS = 15
 
 class RobotEnv:
-    def __init__(self, camera_serial=None, img_shape=None, fps=10):
-        if camera_serial is None:
-            camera_serial = ["135122075425", "135122070361"]
+    def __init__(self, camera_serial=CAM_SERIAL, img_shape=None, fps=10):
         self.camera_serial = camera_serial
         self.fps = fps
         self.img_shape = img_shape
@@ -231,7 +230,7 @@ class RobotEnv:
 
 if __name__ == "__main__": # Test the robustness of Sigma teleoperation
     # Example usage of RobotEnv
-    robot_env = RobotEnv(camera_serial=["135122075425", "135122070361"], img_shape=(3, 224, 224), fps=10)
+    robot_env = RobotEnv(camera_serial=CAM_SERIAL, img_shape=(3, 224, 224), fps=10)
     robot_env.reset_robot()
     
     last_p = robot_env.robot.init_pose[:3]

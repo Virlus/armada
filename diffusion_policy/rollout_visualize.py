@@ -1,7 +1,7 @@
 import pathlib
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # use line-buffering for both stdout and stderr
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
@@ -23,8 +23,8 @@ from diffusion_policy.model.common.rotation_transformer import RotationTransform
 from hardware.my_device.robot import FlexivRobot, FlexivGripper
 from hardware.my_device.camera import CameraD400
 from hardware.my_device.keyboard import Keyboard
+from hardware.my_device.macros import CAM_SERIAL
 
-camera_serial = ["135122075425", "135122070361"]
 base2cam_T_path = "/home/yuwenye/projects/human-in-the-loop/hardware/calib/workspace/flexiv/calib/out/cali_side/camT.npy"
 intrinsics_path = "/home/yuwenye/projects/human-in-the-loop/hardware/calib/workspace/flexiv/calib/out/cali_side/intrinsic.npy"
 
@@ -112,7 +112,7 @@ def main(rank, eval_cfg, device_ids):
     # run evaluation
     robot = FlexivRobot()
     gripper = FlexivGripper(robot)
-    cameras = [CameraD400(s) for s in camera_serial]
+    cameras = [CameraD400(s) for s in CAM_SERIAL]
     keyboard = Keyboard()
     max_episode_length = 400
     episode_list = [x for x in range(eval_cfg.num_episode) if (x + 1) % world_size == rank]

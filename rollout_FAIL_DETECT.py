@@ -24,6 +24,7 @@ from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
 from robot_env import RobotEnv, HUMAN, ROBOT, PRE_INTV, INTV, postprocess_action_mode
+from hardware.my_device.macros import CAM_SERIAL
 from util.episode_utils import EpisodeManager
 from FAIL_DETECT.eval import get_baseline_model, logpZO_UQ
 
@@ -112,8 +113,7 @@ def main(rank, eval_cfg, device_ids):
     num_round = int(match_round.group(1))
     
     # Initialize robot environment
-    camera_serial = ["135122075425", "135122070361"]
-    robot_env = RobotEnv(camera_serial, img_shape, fps)
+    robot_env = RobotEnv(camera_serial=CAM_SERIAL, img_shape=img_shape, fps=fps)
     
     # Initialize policy interaction helper
     episode_manager = EpisodeManager(

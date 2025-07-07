@@ -5,11 +5,8 @@ import argparse
 from scipy.spatial.transform import Rotation as R
 
 from robot_env import RobotEnv
-
+from hardware.my_device.macros import CAM_SERIAL
 from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
-
-camera_serial = ["135122075425", "135122070361"]
-
 
 def record(replay_buffer:ReplayBuffer, robot_env:RobotEnv):
     tcp_pose = []
@@ -72,7 +69,7 @@ def record(replay_buffer:ReplayBuffer, robot_env:RobotEnv):
 
 
 def main(args):
-    robot_env = RobotEnv(camera_serial=camera_serial, img_shape=[3]+args.resolution, fps=args.fps)
+    robot_env = RobotEnv(camera_serial=CAM_SERIAL, img_shape=[3]+args.resolution, fps=args.fps)
     zarr_path = os.path.join(args.output, 'replay_buffer.zarr')
     replay_buffer = ReplayBuffer.create_from_path(zarr_path, mode='a')
     while not robot_env.keyboard.quit:

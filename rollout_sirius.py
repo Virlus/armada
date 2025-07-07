@@ -20,10 +20,9 @@ from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
 from robot_env import RobotEnv, HUMAN, ROBOT, PRE_INTV, INTV, postprocess_action_mode
+from hardware.my_device.macros import CAM_SERIAL
 from util.episode_utils import EpisodeManager
 
-
-camera_serial = ["135122075425", "135122070361"]
 
 def main(rank, eval_cfg, device_ids):
     fps = 10  # TODO
@@ -104,7 +103,7 @@ def main(rank, eval_cfg, device_ids):
     num_round = int(match_round.group(1))
     
     # Initialize robot environment
-    robot_env = RobotEnv(camera_serial=camera_serial, img_shape=img_shape, fps=fps)
+    robot_env = RobotEnv(camera_serial=CAM_SERIAL, img_shape=img_shape, fps=fps)
 
     # Initialize EpisodeManager
     episode_manager = EpisodeManager(

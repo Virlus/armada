@@ -13,17 +13,14 @@ import dill
 import time
 from scipy.spatial.transform import Rotation as R
 import cv2
-from torchvision.transforms import Compose, Resize, CenterCrop
-from torchvision.transforms import InterpolationMode
 from PIL import Image
 
 from diffusion_policy.diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
-from hardware.my_device.robot import FlexivRobot, FlexivGripper
-from hardware.my_device.camera import CameraD400
-from hardware.my_device.keyboard import Keyboard
+from robot_env import RobotEnv
+from util.episode_utils import EpisodeManager
 
 camera_serial = ["135122075425", "135122070361"]
 
@@ -84,14 +81,6 @@ def main(rank, eval_cfg, device_ids):
     else:
         state_shape = cfg.task['shape_meta']['obs']['qpos']['shape']
 
-    BICUBIC = InterpolationMode.BICUBIC
-    # image_processor = Compose([Resize(img_shape[1:], interpolation=BICUBIC)])
-    side_image_processor = Compose([
-        Resize((img_shape[1]+8, img_shape[2]+8), interpolation=BICUBIC),
-        CenterCrop((img_shape[1], img_shape[2]))
-    ])
-    wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
-
     # Overwritten by evaluation config specifically
     seed = eval_cfg.seed
     np.random.seed(seed)
@@ -105,11 +94,25 @@ def main(rank, eval_cfg, device_ids):
         print(f"Created output directory: {output_dir}")
         save_img = True
 
-    # run evaluation
-    robot = FlexivRobot()
-    gripper = FlexivGripper(robot)
-    cameras = [CameraD400(s) for s in camera_serial]
-    keyboard = Keyboard()
+    # Initialize robot environment
+    robot_env = RobotEnv(camera_serial=camera_serial, img_shape=img_shape, fps=fps)
+    
+    # Initialize EpisodeManager
+    episode_manager = EpisodeManager(
+        policy=policy,
+        obs_rot_transformer=obs_rot_transformer,
+        action_rot_transformer=action_rot_transformer,
+        obs_feature_dim=ee_pose_dim,
+        img_shape=img_shape,
+        state_type=state_type,
+        state_shape=state_shape,
+        action_dim=action_dim,
+        To=To,
+        Ta=Ta,
+        device=device,
+        num_samples=1  # Single sample for evaluation
+    )
+
     max_episode_length = 400
     episode_list = [x for x in range(eval_cfg.num_episode) if (x + 1) % world_size == rank]
 
@@ -117,113 +120,76 @@ def main(rank, eval_cfg, device_ids):
         if episode_idx not in episode_list:
             continue
         print(f"Evaluation episode: {episode_idx}")
-        keyboard.finish = False
+        robot_env.keyboard.finish = False
         time.sleep(5)
 
-        img_0_history = torch.zeros((To, *img_shape), device=device)
-        img_1_history = torch.zeros((To, *img_shape), device=device)
-        state_history = torch.zeros((To, *state_shape), device=device)
-        action_seq = torch.zeros((Ta, action_dim), device=device)
-
+        # Reset robot environment
         if eval_cfg.random_init:
-            random_init_pose = robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
-            robot.send_tcp_pose(random_init_pose)
-            time.sleep(2)
+            random_init_pose = robot_env.robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
+            robot_env.reset_robot(random_init=True, random_init_pose=random_init_pose)
+        else:
+            robot_env.reset_robot()
 
+        # Reset episode manager and initialize observation history
+        episode_manager.reset_observation_history()
+
+        # Get initial state using RobotEnv
+        robot_state = robot_env.get_robot_state()
+        if 'ee_pose' in cfg.shape_meta['obs']:
+            initial_state = robot_state['tcp_pose']
+        else:
+            initial_state = robot_state['joint_pos']
+
+        # Use processed images from RobotEnv
+        policy_img_0 = robot_state['policy_side_img'] / 255.
+        policy_img_1 = robot_state['policy_wrist_img'] / 255.
+
+        # Initialize observation history using EpisodeManager
+        for idx in range(To):
+            episode_manager.update_observation(policy_img_0, policy_img_1, initial_state)
+
+        # Initialize pose tracking in EpisodeManager
         if eval_cfg.random_init:
-            last_p = random_init_pose[:3]
-            last_r = R.from_quat(random_init_pose[3:7], scalar_first=True)
+            episode_manager.initialize_pose(random_init_pose[:3], random_init_pose[3:7])
         else:
-            last_p = robot.init_pose[:3]
-            last_r = R.from_quat(robot.init_pose[3:7], scalar_first=True)
+            episode_manager.initialize_pose(robot_env.robot.init_pose[:3], robot_env.robot.init_pose[3:7])
 
-        if save_img:
-            cam_data = []
-            for camera in cameras:
-                color_image, _ = camera.get_data()
-                cam_data.append(color_image)
-            side_img = cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)
-            wrist_img = cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)
-            Image.fromarray(side_img).save(os.path.join(output_dir, f"side_{episode_idx}.png"))
-            Image.fromarray(wrist_img).save(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
+        # Handle scene alignment and image saving
+        if save_img or not os.path.isfile(os.path.join(output_dir, f"side_{episode_idx}.png")):
+            robot_env.save_scene_images(output_dir, episode_idx)
         else:
-            ref_side_img = cv2.imread(os.path.join(output_dir, f"side_{episode_idx}.png"))
-            ref_wrist_img = cv2.imread(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
-            cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
-            cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
-            # Ensure an identical configuration
-            while not keyboard.ctn:
-                cam_data = []
-                for camera in cameras:
-                    color_image, _ = camera.get_data()
-                    cam_data.append(color_image)
-                # ref_side_img = Image.open(os.path.join(output_dir, f"side_{episode_idx}.png"))
-                # ref_wrist_img = Image.open(os.path.join(output_dir, f"wrist_{episode_idx}.png"))
-                side_img = cam_data[0].copy()
-                wrist_img = cam_data[1].copy()
-                # Image.fromarray((np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8)).show()
-                # Image.fromarray((np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8)).show()
-                cv2.imshow("Side", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
-                cv2.imshow("Wrist", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
-                cv2.waitKey(1)
-            keyboard.ctn = False
-            cv2.destroyAllWindows() 
+            robot_env.align_scene_with_file(output_dir, episode_idx)
         
         # Policy inference
         j = 0
         while j < max_episode_length:
             # 'f' to end the episode
-            if keyboard.finish:
-                # robot.send_joint_pose(robot.home_joint_pos)
-                # time.sleep(1.5)
-                robot.send_tcp_pose(robot.init_pose)
-                time.sleep(6)
-                gripper.move(gripper.max_width)
-                time.sleep(4)
+            if robot_env.keyboard.finish:
+                robot_env.reset_robot()
                 print("Reset!")
                 break
+            
             start_time = time.time()
-            # _, state, _, _ = robot.get_robot_state()
+            
+            # Get state using RobotEnv
+            robot_state = robot_env.get_robot_state()
             if 'ee_pose' in cfg.shape_meta['obs']:
-                state = robot.get_robot_state()[0]
+                state = robot_state['tcp_pose']
             else:
-                state = robot.get_robot_state()[1]
-            state = np.array(state)
+                state = robot_state['joint_pos']
+            
+            # Use processed images from RobotEnv
+            img_0 = robot_state['policy_side_img'] / 255.
+            img_1 = robot_state['policy_wrist_img'] / 255.
 
-            if obs_rot_transformer is not None:
-                tmp_state = np.zeros((ee_pose_dim,))
-                tmp_state[:3] = state[:3]
-                tmp_state[3:] = obs_rot_transformer.forward(state[3:])
-                state = tmp_state
-            state = torch.from_numpy(state)
-            cam_data = []
-            for camera in cameras:
-                color_image, _ = camera.get_data()
-                cam_data.append(color_image)
-            img_0 = side_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[0].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
-            img_1 = wrist_image_processor(torch.from_numpy(cv2.cvtColor(cam_data[1].copy(), cv2.COLOR_BGR2RGB)).permute(2, 0, 1)) / 255.
-            if j == 0:
-                for idx in range(state_history.shape[0]):
-                    img_0_history[idx] = img_0
-                    img_1_history[idx] = img_1
-                    state_history[idx] = state
-            else:
-                # Update the observation history
-                img_0_history[:-1] = img_0_history[1:]
-                img_0_history[-1] = img_0
-                img_1_history[:-1] = img_1_history[1:]
-                img_1_history[-1] = img_1
-                state_history[:-1] = state_history[1:]
-                state_history[-1] = state
-            curr_obs = {
-                'side_img': img_0_history.unsqueeze(0),
-                'wrist_img': img_1_history.unsqueeze(0),
-                state_type: state_history.unsqueeze(0)
-            }
-            # Predict qpos actions
+            # Update observation history using EpisodeManager
+            episode_manager.update_observation(img_0, img_1, state)
+
+            # Get policy observation and predict actions
+            curr_obs = episode_manager.get_policy_observation()
             curr_action = policy.predict_action(curr_obs)
             np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
-            action_seq = np_action_dict['action'][0, :Ta]
+            action_seq = np_action_dict['action'][0][:Ta]
 
             # Derive the action chunk
             if not rel_ee_pose:
@@ -234,33 +200,27 @@ def main(rank, eval_cfg, device_ids):
             for step in range(Ta):
                 if step > 0:
                     start_time = time.time()
+                
                 # Action calculation
                 if rel_ee_pose:
-                    curr_p = last_p + action_seq[step, :3]
-                    curr_quat = action_rot_transformer.inverse(action_seq[step, 3:action_dim-1])
-                    action_rot = R.from_quat(curr_quat, scalar_first=True)
-                    curr_r = last_r * action_rot
-                    last_p = curr_p
-                    last_r = curr_r
+                    # Get absolute action using EpisodeManager
+                    deployed_action, gripper_action, curr_p, curr_r, curr_p_action, curr_r_action = episode_manager.get_absolute_action_for_step(
+                        action_seq[np.newaxis, :], step
+                    )
                 else:
                     curr_p = p_chunk[step]
                     curr_r = r_chunk[step]
+                    deployed_action = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True)), 0)
+                    gripper_action = [action_seq[step, -1]]
 
-                robot.send_tcp_pose(np.concatenate((curr_p, curr_r.as_quat(scalar_first=True)), 0))
-                # target_width = gripper.max_width if action_seq[step, -1] < 0.5 else 0 # Threshold could be adjusted at inference time
-                target_width = action_seq[step, -1]
-                gripper.move(target_width)
+                # Deploy action using RobotEnv
+                robot_env.deploy_action(deployed_action, gripper_action[0])
+                
                 time.sleep(max(1 / fps - (time.time() - start_time), 0))
                 j += 1
 
-
         if j == max_episode_length:
-            # robot.send_joint_pose(robot.home_joint_pos)
-            # time.sleep(1.5)
-            robot.send_tcp_pose(robot.init_pose)
-            time.sleep(6)
-            gripper.move(gripper.max_width)
-            time.sleep(4)
+            robot_env.reset_robot()
             print("Reset!")
 
     torch.distributed.destroy_process_group()

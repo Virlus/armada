@@ -22,7 +22,7 @@ def main(args):
     camera_serial = ["135122075425", "135122070361"]
     img_shape = [3, 224, 224]
     fps = 10
-    robot_env = RobotEnv(camera_serial, img_shape, fps)
+    # robot_env = RobotEnv(camera_serial, img_shape, fps)
     replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=None)
 
     # If there exists visual reference for initial state, load it before rollout
@@ -58,34 +58,62 @@ def main(args):
     print(f"Success rate in this round: {success_rate * 100:.2f}%")
     import pdb; pdb.set_trace()
 
-    ## ============================================================================================================================================================ ###
+    # ============================================================================================================================================================ ###
 
-    ### ==================================================== Calculate TPR and TNR for failure-detection-embodied rollouts ========================================= ###
+    ## ==================================================== Calculate TPR and TNR for failure-detection-embodied rollouts on episode level========================================= ###
 
-    # TPR_buffer = [] # True indicates failed trajectories
-    # TNR_buffer = []
+    TPR_buffer = [] # True indicates failed trajectories
+    TNR_buffer = []
 
-    # for i in range(args.start_index, replay_buffer.n_episodes):
-    #     curr_action_mode = replay_buffer['action_mode'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
-    #     curr_failure_indices = replay_buffer['failure_indices'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
-    #     if np.sum(curr_action_mode == INTV) == 0:
-    #         if np.sum(curr_failure_indices) == 0:
-    #             TNR_buffer.append(1.0)
-    #         else:
-    #             TNR_buffer.append(0.0)
-    #     else:
-    #         if np.sum(curr_failure_indices) > 0:
-    #             TPR_buffer.append(1.0)
-    #         else:
-    #             TPR_buffer.append(0.0)
+    for i in range(args.start_index, replay_buffer.n_episodes):
+        curr_action_mode = replay_buffer['action_mode'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
+        curr_failure_indices = replay_buffer['failure_indices'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
+        if np.sum(curr_action_mode == INTV) == 0:
+            if np.sum(curr_failure_indices) == 0:
+                TNR_buffer.append(1.0)
+            else:
+                TNR_buffer.append(0.0)
+        else:
+            if np.sum(curr_failure_indices) > 0:
+                TPR_buffer.append(1.0)
+            else:
+                TPR_buffer.append(0.0)
 
-    # print(f"TPR: {np.mean(TPR_buffer) * 100:.2f}%, TNR: {np.mean(TNR_buffer) * 100:.2f}%")
-    # print(f"Accuracy: {np.mean(TPR_buffer) * 50 + np.mean(TNR_buffer) * 50:.2f}%")
-    # print(f"Weighted Accuracy: {np.mean(TPR_buffer) * success_rate * 100 + np.mean(TNR_buffer) * (1 - success_rate) * 100:.2f}%")
+    print(f"Episode-level TPR: {np.mean(TPR_buffer) * 100:.2f}%, Episode-level TNR: {np.mean(TNR_buffer) * 100:.2f}%")
+    print(f"Episode-level Accuracy: {np.mean(TPR_buffer) * 50 + np.mean(TNR_buffer) * 50:.2f}%")
+    print(f"Episode-level Weighted Accuracy: {np.mean(TPR_buffer) * success_rate * 100 + np.mean(TNR_buffer) * (1 - success_rate) * 100:.2f}%")
 
-    # import pdb; pdb.set_trace()
+    import pdb; pdb.set_trace()
 
     ### ============================================================================================================================================================ ###
+
+# ============================================================================================================================================================ ###
+
+    ## ==================================================== Calculate TPR and TNR for failure-detection-embodied rollouts on sample level========================================= ###
+
+    TNR_buffer = []
+    total_sample_count = 0
+
+    for i in range(args.start_index, replay_buffer.n_episodes):
+        curr_action_mode = replay_buffer['action_mode'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
+        curr_failure_indices = replay_buffer['failure_indices'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
+        if np.sum(curr_action_mode == INTV) == 0:
+            if np.sum(curr_failure_indices) == 0:
+                TNR_buffer.append(curr_action_mode.shape[0])
+            else:
+                TNR_buffer.append(curr_action_mode.shape[0] - np.sum(curr_failure_indices))
+            total_sample_count += curr_action_mode.shape[0]
+        else:
+            first_failure_index = np.where(curr_action_mode == INTV)[0][0]
+            total_sample_count += first_failure_index
+            TNR_buffer.append(first_failure_index - np.sum(curr_failure_indices[:first_failure_index]))
+
+    print(f"Sample-level TNR: {np.sum(TNR_buffer) / total_sample_count * 100:.2f}%")
+
+    import pdb; pdb.set_trace()
+
+    ### ============================================================================================================================================================ ###
+
 
     ### ============================================== Replay on real robot while saving image observations ===================================================== ###
 

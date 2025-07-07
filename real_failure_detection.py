@@ -485,6 +485,15 @@ def main(rank, eval_cfg, device_ids):
                     device=device,
                     max_episode_length=max_episode_length
                 )
+
+                # Ensure the last action is included in the action inconsistency task
+                failure_detector.submit_action_inconsistency_task(
+                    action_seq=action_seq,
+                    predicted_abs_actions=predicted_abs_actions,
+                    idx=idx,
+                    last_p=episode_manager.last_p,
+                    last_r=episode_manager.last_r
+                )
                 
                 # Wait for final results and empty queues
                 failure_detector.empty_queue()
@@ -500,6 +509,9 @@ def main(rank, eval_cfg, device_ids):
                         expert_indices = result["expert_indices"]
                         greedy_ot_plan = result["greedy_ot_plan"]
                         greedy_ot_cost = result["greedy_ot_cost"]
+                    elif result["task_type"] == "action_inconsistency":
+                        # Update with the latest action inconsistency results
+                        action_inconsistency_buffer.extend([result["action_inconsistency"]] * Ta)
                 failure_detector.empty_result_queue()
                 
                 # Process human intervention if requested

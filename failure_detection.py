@@ -283,7 +283,7 @@ class FailureDetector:
             try:
                 while not self.async_result_queue.empty():
                     result = self.async_result_queue.get_nowait()
-                    if result["task_type"] == "ot_matching":
+                    if result["task_type"] == "ot_matching" or result["task_type"] == "action_inconsistency":
                         results.append(result)
             except queue.Empty:
                 time.sleep(0.01)

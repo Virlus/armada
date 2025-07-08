@@ -137,6 +137,7 @@ def main(rank, cfg, device_ids):
     predictor = FunctionalPredictor(modulation_type=ModulationType.Tfunc, regression_type=RegressionType.Mean)
     target_traj = predictor.get_one_sided_prediction_band(logpZO_list[:n_train], logpZO_list[-n_train:], alpha=0.05, lower_bound=False).flatten()
     np.savez(f"/home/yuwenye/project/human-in-the-loop/baseline_data/outputs/{exp_name}/target_traj.npz", target_traj=target_traj)
+    torch.save(normalizer, f"/home/yuwenye/project/human-in-the-loop/baseline_data/outputs/{exp_name}/normalizer.pt")
     torch.distributed.destroy_process_group()
 
 

@@ -77,6 +77,7 @@ def main(rank, eval_cfg, device_ids):
 
     # get baseline model
     baseline_model = get_baseline_model(eval_cfg.baseline_model_path, device=device)
+    baseline_normalizer = torch.load(eval_cfg.baseline_normalizer_path)
     logpZO_upper_bound = np.load(eval_cfg.baseline_stats_path)['target_traj']
 
     # Extract some hyperparameters from the config
@@ -289,7 +290,7 @@ def main(rank, eval_cfg, device_ids):
                         j += 1
 
                     # FAIL-DETECT: Baseline failure detection module
-                    normalized_obs = policy.normalizer.normalize(policy_obs)
+                    normalized_obs = baseline_normalizer.normalize(policy_obs)
                     this_nobs = dict_apply(normalized_obs, lambda x: x[:, :policy.n_obs_steps, ...].reshape(-1, *x.shape[2:]))
                     nobs_features = policy.obs_encoder.get_dense_feats(this_nobs)
                     global_cond = nobs_features.reshape(1, -1)

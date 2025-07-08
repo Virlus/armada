@@ -11,6 +11,7 @@ seed: 6
 # Failure detection hyperparameters
 baseline_model_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0620_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95_dense_feats/baseline.pt
 baseline_stats_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0620_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95_dense_feats/target_traj.npz
+baseline_normalizer_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0620_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95_dense_feats/normalizer.pt
 post_process_action_mode: False
 
 policy:

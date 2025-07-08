@@ -78,6 +78,7 @@ def main(rank, eval_cfg, device_ids):
     # get baseline model
     baseline_model = get_baseline_model(eval_cfg.baseline_model_path, device=device)
     baseline_normalizer = torch.load(eval_cfg.baseline_normalizer_path)
+    baseline_normalizer.to(device)
     logpZO_upper_bound = np.load(eval_cfg.baseline_stats_path)['target_traj']
 
     # Extract some hyperparameters from the config

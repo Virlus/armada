@@ -1,12 +1,12 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0627_20.08.05_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_mug_initial/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/mug/0627_mug_sirius_round1
-save_buffer_path: /mnt/workspace/DP/mug/0627_mug_sirius_round2
-output_dir: diffusion_policy/outputs/visual/0627_mug_rollout_round1
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/pour/0707_13.02.02_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_0627_pour_sirius_round2/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/pour/0627_pour_sirius_round3_1
+save_buffer_path: /mnt/workspace/DP/pour/0627_pour_sirius_round3_2
+output_dir: diffusion_policy/outputs/visual/0627_pour_rollout_round3
 
 Ta: 8
 random_init: True
-seed: 0
+seed: 2
 
 policy:
   num_inference_steps: 8

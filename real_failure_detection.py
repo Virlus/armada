@@ -110,6 +110,11 @@ def main(rank, eval_cfg, device_ids):
     action_inconsistency_percentile = eval_cfg.action_inconsistency_percentile
     ot_percentile = eval_cfg.ot_percentile
     soft_ot_ratio = eval_cfg.soft_ot_ratio
+    enable_action_inconsistency = eval_cfg.enable_action_inconsistency
+    
+    # Optimize num_samples when action inconsistency is disabled
+    if not enable_action_inconsistency:
+        num_samples = 1
 
     save_img = False
     output_dir = os.path.join(eval_cfg.output_dir, f"seed_{seed}")
@@ -150,7 +155,8 @@ def main(rank, eval_cfg, device_ids):
         action_inconsistency_percentile=action_inconsistency_percentile,
         ot_percentile=ot_percentile,
         max_queue_size=3,
-        episode_manager=episode_manager
+        episode_manager=episode_manager,
+        enable_action_inconsistency=enable_action_inconsistency
     )
     failure_detector.start_async_processing()
     
@@ -379,18 +385,19 @@ def main(rank, eval_cfg, device_ids):
 
                     # Submit action inconsistency task asynchronously
                     idx = j // Ta - 1
-                    failure_detector.submit_action_inconsistency_task(
-                        action_seq=action_seq,
-                        predicted_abs_actions=predicted_abs_actions,
-                        idx=idx,
-                        last_p=episode_manager.last_p,
-                        last_r=episode_manager.last_r
-                    )
+                    if enable_action_inconsistency:
+                        failure_detector.submit_action_inconsistency_task(
+                            action_seq=action_seq,
+                            predicted_abs_actions=predicted_abs_actions,
+                            idx=idx,
+                            last_p=episode_manager.last_p,
+                            last_r=episode_manager.last_r
+                        )
                     
                     # Update rollout latent for this timestep
                     rollout_latent[idx] = curr_latent
                     
-                    # Submit OT matching task asynchronously
+                    # Submit OT matching task asynchronously (always enabled)
                     candidate_expert_latents = [all_human_latent[i] for i in candidate_expert_indices]
                     failure_detector.submit_ot_matching_task(
                         rollout_latent=rollout_latent.clone(),
@@ -423,6 +430,13 @@ def main(rank, eval_cfg, device_ids):
                             expert_indices = result["expert_indices"]
                             greedy_ot_plan = result["greedy_ot_plan"]
                             greedy_ot_cost = result["greedy_ot_cost"]
+
+                            # If action inconsistency is disabled, pad buffer with zeros
+                            if not enable_action_inconsistency:
+                                current_buffer_length = len(action_inconsistency_buffer)
+                                expected_length = (result["idx"] + 1) * Ta
+                                if current_buffer_length < expected_length:
+                                    action_inconsistency_buffer.extend([0] * (expected_length - current_buffer_length))
                             
                             # Submit failure detection task
                             failure_detector.submit_failure_detection_task(
@@ -463,7 +477,7 @@ def main(rank, eval_cfg, device_ids):
                             print("False Positive failure! Continue policy rollout.")
                             robot_env.keyboard.ctn = False
                             # Temporarily ignore threshold if action inconsistency triggered false positive
-                            if failure_reason == "action inconsistency":
+                            if failure_reason == "action inconsistency" and enable_action_inconsistency:
                                 failure_detector.expert_action_threshold = np.inf
                             continue
                         elif robot_env.keyboard.ctn and j >= max_episode_length - Ta:
@@ -472,7 +486,7 @@ def main(rank, eval_cfg, device_ids):
                             robot_env.keyboard.help = True
                             break
 
-                # Ensure we have final OT results before human intervention
+                # Ensure we have final OT results before human intervention (always enabled)
                 failure_detector.submit_ot_matching_task(
                     rollout_latent=rollout_latent.clone(),
                     idx=idx,
@@ -487,13 +501,14 @@ def main(rank, eval_cfg, device_ids):
                 )
 
                 # Ensure the last action is included in the action inconsistency task
-                failure_detector.submit_action_inconsistency_task(
-                    action_seq=action_seq,
-                    predicted_abs_actions=predicted_abs_actions,
-                    idx=idx,
-                    last_p=episode_manager.last_p,
-                    last_r=episode_manager.last_r
-                )
+                if enable_action_inconsistency:
+                    failure_detector.submit_action_inconsistency_task(
+                        action_seq=action_seq,
+                        predicted_abs_actions=predicted_abs_actions,
+                        idx=idx,
+                        last_p=episode_manager.last_p,
+                        last_r=episode_manager.last_r
+                    )
                 
                 # Wait for final results and empty queues
                 failure_detector.empty_queue()
@@ -562,7 +577,8 @@ def main(rank, eval_cfg, device_ids):
                         joint_pos.pop()
                         prev_action = action.pop()
                         action_mode.pop()
-                        action_inconsistency_buffer.pop()
+                        if enable_action_inconsistency:
+                            action_inconsistency_buffer.pop()
                         
                         # Rewind robot by applying inverse action
                         curr_pos, curr_rot = robot_env.rewind_robot(
@@ -637,6 +653,9 @@ def main(rank, eval_cfg, device_ids):
 
                 # Identify if the rollout is successful
                 success = robot_env.keyboard.finish and INTV not in action_mode
+
+                if not enable_action_inconsistency:
+                    action_inconsistency_buffer = [0] * j
                 
                 # Update thresholds based on episode outcome
                 if success:
@@ -648,20 +667,29 @@ def main(rank, eval_cfg, device_ids):
                     )
                     if len(failure_logs) > 0: # False positive
                         ot_fp = OT in failure_logs.values()
-                        action_fp = ACTION_INCONSISTENCY in failure_logs.values()
+                        action_fp = ACTION_INCONSISTENCY in failure_logs.values() and enable_action_inconsistency
                         assert ot_fp or action_fp
                         failure_detector.update_percentile_fp(ot_fp=ot_fp, action_fp=action_fp)
                         
                         print("False positive trajectory! Raising percentiles...")
                     
-                    print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 
-                    f"OT={failure_detector.expert_ot_threshold}")
+                    thresholds_msg = "Updated thresholds: "
+                    if enable_action_inconsistency:
+                        thresholds_msg += f"action={failure_detector.expert_action_threshold}, "
+                    thresholds_msg += f"OT={failure_detector.expert_ot_threshold}"
+                    print(thresholds_msg)
                 else:
-                    if len(failure_logs) == 0 and len(failure_detector.success_ot_values) > 0: # False negative
+                    # Check for false negative (only if we have data to work with)
+                    has_ot_data = len(failure_detector.success_ot_values) > 0
+                    has_action_data = enable_action_inconsistency and len(failure_detector.success_action_inconsistencies) > 0
+                    if len(failure_logs) == 0 and (has_ot_data or has_action_data): # False negative
                         failure_detector.update_percentile_fn()
                         print("False negative trajectory! Lowering percentiles...")
-                        print(f"Updated thresholds: action={failure_detector.expert_action_threshold}, " 
-                              f"OT={failure_detector.expert_ot_threshold}")
+                        thresholds_msg = "Updated thresholds: "
+                        if enable_action_inconsistency:
+                            thresholds_msg += f"action={failure_detector.expert_action_threshold}, "
+                        thresholds_msg += f"OT={failure_detector.expert_ot_threshold}"
+                        print(thresholds_msg)
                 
                 # Save episode data if finished
                 if robot_env.keyboard.finish:

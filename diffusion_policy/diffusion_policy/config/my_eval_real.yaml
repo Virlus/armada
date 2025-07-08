@@ -1,6 +1,6 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/third_party/diffusion_policy/data/checkpoints/mug/0611_01.40.58_train_diffusion_transformer_hybrid_dino_multi_gpu_mug_dagger_round1/epoch=0150-train_loss=0.040.ckpt
-output_dir: outputs/visual/0611_mug_rollout_round3
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0706_11.06.54_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_mug_ours_dagger_round2/latest.ckpt
+output_dir: outputs/visual/debug
 
 Ta: 8
 num_episode: 20

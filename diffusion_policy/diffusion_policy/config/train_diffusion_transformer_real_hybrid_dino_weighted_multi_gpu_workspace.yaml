@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - task: weighted_mytask
+  - task: sirius_mytask
 
 device_ids: '0,1,2,3'
 output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
@@ -110,12 +110,12 @@ training:
   seed: 42
   debug: False
   resume: True
-  resume_path: outputs/2025.05.18/18.22.23_train_diffusion_transformer_hybrid_multi_gpu_pouring_dino_base_cluttered
+  resume_path: outputs/2025.07.11/10.53.46_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_0710_mango_in_drawer_sirius_round1
   # optimization
   lr_scheduler: cosine
   # Transformer needs LR warmup
   lr_warmup_steps: 500
-  num_epochs: 300
+  num_epochs: 150
   gradient_accumulate_every: 1
   # EMA destroys performance when used with BatchNorm
   # replace BatchNorm with GroupNorm.
@@ -135,7 +135,7 @@ training:
 logging:
   project: human-in-the-loop
   resume: True
-  mode: online
+  mode: offline
   name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
   tags: ["${name}", "${task_name}", "${exp_name}"]
   id: null

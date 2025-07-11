@@ -741,13 +741,6 @@ def main(rank, eval_cfg, device_ids):
             
             episode_idx += 1
             
-            # Check if we should stop based on intervention ratio
-            print(f"Current human intervention ratio: {np.sum(replay_buffer.data['action_mode'] == INTV) * 100 / np.sum(replay_buffer.data['action_mode'] != HUMAN)} %")
-            if np.sum(replay_buffer.data['action_mode'] == INTV) * 3 / num_round >= np.sum(replay_buffer.data['action_mode'] == HUMAN):
-                break
-                
-            print(f"Current progress: {np.sum(replay_buffer.data['action_mode'] == INTV) * 300 / num_round / np.sum(replay_buffer.data['action_mode'] == HUMAN)} %")
-            
             # For scene configuration reset
             time.sleep(5)
     

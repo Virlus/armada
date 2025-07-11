@@ -65,10 +65,13 @@ def main(args):
     TPR_buffer = [] # True indicates failed trajectories
     TNR_buffer = []
 
+    failure_detection_activated = False
+
     for i in range(args.start_index, replay_buffer.n_episodes):
         curr_action_mode = replay_buffer['action_mode'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
         curr_failure_indices = replay_buffer['failure_indices'][replay_buffer.episode_ends[i-1]:replay_buffer.episode_ends[i]]
         if np.sum(curr_action_mode == INTV) == 0:
+            failure_detection_activated = True
             if np.sum(curr_failure_indices) == 0:
                 TNR_buffer.append(1.0)
             else:
@@ -77,7 +80,8 @@ def main(args):
             if np.sum(curr_failure_indices) > 0:
                 TPR_buffer.append(1.0)
             else:
-                TPR_buffer.append(0.0)
+                if failure_detection_activated:
+                    TPR_buffer.append(0.0)
 
     print(f"Episode-level TPR: {np.mean(TPR_buffer) * 100:.2f}%, Episode-level TNR: {np.mean(TNR_buffer) * 100:.2f}%")
     print(f"Episode-level Accuracy: {np.mean(TPR_buffer) * 50 + np.mean(TNR_buffer) * 50:.2f}%")

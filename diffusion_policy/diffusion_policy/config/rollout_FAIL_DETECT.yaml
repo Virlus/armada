@@ -1,18 +1,22 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0627_20.08.05_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_mug_initial/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/mug/0627_mug_FAIL_DETECT_round1
-save_buffer_path: /mnt/workspace/DP/mug/0627_mug_FAIL_DETECT_round1_2
-output_dir: diffusion_policy/outputs/visual/0627_mug_rollout_round1
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/pour/0627_19.09.36_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_pour_initial/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/pour/0627_pour
+save_buffer_path: /mnt/workspace/DP/pour/0627_pour_FAIL_DETECT_round1
+output_dir: diffusion_policy/outputs/visual/0627_pour_rollout_round1
 
 Ta: 8
 random_init: True
 seed: 0
 
+# Failure detection configuration
+failure_detection_module: baseline_logp
+
 # Failure detection hyperparameters
-baseline_model_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0627_mug_ours_dagger_round1/baseline.pt
-baseline_stats_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0627_mug_ours_dagger_round1/target_traj.npz
-baseline_normalizer_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0627_mug_ours_dagger_round1/normalizer.pt
+baseline_model_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0627_pour_ours_dagger_round1/baseline.pt
+baseline_stats_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0627_pour_ours_dagger_round1/target_traj.npz
+baseline_normalizer_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/baseline_data/0627_pour_ours_dagger_round1/normalizer.pt
 post_process_action_mode: False
+sirius_termination: False
 
 policy:
   num_inference_steps: 8

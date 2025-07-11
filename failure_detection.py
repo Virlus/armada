@@ -71,7 +71,6 @@ class FailureDetector:
                 task_type = data["task_type"]
                 
                 if task_type == "ot_matching":
-                    ot_start_time = time.time()
                     # OT Matching task
                     idx = data["idx"]
                     rollout_latent = data["rollout_latent"]
@@ -82,8 +81,6 @@ class FailureDetector:
                         data["candidate_expert_indices"], 
                         rollout_latent[:idx+1]
                     )
-
-                    print(f"Rematch expert episode time: {time.time() - ot_start_time} seconds")
                     
                     matched_human_idx = data["human_demo_indices"][candidate_expert_indices[0]]
                     human_latent = data["all_human_latent"][matched_human_idx]
@@ -94,8 +91,6 @@ class FailureDetector:
                     # Compute OT plan and cost
                     Ta = data["Ta"]
                     max_episode_length = data["max_episode_length"]
-
-                    ot_start_time = time.time()
                     
                     partial_dist_mat = torch.cat((
                         cosine_distance(human_latent, rollout_latent[:idx+1]).to(data["device"]).detach(), 
@@ -124,10 +119,7 @@ class FailureDetector:
                         torch.zeros((max_episode_length // Ta - idx - 1,), device=data["device"])
                     ), 0)
 
-                    print(f"OT computation time: {time.time() - ot_start_time} seconds")
-
                 elif task_type == "action_inconsistency":
-                    action_inconsistency_start_time = time.time()
                     action_seq = data["action_seq"]
                     predicted_abs_actions = data["predicted_abs_actions"]
                     idx = data["idx"]
@@ -152,8 +144,6 @@ class FailureDetector:
                         self.last_predicted_abs_actions = np.concatenate((np.zeros((Ta, 8)), predicted_abs_actions[0, :-Ta]), 0) # Prevent anomalous value in the beginning
                     action_inconsistency = np.mean(np.linalg.norm(predicted_abs_actions[:, :-Ta] - self.last_predicted_abs_actions[np.newaxis, Ta:], axis=-1))
                     self.last_predicted_abs_actions = predicted_abs_actions[0]
-                    action_inconsistency_end_time = time.time()
-                    print(f"Action inconsistency calculation time: {action_inconsistency_end_time - action_inconsistency_start_time} seconds")
                     result = {
                         "task_type": "action_inconsistency",
                         "action_inconsistency": action_inconsistency,

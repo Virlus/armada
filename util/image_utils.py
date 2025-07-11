@@ -4,7 +4,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.transforms import BlendedGenericTransform
 from PIL import Image
 import torch
-
+from robot_env import INTV
 
 def process_image(array, size, highlight=False, color = [255, 0, 0]):
     """Process image for visualization with optional highlighting border"""
@@ -92,7 +92,7 @@ def create_failure_visualization(action_inconsistency_buffer, greedy_ot_plan, gr
         rollout_array = episode['side_cam'][int(x * Ta)]
         if x in failure_indices:
             img = process_image(rollout_array, (100, 100), highlight=True, color=[0,0,255])
-        elif episode['action_mode'][int(x * Ta)] == 3:  # INTV value
+        elif episode['action_mode'][int(x * Ta)] == INTV:  # INTV value
             img = process_image(rollout_array, (100, 100), highlight=True)
         else:
             img = process_image(rollout_array, (100, 100), highlight=False)

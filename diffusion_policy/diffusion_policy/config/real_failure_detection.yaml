@@ -1,12 +1,15 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0627_20.08.05_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_mug_initial/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/mug/0627_mug
-save_buffer_path: /mnt/workspace/DP/mug/0627_mug_debug_round1
-output_dir: diffusion_policy/outputs/visual/0627_mug_rollout_round1
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/pour/0627_19.09.36_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_pour_initial/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/pour/0627_pour
+save_buffer_path: /mnt/workspace/DP/pour/0627_pour_test_code_round1
+output_dir: diffusion_policy/outputs/visual/0627_pour_rollout_round1
 
 Ta: 8
 random_init: True
 seed: 0
+
+# Failure detection configuration
+failure_detection_module: action_inconsistency_ot
 
 # Failure detection hyperparameters
 enable_action_inconsistency: True
@@ -19,6 +22,7 @@ soft_ot_ratio: 0.2
 
 # Sirius-related hyperparameters
 post_process_action_mode: False
+sirius_termination: False
 
 policy:
   num_inference_steps: 8

@@ -1,12 +1,19 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/pour/0707_13.02.02_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_0627_pour_sirius_round2/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/pour/0627_pour_sirius_round3_1
-save_buffer_path: /mnt/workspace/DP/pour/0627_pour_sirius_round3_2
-output_dir: diffusion_policy/outputs/visual/0627_pour_rollout_round3
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mango_in_drawer/0710_11.57.11_train_diffusion_transformer_hybrid_dino_multi_gpu_0710_mango_in_drawer_initial/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer
+save_buffer_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_sirius_round1
+output_dir: diffusion_policy/outputs/visual/0710_mango_in_drawer_rollout_round1
 
 Ta: 8
 random_init: True
-seed: 2
+seed: 0
+
+# No failure detection for Sirius rollout
+# failure_detection_module: null
+
+# Sirius-related hyperparameters  
+post_process_action_mode: True
+sirius_termination: True
 
 policy:
   num_inference_steps: 8

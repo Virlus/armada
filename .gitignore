@@ -10,6 +10,7 @@ tmp_*
 baseline_data/
 baseline_data
 third_party/multi_gpu_dp
+outputs/
 
 *.png
 *.jpg

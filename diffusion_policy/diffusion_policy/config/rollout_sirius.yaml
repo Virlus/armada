@@ -8,5 +8,12 @@ Ta: 8
 random_init: True
 seed: 2
 
+# No failure detection for Sirius rollout
+# failure_detection_module: null
+
+# Sirius-related hyperparameters  
+post_process_action_mode: True
+sirius_termination: True
+
 policy:
   num_inference_steps: 8

@@ -8,7 +8,7 @@ import tqdm
 import cv2
 
 from diffusion_policy.diffusion_policy.env_runner.real_robot_runner import FailureDetectionModule
-from failure_detection import FailureDetector
+from failure_detection.failure_detector import FailureDetector
 from robot_env import INTV, HUMAN
 from util.image_utils import create_failure_visualization
 
@@ -156,7 +156,6 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
     def detect_failure(self, **kwargs) -> Tuple[bool, Optional[str]]:
         """Detect if failure occurred based on action inconsistency and OT matching"""
         timestep = kwargs.get('timestep', 0)
-        failure_data = kwargs.get('failure_data', {})
         max_episode_length = kwargs.get('max_episode_length', self.max_episode_length)
         
         # Get results from the failure detector
@@ -166,8 +165,39 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         
         for result in results:
             idx = timestep // self.Ta - 1
+
+            # Process any available async results
+            if result["task_type"] == "ot_matching" and result["idx"] <= idx:
+                # Update with latest OT results
+                self.matched_human_idx = result["matched_human_idx"]
+                self.human_latent = result["human_latent"]
+                self.demo_len = result["demo_len"]
+                self.expert_weight = result["expert_weight"]
+                self.expert_indices = result["expert_indices"]
+                self.greedy_ot_plan = result["greedy_ot_plan"]
+                self.greedy_ot_cost = result["greedy_ot_cost"]
+                
+                # If action inconsistency is disabled, pad buffer with zeros
+                if not self.enable_action_inconsistency:
+                    current_buffer_length = len(self.action_inconsistency_buffer)
+                    expected_length = (result["idx"] + 1) * self.Ta
+                    if current_buffer_length < expected_length:
+                        self.action_inconsistency_buffer.extend([0] * (expected_length - current_buffer_length))
+                
+                # Submit failure detection task
+                self.failure_detector.submit_failure_detection_task(
+                    action_inconsistency_buffer=self.action_inconsistency_buffer[:int(result["idx"] + 1) * self.Ta].copy(),
+                    idx=result["idx"],
+                    greedy_ot_cost=self.greedy_ot_cost.clone(),
+                    greedy_ot_plan=self.greedy_ot_plan.clone(),
+                    max_episode_length=self.max_episode_length
+                )
             
-            if result["task_type"] == "failure_detection" and result["idx"] <= idx:
+            elif result["task_type"] == "action_inconsistency" and result["idx"] <= idx:
+                # Track action inconsistency for failure detection
+                self.action_inconsistency_buffer.extend([result["action_inconsistency"]] * self.Ta)
+            
+            elif result["task_type"] == "failure_detection" and result["idx"] <= idx:
                 failure_flag = result["failure_flag"]
                 failure_reason = result["failure_reason"]
                 
@@ -195,8 +225,6 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             # Initialize episode-specific data
             self.action_inconsistency_buffer = []
             self.failure_logs = OrderedDict()
-
-            import pdb; pdb.set_trace()
             
             # Match the current rollout with the closest expert episode
             rollout_init_latent = self.episode_manager.extract_latent().unsqueeze(0)
@@ -257,41 +285,6 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
                     device=self.device,
                     max_episode_length=self.max_episode_length
                 )
-            
-            # Process any available async results
-            results = self.failure_detector.get_results()
-            for result in results:
-                if result["task_type"] == "ot_matching" and result["idx"] <= idx:
-                    # Update with latest OT results
-                    self.matched_human_idx = result["matched_human_idx"]
-                    self.human_latent = result["human_latent"]
-                    self.demo_len = result["demo_len"]
-                    self.expert_weight = result["expert_weight"]
-                    self.expert_indices = result["expert_indices"]
-                    self.greedy_ot_plan = result["greedy_ot_plan"]
-                    self.greedy_ot_cost = result["greedy_ot_cost"]
-                    
-                    # If action inconsistency is disabled, pad buffer with zeros
-                    if not self.enable_action_inconsistency:
-                        current_buffer_length = len(self.action_inconsistency_buffer)
-                        expected_length = (result["idx"] + 1) * self.Ta
-                        if current_buffer_length < expected_length:
-                            self.action_inconsistency_buffer.extend([0] * (expected_length - current_buffer_length))
-                    
-                    # Submit failure detection task
-                    self.failure_detector.submit_failure_detection_task(
-                        action_inconsistency_buffer=self.action_inconsistency_buffer[:int(result["idx"] + 1) * self.Ta].copy(),
-                        idx=result["idx"],
-                        greedy_ot_cost=self.greedy_ot_cost.clone(),
-                        greedy_ot_plan=self.greedy_ot_plan.clone(),
-                        max_episode_length=self.max_episode_length
-                    )
-                
-                elif result["task_type"] == "action_inconsistency" and result["idx"] <= idx:
-                    # Track action inconsistency for failure detection
-                    self.action_inconsistency_buffer.extend([result["action_inconsistency"]] * self.Ta)
-            
-            return {'ot_cost': self.greedy_ot_cost[idx] if idx < len(self.greedy_ot_cost) else 0}
         
         return {}
     
@@ -340,6 +333,8 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
                 action_fp = 1 in self.failure_logs.values() and self.enable_action_inconsistency  # ACTION_INCONSISTENCY
                 self.failure_detector.update_percentile_fp(ot_fp=ot_fp, action_fp=action_fp)
                 print("False positive trajectory! Raising percentiles...")
+            print("OT threshold: ", self.failure_detector.expert_ot_threshold)
+            print("Action inconsistency threshold: ", self.failure_detector.expert_action_threshold)
         else:
             # Check for false negative
             has_ot_data = len(self.failure_detector.success_ot_values) > 0
@@ -347,6 +342,8 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             if len(self.failure_logs) == 0 and (has_ot_data or has_action_data):
                 self.failure_detector.update_percentile_fn()
                 print("False negative trajectory! Lowering percentiles...")
+                print("OT threshold: ", self.failure_detector.expert_ot_threshold)
+                print("Action inconsistency threshold: ", self.failure_detector.expert_action_threshold)
         
         # Create visualization
         try:

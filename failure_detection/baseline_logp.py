@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '../FAIL_DETECT'))
+
 import torch
 import numpy as np
 from typing import Dict, Any, Tuple, Optional
@@ -45,11 +49,11 @@ class BaselineLogpModule(FailureDetectionModule):
     def detect_failure(self, **kwargs) -> Tuple[bool, Optional[str]]:
         """Detect if failure occurred using baseline logpZO_UQ"""
         timestep = kwargs.get('timestep', 0)
-        failure_data = kwargs.get('failure_data', {})
+        failure_step_data = kwargs.get('failure_step_data', {})
         max_episode_length = kwargs.get('max_episode_length', 600)
         
         # Get current logp from failure data
-        curr_logp = failure_data.get('curr_logp', 0.0)
+        curr_logp = failure_step_data.get('curr_logp', 0.0)
         step_idx = timestep // self.Ta - 1
         
         # Check if failure occurred

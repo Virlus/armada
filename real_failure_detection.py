@@ -26,7 +26,7 @@ from diffusion_policy.diffusion_policy.model.common.rotation_transformer import 
 
 from robot_env import RobotEnv, HUMAN, ROBOT, PRE_INTV, INTV, postprocess_action_mode
 from hardware.my_device.macros import CAM_SERIAL
-from failure_detection import FailureDetector
+from failure_detection.failure_detector import FailureDetector
 from util.episode_utils import EpisodeManager
 from util.image_utils import create_failure_visualization
 

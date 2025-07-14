@@ -198,10 +198,10 @@ class RealRobotRunner:
         module_name = self.eval_cfg.failure_detection_module
         
         if module_name == 'action_inconsistency_ot':
-            from diffusion_policy.diffusion_policy.env_runner.failure_detection.action_inconsistency_ot import ActionInconsistencyOTModule
+            from failure_detection.action_inconsistency_ot import ActionInconsistencyOTModule
             self.failure_detection_module = ActionInconsistencyOTModule()
         elif module_name == 'baseline_logp':
-            from diffusion_policy.diffusion_policy.env_runner.failure_detection.baseline_logp import BaselineLogpModule
+            from failure_detection.baseline_logp import BaselineLogpModule
             self.failure_detection_module = BaselineLogpModule()
         else:
             raise ValueError(f"Unknown failure detection module: {module_name}")
@@ -341,9 +341,8 @@ class RealRobotRunner:
             self.robot_env.align_scene_with_file(self.output_dir, self.episode_idx)
         
         # Initialize failure detection module step data
-        failure_data = {}
         if self.failure_detection_module:
-            failure_data = self.failure_detection_module.process_step({
+            self.failure_detection_module.process_step({
                 'step_type': 'episode_start',
                 'episode_manager': self.episode_manager,
                 'robot_state': robot_state
@@ -360,7 +359,7 @@ class RealRobotRunner:
                 self.robot_env.keyboard.help = True
             
             # Policy inference loop
-            policy_loop_result = self._run_policy_inference_loop(episode_buffers, failure_data, j)
+            policy_loop_result = self._run_policy_inference_loop(episode_buffers, j)
             j = policy_loop_result['timestep']
             
             if policy_loop_result['break_episode']:
@@ -381,12 +380,12 @@ class RealRobotRunner:
         
         # Finalize episode
         if self.robot_env.keyboard.finish:
-            episode_data = self._finalize_episode(episode_buffers, failure_data, episode_id)
+            episode_data = self._finalize_episode(episode_buffers, episode_id)
             return episode_data
         
         return None
     
-    def _run_policy_inference_loop(self, episode_buffers: Dict[str, List], failure_data: Dict[str, Any], j: int) -> Dict[str, Any]:
+    def _run_policy_inference_loop(self, episode_buffers: Dict[str, List], j: int) -> Dict[str, Any]:
         """Run policy inference loop"""
         print("=========== Policy inference ============")
         
@@ -479,12 +478,11 @@ class RealRobotRunner:
                 }
                 
                 failure_step_data = self.failure_detection_module.process_step(step_data)
-                failure_data.update(failure_step_data)
                 
                 failure_flag, failure_reason = self.failure_detection_module.detect_failure(
                     timestep=j,
-                    failure_data=failure_data,
-                    max_episode_length=self.max_episode_length
+                    max_episode_length=self.max_episode_length,
+                    failure_step_data=failure_step_data
                 )
                 
                 if failure_flag or j >= self.max_episode_length - self.Ta:
@@ -496,10 +494,19 @@ class RealRobotRunner:
                     print("Press 'c' to continue; Press 'd' to discard the demo; Press 'h' to request human intervention; Press 'f' to finish the episode.")
                     while not self.robot_env.keyboard.ctn and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.help and not self.robot_env.keyboard.finish:
                         time.sleep(0.1)
+
+                    if self.robot_env.keyboard.finish: # Erase the failure flag because the episode is finished
+                        if hasattr(self.failure_detection_module, 'failure_logs'):
+                            self.failure_detection_module.failure_logs.popitem()
+                        elif hasattr(self.failure_detection_module, 'failure_indices'):
+                            self.failure_detection_module.failure_indices.pop()
                     
                     if self.robot_env.keyboard.ctn and j < self.max_episode_length - self.Ta:
                         print("False Positive failure! Continue policy rollout.")
                         self.robot_env.keyboard.ctn = False
+                        if failure_reason == 'action inconsistency' and self.failure_detection_module.enable_action_inconsistency:
+                            self.failure_detection_module.failure_detector.expert_action_threshold = np.inf
+                            print("Reset the action inconsistency threshold to infinity temporarily")
                         continue
                     elif self.robot_env.keyboard.ctn and j >= self.max_episode_length - self.Ta:
                         print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
@@ -523,7 +530,8 @@ class RealRobotRunner:
         self.robot_env.keyboard.help = False
         
         # Perform rewinding if needed
-        j, curr_pos, curr_rot = self._rewind_robot(episode_buffers, j)
+        if self.failure_detection_module:
+            j, curr_pos, curr_rot = self._rewind_robot(episode_buffers, j)
         
         # Get current pose for human teleop
         last_p = curr_pos if 'curr_pos' in locals() else self.episode_manager.last_p[0]
@@ -665,7 +673,7 @@ class RealRobotRunner:
         
         return curr_pos, curr_rot, prev_side_cam, prev_wrist_cam
     
-    def _finalize_episode(self, episode_buffers: Dict[str, List], failure_data: Dict[str, Any], episode_id: int) -> Dict[str, Any]:
+    def _finalize_episode(self, episode_buffers: Dict[str, List], episode_id: int) -> Dict[str, Any]:
         """Finalize episode and return episode data"""
         episode = dict()
         episode['wrist_cam'] = np.stack(episode_buffers['wrist_cam'], axis=0)
@@ -686,7 +694,6 @@ class RealRobotRunner:
         if self.failure_detection_module:
             failure_episode_data = self.failure_detection_module.finalize_episode({
                 'episode': episode,
-                'failure_data': failure_data,
                 'episode_id': episode_id
             })
             episode.update(failure_episode_data)

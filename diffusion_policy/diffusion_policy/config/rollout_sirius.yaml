@@ -1,12 +1,12 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mango_in_drawer/0710_11.57.11_train_diffusion_transformer_hybrid_dino_multi_gpu_0710_mango_in_drawer_initial/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer
-save_buffer_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_sirius_round1
-output_dir: diffusion_policy/outputs/visual/0710_mango_in_drawer_rollout_round1
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0705_23.48.55_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_0627_mug_sirius_round2/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/mug/0627_mug_sirius_round2
+save_buffer_path: /mnt/workspace/DP/mug/0627_mug_sirius_round3_test_code
+output_dir: diffusion_policy/outputs/visual/0627_mug_rollout_round3
 
 Ta: 8
 random_init: True
-seed: 0
+seed: 2
 
 # No failure detection for Sirius rollout
 # failure_detection_module: null

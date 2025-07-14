@@ -1,12 +1,12 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/pour/0627_19.09.36_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_pour_initial/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/pour/0627_pour
-save_buffer_path: /mnt/workspace/DP/pour/0627_pour_test_code_round1
-output_dir: diffusion_policy/outputs/visual/0627_pour_rollout_round1
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0706_11.06.54_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_mug_ours_dagger_round2/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/mug/0627_mug_ours_dagger_round2
+save_buffer_path: /mnt/workspace/DP/mug/0627_mug_ours_dagger_round3_test_code
+output_dir: diffusion_policy/outputs/visual/0627_mug_rollout_round3
 
 Ta: 8
 random_init: True
-seed: 0
+seed: 2
 
 # Failure detection configuration
 failure_detection_module: action_inconsistency_ot

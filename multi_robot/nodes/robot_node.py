@@ -20,10 +20,15 @@ from multi_robot.communication.socket_client import SocketClient
 from multi_robot.utils.message_distillation import parse_message_regex
 
 class RobotNode:
-    def __init__(self, config, robot_id, socket_ip, socket_port):
+    def __init__(self, config, rank: int, device_ids: List[int], robot_id, socket_ip, socket_port):
         self.robot_id = robot_id
         self.config = config
+        self.rank = rank
+        self.device_ids = device_ids
+        self.world_size = len(device_ids)
+        self.device_id = device_ids[rank]
         self.device = f"cuda:{config.device_ids.split(',')[0]}"
+        self.fps = 10
         
         # Initialize communication
         self.socket = SocketClient(socket_ip, socket_port, message_handler=self.handle_message)
@@ -37,6 +42,15 @@ class RobotNode:
         self._initialize_episode_manager()
         self._initialize_replay_buffer()
         self._initialize_failure_detection()
+        
+        # Set random seed
+        self.seed = config.seed
+        np.random.seed(self.seed)
+        
+        # Setup output directory 
+        self._setup_output_directory()
+        # Extract round number for Sirius-specific logic
+        self.num_round = self._extract_round_number()
         
         # State management
         self.robot_state = "idle"  # idle / teleop_controlled / agent_controlled / error
@@ -69,6 +83,8 @@ class RobotNode:
         self.inform_thread = threading.Thread(target=self.inform_robot_state, daemon=True)
         self.inform_thread.start()
         
+    
+        
     def _load_policy(self):
         """Load policy model"""
         payload = torch.load(open(self.config.checkpoint_path, 'rb'), pickle_module=dill)
@@ -83,7 +99,7 @@ class RobotNode:
         # Initialize workspace
         import hydra
         cls = hydra.utils.get_class(self.cfg._target_)
-        workspace = cls(self.cfg, 0, 1, 0, self.device)
+        workspace = cls(self.cfg, self.rank, self.world_size, self.device_id, self.device)
         workspace.load_payload(payload, exclude_keys=None, include_keys=None)
         
         # Get policy from workspace
@@ -99,7 +115,7 @@ class RobotNode:
         self.Ta = self.policy.n_action_steps
         self.obs_feature_dim = self.policy.obs_feature_dim
         self.img_shape = self.cfg.task['shape_meta']['obs']['wrist_img']['shape']
-        
+
         # Override Ta with evaluation config
         if hasattr(self.config, 'Ta'):
             self.Ta = self.config.Ta
@@ -136,7 +152,7 @@ class RobotNode:
         self.robot_env = RobotEnv(
             camera_serial=CAM_SERIAL, 
             img_shape=self.img_shape, 
-            fps=10
+            fps=self.fps
         )
     
     def _initialize_episode_manager(self):
@@ -172,7 +188,7 @@ class RobotNode:
     
     def _initialize_failure_detection(self):
         """Initialize failure detection module"""
-        module_name = getattr(self.config, 'failure_detection_module', None)
+        module_name = self.config.failure_detection_module
         
         if module_name:
             if module_name == 'action_inconsistency_ot':
@@ -200,9 +216,30 @@ class RobotNode:
             )
         else:
             self.failure_detection_module = None
+
+    def _setup_output_directory(self):
+        """Setup output directory"""
+        self.save_img = False
+        self.output_dir = os.path.join(self.config.output_dir, f"seed_{self.seed}")
+        if os.path.isdir(self.output_dir):
+            print(f"Output directory {self.output_dir} already exists, will not overwrite it.")
+        else:
+            os.makedirs(self.output_dir)
+            print(f"Created output directory: {self.output_dir}")
+            self.save_img = True
+        
+        # Create save buffer directory
+        os.makedirs(self.config.save_buffer_path, exist_ok=True)
+    
+    def _extract_round_number(self) -> int:
+        """Extract round number from save buffer path"""
+        match_round = re.search(r'round(\d)', self.config.save_buffer_path)
+        if match_round:
+            return int(match_round.group(1))
+        return 0
     
     def _calculate_max_episode_length(self) -> int:
-        """Calculate maximum episode length"""
+        """Calculate maximum episode length based on human demonstrations"""
         human_demo_indices = []
         for i in range(self.replay_buffer.n_episodes):
             episode_start = self.replay_buffer.episode_ends[i-1] if i > 0 else 0
@@ -453,40 +490,7 @@ class RobotNode:
 
     def run_policy(self):
         """Run policy inference loop"""
-        # Reset observation history
-        self.episode_manager.reset_observation_history()
-        
-        # Get initial state
-        robot_state = self.robot_env.get_robot_state()
-        if 'ee_pose' in self.cfg.shape_meta['obs']:
-            initial_state = robot_state['tcp_pose']
-        else:
-            initial_state = robot_state['joint_pos']
-        
-        # Use processed images from RobotEnv
-        policy_img_0 = robot_state['policy_side_img'] / 255.
-        policy_img_1 = robot_state['policy_wrist_img'] / 255.
-        
-        # Initialize observation history with EpisodeManager
-        for idx in range(self.To):
-            self.episode_manager.update_observation(policy_img_0, policy_img_1, initial_state)
-        
-        # Initialize pose tracking in EpisodeManager
-        self.episode_manager.initialize_pose(
-            self.robot_env.robot.init_pose[:3],
-            self.robot_env.robot.init_pose[3:7]
-        )
-        
-        # Initialize failure detection module step data
-        if self.failure_detection_module:
-            self.failure_detection_module.process_step({
-                'step_type': 'episode_start',
-                'episode_manager': self.episode_manager,
-                'robot_state': robot_state
-            })
-        
-        # Policy inference
-        j = 0  # Episode timestep
+
         episode_buffers = {
             'tcp_pose': [],
             'joint_pos': [],
@@ -495,8 +499,51 @@ class RobotNode:
             'wrist_cam': [],
             'side_cam': []
         }
+         # Reset robot
+        random_init_pose = None
+        if getattr(self.config, 'random_init', False):
+            random_init_pose = self.robot_env.robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
         
-        while j < self.max_episode_length and self.robot_state == "agent_controlled":
+        robot_state = self.robot_env.reset_robot(getattr(self.config, 'random_init', False), random_init_pose)
+
+        # Reset observation history
+        self.episode_manager.reset_observation_history()
+        
+        # Initialize observation history with EpisodeManager
+        for idx in range(self.To):
+            self.episode_manager.update_observation(
+                robot_state['policy_side_img'] / 255.0,
+                robot_state['policy_wrist_img'] / 255.0,
+                robot_state['tcp_pose'] if self.state_type == 'ee_pose' else robot_state['joint_pos']
+            )
+        
+        # Initialize pose tracking
+        if getattr(self.config, 'random_init', False) and random_init_pose is not None:
+            self.episode_manager.initialize_pose(random_init_pose[:3], random_init_pose[3:])
+        else:
+            self.episode_manager.initialize_pose(self.robot_env.robot.init_pose[:3], self.robot_env.robot.init_pose[3:])
+        
+        # Scene alignment
+        if self.save_img or not os.path.isfile(os.path.join(self.output_dir, f"side_{self.episode_idx}.png")):
+            self.robot_env.save_scene_images(self.output_dir, self.episode_idx)
+        else:
+            self.robot_env.align_scene_with_file(self.output_dir, self.episode_idx)
+
+        
+        # Initialize failure detection module step data
+        if self.failure_detection_module:
+            self.failure_detection_module.process_step({
+                'step_type': 'episode_start',
+                'episode_manager': self.episode_manager,
+                'robot_state': robot_state
+            })
+        # Detach teleop device
+        self.detach()
+
+        # Policy inference
+        j = 0  # Episode timestep         #TODO:last check at here
+        
+        while j < self.max_episode_length and self.robot_state == "agent_controlled": #TODO:here correspond to _run_policy_inference_loop in real_robot_runner.py
             start_time = time.time()
             
             # Get robot state

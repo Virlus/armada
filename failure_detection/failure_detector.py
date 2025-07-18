@@ -57,11 +57,12 @@ class FailureDetector:
         """Stop the asynchronous processing thread"""
         if self.async_thread is not None:
             self.async_thread_stop.set()
-            self.async_thread.join(timeout=1.0)
+            self.async_thread.join(timeout=1.0) #等待异步线程（async_thread）结束，最多等待1秒钟
             self.async_thread = None
     
     def _async_processing_thread(self):
         """Thread function for asynchronous processing"""
+        #ot_matching和action_inconsistency是基础计算任务，failure_detection 是 决策任务
         while not self.async_thread_stop.is_set():
             try:
                 # Get data with a timeout to allow checking the stop flag
@@ -76,7 +77,7 @@ class FailureDetector:
                     rollout_latent = data["rollout_latent"]
                     
                     # Rematch an expert demonstration for better alignment
-                    candidate_expert_indices = rematch_expert_episode(
+                    candidate_expert_indices = rematch_expert_episode(     #ot算法得到候选专家
                         data["candidate_expert_latents"], 
                         data["candidate_expert_indices"], 
                         rollout_latent[:idx+1]
@@ -93,9 +94,9 @@ class FailureDetector:
                     max_episode_length = data["max_episode_length"]
                     
                     partial_dist_mat = torch.cat((
-                        cosine_distance(human_latent, rollout_latent[:idx+1]).to(data["device"]).detach(), 
+                        cosine_distance(human_latent, rollout_latent[:idx+1]).to(data["device"]).detach(),  #（n_x, dim)，（n_y, dim) -> (n_x,n_y)
                         torch.full((demo_len // Ta, max_episode_length // Ta - idx - 1), 0, device=data["device"])
-                    ), 1)
+                    ), 1)  #构造一个“部分”代价矩阵，仅计算当前已生成轨迹 (rollout_latent[:idx+1]) 与专家轨迹的余弦距离，未生成部分用 0 填充。
 
                     partial_ot_plan = optimal_transport_plan(
                         human_latent, 
@@ -104,10 +105,10 @@ class FailureDetector:
                             torch.zeros((max_episode_length // Ta - idx - 1, rollout_latent.shape[1]), device=data["device"])
                         ), 0), 
                         partial_dist_mat
-                    )
+                    )  #部分最优传输计划 partial_ot_plan
                     
-                    expert_weight = torch.ones((demo_len // Ta,), device=data["device"]) / float(demo_len // Ta) - torch.sum(partial_ot_plan[:, :idx+1], dim=1)
-                    expert_indices = torch.nonzero(expert_weight)[:, 0]
+                    expert_weight = torch.ones((demo_len // Ta,), device=data["device"]) / float(demo_len // Ta) - torch.sum(partial_ot_plan[:, :idx+1], dim=1)  #初始专家权重为均匀分布 1/(demo_len//Ta),减去已分配给当前轨迹的传输质量 sum(partial_ot_plan[:, :idx+1], dim=1)。
+                    expert_indices = torch.nonzero(expert_weight)[:, 0]  #剩余权重 expert_weight 表示专家样本未被匹配的部分，非零值对应的索引 expert_indices 是未充分匹配的专家样本
                     
                     greedy_ot_plan = torch.cat((
                         partial_ot_plan[:, :idx+1], 
@@ -119,7 +120,7 @@ class FailureDetector:
                         torch.zeros((max_episode_length // Ta - idx - 1,), device=data["device"])
                     ), 0)
 
-                elif task_type == "action_inconsistency":
+                elif task_type == "action_inconsistency": #计算了相隔Ta的动作的差分
                     action_seq = data["action_seq"]
                     predicted_abs_actions = data["predicted_abs_actions"]
                     idx = data["idx"]
@@ -131,7 +132,7 @@ class FailureDetector:
                     # Calculate action inconsistency
                     tmp_last_p = last_p
                     tmp_last_r = last_r
-                    for step in range(Ta, action_seq.shape[1]):
+                    for step in range(Ta, action_seq.shape[1]): #忽略前 Ta 步的初始化动作
                         curr_p_action = action_seq[:, step, :3]
                         curr_p = tmp_last_p + curr_p_action
                         curr_r_action = action_rot_transformer.inverse(action_seq[:, step, 3:action_dim-1])
@@ -153,6 +154,7 @@ class FailureDetector:
                     continue
                     
                 elif task_type == "failure_detection":
+                    # 检查动作不连续性太大，或者ot代价超限，然后存入结果
                     # Failure detection task
                     action_inconsistency_buffer = data["action_inconsistency_buffer"]
                     expert_action_threshold = data["expert_action_threshold"]
@@ -172,7 +174,7 @@ class FailureDetector:
                     if expert_ot_threshold is not None:
                         ot_flag = torch.sum(greedy_ot_cost[:idx+1]) > expert_ot_threshold
                     
-                    failure_flag = inconsistency_violation or ot_flag
+                    failure_flag = inconsistency_violation or ot_flag #True 为有问题
                     failure_reason = "action inconsistency" if inconsistency_violation else "OT violation" if ot_flag else None
                     
                     result = {

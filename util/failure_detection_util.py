@@ -15,7 +15,7 @@ def euclidean_distance(x, y):
 
 
 def cosine_distance(x: Tensor, y: Tensor):
-    C = torch.mm(x, y.T)
+    C = torch.mm(x, y.T) #（n_x, dim)，（n_y, dim) -> (n_x,n_y)
     x_norm = torch.norm(x, p=2, dim=1)
     y_norm = torch.norm(y, p=2, dim=1)
     x_n = x_norm.unsqueeze(1)
@@ -39,7 +39,7 @@ def optimal_transport_plan(
     epsilon: float = 0.1
 ) -> Tensor:
     X_pot = np.ones(X.shape[0]) * (1 / X.shape[0])
-    Y_pot = np.ones(Y.shape[0]) * (1 / Y.shape[0])
+    Y_pot = np.ones(Y.shape[0]) * (1 / Y.shape[0])  #X_pot and Y_pot conforms to uniform distribution
     c_m = cost_matrix.data.detach().cpu().numpy()
     transport_plan = ot.sinkhorn(X_pot, Y_pot, c_m, epsilon, numItermax=niter)
     transport_plan = torch.from_numpy(transport_plan).to(X.device)
@@ -103,12 +103,15 @@ def rematch_expert_episode(
     candidate_expert_indices: Tensor,
     curr_rollout_latent: Tensor
 ) -> Tensor:
+    """
+    给定候选专家隐变量和当前rollout隐变量，用OT对总运输成本排序，得到成本从小到大的候选专家索引
+    """
     ot_costs = []
     for expert_latent in candidate_expert_latent:
-        dist_mat = cosine_distance(expert_latent, curr_rollout_latent)
-        ot_plan = optimal_transport_plan(expert_latent, curr_rollout_latent, dist_mat)
-        ot_cost = torch.sum(ot_plan * dist_mat)
+        dist_mat = cosine_distance(expert_latent, curr_rollout_latent) #代价矩阵
+        ot_plan = optimal_transport_plan(expert_latent, curr_rollout_latent, dist_mat) #sinkhorn算法求解传输计划
+        ot_cost = torch.sum(ot_plan * dist_mat) #总运输成本OT_cost,代价矩阵和传输计划的逐元素积
         ot_costs.append(ot_cost)
 
-    candidate_expert_indices = candidate_expert_indices[Tensor(ot_costs).argsort()]
+    candidate_expert_indices = candidate_expert_indices[Tensor(ot_costs).argsort()]  #candidate_expert_indices 会按 ot_costs 从小到大排列
     return candidate_expert_indices

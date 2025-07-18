@@ -23,6 +23,19 @@ from hardware.my_device.macros import CAM_SERIAL
 from util.episode_utils import EpisodeManager
 
 
+"""
+real_robot_runner.py 相比新的robot_node.py特有的robot_env函数调用
+"""
+# reset_robot(random_init, random_init_pose): 支持随机初始化位置
+# save_scene_images(output_dir, episode_idx): 保存场景图像
+# align_scene_with_file(output_dir, episode_idx): 与文件中的场景对齐
+# detach_sigma(): 分离sigma设备
+# human_teleop_step(last_p, last_r): 人类远程操作步骤
+# align_with_reference(ref_side_img, ref_wrist_img): 与参考图像对齐
+# rewind_robot(curr_pos, curr_rot, prev_action): 回退机器人动作
+# sigma.resume(): 恢复sigma设备
+# sigma.transform_from_robot(translate, rotation): 从机器人转换坐标系到sigma设备
+
 class FailureDetectionModule(ABC):
     """Abstract base class for failure detection modules"""
     
@@ -465,7 +478,7 @@ class RealRobotRunner:
             # Store predicted absolute actions for rewinding
             self._last_predicted_abs_actions = predicted_abs_actions
             
-            # Process failure detection
+            # ================Detect failure===============
             if self.failure_detection_module:
                 step_data = {
                     'step_type': 'policy_step',
@@ -477,13 +490,16 @@ class RealRobotRunner:
                     'episode_manager': self.episode_manager
                 }
                 
-                failure_step_data = self.failure_detection_module.process_step(step_data)
+                failure_step_data = self.failure_detection_module.process_step(step_data)  #对当前step，提交机器检查stepot_matching和action_inconsistency的申请，即对这两种情形都加入_async_queue
                 
-                failure_flag, failure_reason = self.failure_detection_module.detect_failure(
+                failure_flag, failure_reason = self.failure_detection_module.detect_failure(  #阻塞式的，从FailureDetector.async_result_queue中获取所有结果，其中if result["task_type"] == "ot_matching"则调用failure_detector.submit_failure_detection_task，
+                #其会对_async_queue来push"failure_detection"的请求;如果是"action_inconsistency"就会加入action_inconsistency_buffer;如果是"failure_detection",就会记录日志。
                     timestep=j,
                     max_episode_length=self.max_episode_length,
                     failure_step_data=failure_step_data
                 )
+                #另有线程FailureDetector._async_processing_thread会循环对_async_queue.pop，然后读出task_type,如果是"ot_matching"/”action_inconsistency"则计算出统计指标（ot_cost/动作不平均量），如果是"failure_detection"则根据先前求出的统计指标判断出ot/action有没有问题，
+                #最后三种结果都放入async_result_queue
                 
                 if failure_flag or j >= self.max_episode_length - self.Ta:
                     if failure_flag:
@@ -513,6 +529,8 @@ class RealRobotRunner:
                         self.robot_env.keyboard.ctn = False
                         self.robot_env.keyboard.help = True
                         break
+            # ================Detect failure===============
+
             
             # Check for maximum episode length without failure detection
             elif j >= self.max_episode_length - self.Ta:

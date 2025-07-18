@@ -1,0 +1,18 @@
+# 多机器人系统配置
+hub:
+  ip: "127.0.0.1"
+  port: 8888
+
+robots:
+  0:
+    config_name: "real_failure_detection"
+  1:
+    config_name: "rollout_sirius"
+
+teleops:
+  0:
+    device: "sigma"
+    listen_freq: 10
+  1:
+    device: "keyboard"
+    listen_freq: 5

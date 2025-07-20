@@ -19,6 +19,8 @@ from util.episode_utils import EpisodeManager
 from multi_robot.communication.socket_client import SocketClient
 from multi_robot.utils.message_distillation import parse_message_regex
 
+#TODO:complete the main thread,add manual command to rollout process
+
 class RobotNode:
     def __init__(self, config, rank: int, device_ids: List[int], robot_id, socket_ip, socket_port):
         self.robot_id = robot_id

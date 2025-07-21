@@ -1,18 +1,49 @@
-# 多机器人系统配置
-hub:
-  ip: "127.0.0.1"
-  port: 8888
+device_ids: '0'
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mango_in_drawer/0711_22.43.38_train_diffusion_transformer_hybrid_dino_multi_gpu_0710_mango_in_drawer_ours_dagger_round2/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_ours_dagger_round2
+save_buffer_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_ours_dagger_round3
+output_dir: diffusion_policy/outputs/visual/0710_mango_in_drawer_rollout_round3
 
-robots:
-  0:
-    config_name: "real_failure_detection"
-  1:
-    config_name: "rollout_sirius"
+Ta: 8
+random_init: True
+seed: 2
 
-teleops:
-  0:
-    device: "sigma"
-    listen_freq: 10
-  1:
-    device: "keyboard"
-    listen_freq: 5
+# Failure detection configuration
+failure_detection_module: action_inconsistency_ot
+
+# Failure detection hyperparameters
+enable_action_inconsistency: True
+inconsistency_metric: expert
+num_samples: 4
+num_expert_candidates: 50
+action_inconsistency_percentile: 90
+ot_percentile: 95
+soft_ot_ratio: 0.2
+
+# Sirius-related hyperparameters
+post_process_action_mode: False
+sirius_termination: False
+
+policy:
+  num_inference_steps: 8
+
+# Robot configuration
+robot_info:
+  num_robots: 2
+  socket_ip: "192.168.1.1"
+  socket_port: 12345
+  robot_name: flexiv
+  robot_id: 0
+  robot_info_dict:
+    "0":
+      ip: "192.168.2.100"
+    "1":
+      ip: "112"
+
+# Camera configuration
+camera:
+  serial: 
+    - "135122075425"
+    - "135122070361"
+  fps: 10
+  img_shape: [3, 220, 220]

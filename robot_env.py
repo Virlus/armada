@@ -23,19 +23,27 @@ INTV = 3
 INTV_STEPS = 15
 
 class RobotEnv:
-    def __init__(self, camera_serial=CAM_SERIAL, img_shape=None, fps=10):
+    def __init__(self, camera_serial=CAM_SERIAL, img_shape=None, fps=10, is_multi_robot_env=False,robot_id=None,robot_info_dict=None):
         self.camera_serial = camera_serial
         self.fps = fps
         self.img_shape = img_shape
-        
         # Initialize hardware components
-        self.robot = FlexivRobot()
+        self.is_multi_robot_env = is_multi_robot_env
+        if self.is_multi_robot_env:
+            assert robot_id and robot_info_dict
+            self.robot_id = robot_id
+            self.robot_ip = robot_info_dict[self.robot_id]["ip"]
+            self.robot = FlexivRobot(self.robot_ip)
+        else:
+            self.robot = FlexivRobot()
+            self.sigma = Sigma7()
+            pygame.init()
+            self.controller = Controller(0)
+        
         self.gripper = FlexivGripper(self.robot)
         self.cameras = [CameraD400(s) for s in self.camera_serial]
-        self.keyboard = Keyboard()
-        self.sigma = Sigma7()
-        pygame.init()
-        self.controller = Controller(0)
+        self.keyboard = Keyboard(is_multi_robot_env=is_multi_robot_env)
+        self.home_pose = self.robot.init_pose
         
         # Setup image processors
         BICUBIC = InterpolationMode.BICUBIC
@@ -61,6 +69,8 @@ class RobotEnv:
         self.gripper.move(self.gripper.max_width)
         time.sleep(0.5)
         print("Reset!")
+        if self.is_multi_robot_env:
+            return self.get_robot_state()
         
         # Reset the sigma pose as well
         self.sigma.reset()

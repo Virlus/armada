@@ -19,11 +19,13 @@ from util.episode_utils import EpisodeManager
 from multi_robot.communication.socket_client import SocketClient
 from multi_robot.utils.message_distillation import parse_message_regex
 
-#TODO:complete the main thread,add manual command to rollout process
+#About the keyboard listener: when robot is ctrled by agent,the keyboard listener in robot_node is used.When robot is ctrled by teleop,the keyboard listener in teleop_node is used.
 
 class RobotNode:
-    def __init__(self, config, rank: int, device_ids: List[int], robot_id, socket_ip, socket_port):
-        self.robot_id = robot_id
+    def __init__(self, config, rank: int, device_ids: List[int]):
+
+        self.robot_id = config.robot_info.robot_id
+
         self.config = config
         self.rank = rank
         self.device_ids = device_ids
@@ -31,8 +33,11 @@ class RobotNode:
         self.device_id = device_ids[rank]
         self.device = f"cuda:{config.device_ids.split(',')[0]}"
         self.fps = 10
+        self.robot_info_dict = self.config.robot_info.robot_info_dict
         
         # Initialize communication
+        socket_ip = self.config.robot_info.socket_ip
+        socket_port = self.config.robot_info.socket_port
         self.socket = SocketClient(socket_ip, socket_port, message_handler=self.handle_message)
         self.socket.start_connection()
         self.lock = threading.Lock()
@@ -80,10 +85,6 @@ class RobotNode:
         
         # Last predicted actions for rewinding
         self._last_predicted_abs_actions = None
-        
-        # Start state report thread
-        self.inform_thread = threading.Thread(target=self.inform_robot_state, daemon=True)
-        self.inform_thread.start()
 
         self.finish_episode = False
         
@@ -154,9 +155,12 @@ class RobotNode:
     def _initialize_robot_env(self):
         """Initialize robot environment"""
         self.robot_env = RobotEnv(
-            camera_serial=CAM_SERIAL, 
+            camera_serial=CAM_SERIAL if not self.is_multi_robot_env else self.config.camera.serial, 
             img_shape=self.img_shape, 
-            fps=self.fps
+            fps=self.fps,
+            is_multi_robot_env=True,
+            robot_id=self.robot_id,
+            robot_info_dict=self.robot_info_dict
         )
     
     def _initialize_episode_manager(self):
@@ -260,10 +264,12 @@ class RobotNode:
     def _run_rollout(self):
         """Main rollout loop"""
         try:
-            while True:
+            while True: 
+                self.robot_env.keyboard.create_listener() if not self.robot_env.keyboard.listener else None
+
                 if self.robot_env.keyboard.quit:
                     break
-                
+
                 print(f"Rollout episode: {self.episode_idx}")
                 
                 # Run single episode
@@ -292,7 +298,18 @@ class RobotNode:
             self._cleanup()
 
     def _run_single_episode(self):
+
+        self.robot_env.keyboard.create_listener() if not self.robot_env.keyboard.listener else None
+
+        self.robot_env.keyboard.finish = False
+        self.robot_env.keyboard.help = False
+        self.robot_env.keyboard.infer = False
+        self.robot_env.keyboard.discard = False
+        time.sleep(1)
+
+        # Reset keyboard states
         self.finish_episode = False
+        self.robot_state = "agent_controlled"  
 
         # Initialize episode buffers
         self.episode_buffers = {
@@ -308,13 +325,13 @@ class RobotNode:
         if getattr(self.config, 'random_init', False):
             random_init_pose = self.robot_env.robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
         
-        robot_state = self.robot_env.reset_robot(getattr(self.config, 'random_init', False), random_init_pose)
+        robot_state = self.reset(getattr(self.config, 'random_init', False), random_init_pose)
 
         # Reset observation history
         self.episode_manager.reset_observation_history()
         
-        # Initialize observation history with EpisodeManager
-        for idx in range(self.To):
+        # Update initial observations
+        for _ in range(self.To):
             self.episode_manager.update_observation(
                 robot_state['policy_side_img'] / 255.0,
                 robot_state['policy_wrist_img'] / 255.0,
@@ -332,7 +349,6 @@ class RobotNode:
             self.robot_env.save_scene_images(self.output_dir, self.episode_idx)
         else:
             self.robot_env.align_scene_with_file(self.output_dir, self.episode_idx)
-
         
         # Initialize failure detection module step data
         if self.failure_detection_module:
@@ -350,30 +366,44 @@ class RobotNode:
         while True:
             if self.j >= self.max_episode_length - self.Ta:
                 print("Maximum episode length reached, turning to human for help.")
-                #self.robot_env.keyboard.help = True #TODO:remain to be finished
-            
-            # Policy inference loop
-            self.run_policy()
+                self.robot_env.keyboard.help = True
 
-             # wait for human intervention
-            while self.robot_state == "teleop_controlled": #TODO:remain to be seriously considered
-                pass
+            if self.robot_state == "agent_controlled":
+                self.run_policy() 
 
+            #==============keyboard events==============
+            # Human intervention if requested
+            if self.robot_env.keyboard.help:
+                self.socket.send(f"NEED_HUMAN_CHECK_from_robot{self.robot_id}_for_timeout")    
+
+             # Check if episode should finish
+            if self.robot_env.keyboard.discard:
+                return None
+
+            if self.robot_env.keyboard.finish:
+                break
+            #==============keyboard events==============
+
+            elif self.robot_state == "teleop_controlled":
+                time.sleep(0.1)  # Prevent high CPU usage
+            elif self.robot_state == "idle":
+                time.sleep(0.1)
             if self.finish_episode:
                 break
 
+        # Finalize episode and return data
         if self.finish_episode:
             episode_data = self._finalize_episode()
             return episode_data
         else:
-            return None        
+            return None
             
     
     def run_policy(self):
+        self.robot_env.keyboard.create_listener() if not self.robot_env.keyboard.listener else None
+
         """Run policy inference loop"""
-        self.robot_state = "agent_controlled"
-        
-        while self.j < self.max_episode_length and self.robot_state == "agent_controlled": #TODO:here correspond to _run_policy_inference_loop in real_robot_runner.py
+        while self.j < self.max_episode_length and self.robot_state == "agent_controlled" and not self.robot_env.keyboard.finish and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.help:
             start_time = time.time()
             
             # Get robot state and observations
@@ -484,6 +514,29 @@ class RobotNode:
                     else:
                         print("Maximum episode length reached")
                     
+                    print("Press 'c' to continue; Press 'd' to discard the demo; Press 'h' to request human intervention; Press 'f' to finish the episode.")
+                    while not self.robot_env.keyboard.ctn and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.help and not self.robot_env.keyboard.finish:
+                        time.sleep(0.1)
+                    
+                    if self.robot_env.keyboard.finish: # Erase the failure flag because the episode is finished
+                        if hasattr(self.failure_detection_module, 'failure_logs'):
+                            self.failure_detection_module.failure_logs.popitem()
+                        elif hasattr(self.failure_detection_module, 'failure_indices'):
+                            self.failure_detection_module.failure_indices.pop()
+                    
+                    if self.robot_env.keyboard.ctn and self.j < self.max_episode_length - self.Ta:
+                        print("False Positive failure! Continue policy rollout.")
+                        self.robot_env.keyboard.ctn = False
+                        if failure_reason == 'action inconsistency' and self.failure_detection_module.enable_action_inconsistency:
+                            self.failure_detection_module.failure_detector.expert_action_threshold = np.inf
+                            print("Reset the action inconsistency threshold to infinity temporarily")
+                        continue
+                    elif self.robot_env.keyboard.ctn and self.j >= self.max_episode_length - self.Ta:
+                        print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
+                        self.robot_env.keyboard.ctn = False
+                        self.robot_env.keyboard.help = True
+                        break
+                    
                     # Send human check request
                     if failure_flag:
                         self.socket.send(f"NEED_HUMAN_CHECK_from_robot{self.robot_id}_for_failure")
@@ -543,56 +596,33 @@ class RobotNode:
         """Handle received messages"""
         message_list = self.split_combined_messages(raw_msg)
         for message in message_list:
-            if message.startswith("READY"):   #ok
+            if message.startswith("READY"):
                 self.get_ready_takeover(message)
-            elif message.startswith("TELEOP_TAKEOVER_RESULT"):
-                self.robot_state = "idle"
+            elif message.startswith("TELEOP_TAKEOVER_RESULT"): #direct result without human teleoperation,succ/fail
                 self.detach()
-                self.back_to_agent_ctrl(message, continue_current=False)
-            elif message.startswith("CONTINUE_POLICY"):
-                self.robot_state = "idle"
+                self.finish_episode = True  #finish_episode has greater priority over robot_state
+            elif message.startswith("CONTINUE_POLICY"):   #direct result without human teleoperation
+                self.robot_state = "agent_controlled"
                 self.detach()
-                self.back_to_agent_ctrl(message, continue_current=True)
-            elif message.startswith("PLAYBACK_TRAJ"):  #ok
+            elif message.startswith("PLAYBACK_TRAJ"):
                 self.playback_traj()
-            elif message.startswith("TELEOP_CTRL_START"):   #ok
+            elif message.startswith("TELEOP_CTRL_START"):
                 self.start_being_teleoped()
-            elif message.startswith("COMMAND"):  #ok
+            elif message.startswith("COMMAND"):
                 self.process_teleop_command(message)
-            elif message.startswith("TELEOP_CTRL_STOP"):  #ok
+            elif message.startswith("TELEOP_CTRL_STOP"):  #direct result after human teleoperation,cancel/accept/continue
                 self.stop_teleop(message)
-            elif message.startswith("THROTTLE_SHIFT"):  #ok
+            elif message.startswith("THROTTLE_SHIFT"):
                 self.process_throttle_info(message)
             else:
-                print(f"Unknown command: {message}")
+                print(f"未知命令: {message}")
     
     def get_ready_takeover(self, message):
         """Prepare for takeover"""
         templ = "READY_for_state_check_by_human_with_teleop_id_{}"
         teleop_id = parse_message_regex(message, templ)[0]
         self.teleop_id = teleop_id
-        self.detach()
-    
-    def back_to_agent_ctrl(self, message, continue_current):
-        """Return to agent control"""
-        print("Human take-over terminated, state switched to 'AGENT_CONTROLLED'.")
-        if not continue_current:
-            print("============================Next episode!!========================================")
-            
-            # Reset robot and sigma
-            self.reset()
-            self.robot_state = "agent_controlled"
-            
-            # Transform sigma device based on current pose
-            tcp = self.robot_env.robot.get_robot_state()[0]
-            translate = tcp[0:3] - self.robot_env.home_pose[0:3]
-            rotation = (R.from_quat(self.robot_env.home_pose[3:], scalar_first=True).inv() * 
-                        R.from_quat(tcp[3:], scalar_first=True)).as_quat(scalar_first=True)
-            self.send_transform_sigma(translate, rotation)
-        
-        self.detach()
-        self.robot_state = "agent_controlled"
-        self.run_policy()
+
     
     def process_throttle_info(self, msg):
         """Process throttle shift information"""
@@ -625,10 +655,12 @@ class RobotNode:
     def start_being_teleoped(self):
         """Start being teleoperated"""
         print("Start being teleoperated, state switched to 'TELEOP_CONTROLLED'")
+
+        self.robot_env.keyboard.kill_listener() #kill keyboard listener of robot_node and turn to the one in teleop_node instead 
         
         # Perform rewinding if needed
         if self.failure_detection_module:
-            self.j, curr_pos, curr_rot = self._rewind_robot(self.episode_buffers, self.j) #TODO:remain to be finished
+            self.j, curr_pos, curr_rot = self._rewind_robot(self.episode_buffers, self.j) 
 
         # Get current pose for human teleop
         self.last_p = curr_pos if 'curr_pos' in locals() else self.episode_manager.last_p[0]
@@ -646,6 +678,7 @@ class RobotNode:
     
     def stop_teleop(self, message):
         """Stop teleoperation"""
+        self.robot_state = "idle"
         print("Teleoperation terminated, state switched to 'AGENT_CONTROLLED'.")
         templ = "TELEOP_CTRL_STOP_{}_for_{}"
         rbt_id, stop_event = parse_message_regex(message, templ)
@@ -654,19 +687,12 @@ class RobotNode:
         self.episode_manager.initialize_pose(self.last_p, self.last_r.as_quat(scalar_first=True))
 
         self.reset_teleop_cmd()
-        if stop_event == "continue":
-            self.robot_state = "idle"
-            self.detach()
-            self.back_to_agent_ctrl(message, continue_current=True)
-        elif stop_event == "accept":
-            self.robot_state = "idle"
-            self.detach()
-            self.back_to_agent_ctrl("SUCCESS", continue_current=False)
+        self.detach()
+        assert stop_event in ["cancel","accept","continue"]
+        if stop_event != "continue":  #success or failure
+            self.finish_episode = True   #finish_episode has greater priority over robot_state
         else:
-            assert stop_event == "cancel"
-            self.robot_state = "idle"
-            self.detach()
-            self.back_to_agent_ctrl("FAILURE", continue_current=False)
+            self.robot_state = "agent_controlled"
     
     def process_teleop_command(self, message):
         """Process teleoperation command"""
@@ -770,16 +796,15 @@ class RobotNode:
             time.sleep(0.01)
     
     def reset(self,random_init=False, random_init_pose=None):
-        self.robot_env.reset_robot(random_init, random_init_pose)
+        state=self.robot_env.reset_robot(random_init, random_init_pose)
         self.send_reset_sigma()
+        tcp = state["tcp_pose"]
+        translate = tcp[0:3] - self.robot_env.home_pose[0:3]
+        rotation = (R.from_quat(self.robot_env.home_pose[3:], scalar_first=True).inv() * R.from_quat(tcp[3:],scalar_first=True)).as_quat(scalar_first=True)
+        self.send_transform_sigma(translate,rotation)
+        return state
         
     def detach(self):
-        """
-        Detach sigma device from robot. 
-        1. The design philosophy of detach is to allow sigma to move freely while the robot stays still
-        2. Detach must be called at the latest moment when the robot arm is not being controlled
-        3. At the beginning of teleop, detach can also be used to keep the robot still
-        """
         self.detach_tcp = self.robot_env.robot.get_tcp_pose()
         print(f"Detaching sigma at TCP position: {self.detach_tcp}")
         self.send_detach_sigma()
@@ -960,4 +985,11 @@ class RobotNode:
         
         print("Saved replay buffer to", save_zarr_path)
         torch.distributed.destroy_process_group() 
+    
+    def _main_thread(self):
+         # Start state report thread
+        self.inform_thread = threading.Thread(target=self.inform_robot_state, daemon=True)
+        self.inform_thread.start()
+
+        self._run_rollout()
     

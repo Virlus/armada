@@ -54,9 +54,12 @@ class CommunicationHub:
 
         for i, match in enumerate(matches):
             start = match.start()
+            end = match.end()
+            current_sep = match.group(0)
             next_start = matches[i + 1].start() if i < len(matches) - 1 else len(combined_msg)
             content = combined_msg[start:next_start]
             parts.append(content)
+            last_end = next_start
         return parts
 
     def handle_message(self, raw_message, addr):
@@ -247,3 +250,10 @@ class CommunicationHub:
         except KeyboardInterrupt:
             self.socket.stop()
             print("Server shutdown")
+
+
+if __name__ == "__main__":
+    server_freq = 50
+    hub = CommunicationHub("0.0.0.0", 12345)
+    hub.run()
+

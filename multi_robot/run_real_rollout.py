@@ -47,7 +47,7 @@ def main_worker(rank: int, eval_cfg: DictConfig, device_ids: list):
     try:
         # Create and run the robot runner
         runner = RobotNode(eval_cfg, rank, device_ids)
-        runner.run_rollout()
+        runner._main_thread()
     except Exception as e:
         print(f"Error in worker {rank}: {e}")
         raise

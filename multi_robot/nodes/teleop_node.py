@@ -29,13 +29,6 @@ class TeleopNode:
             self.sigma = Sigma7(num_robot=num_robot)
             pygame.init()
             self.controller = Controller(0)
-        
-        # Initialize keyboard listener for control commands
-        self.keyboard_listener = KeyboardListener(teleop_device)
-        
-        # Start status report thread
-        self.inform_thread = threading.Thread(target=self.inform_teleop_state, daemon=True)
-        self.inform_thread.start()
     
     def get_separator_pattern(self):
         """Get message separator pattern"""
@@ -55,6 +48,7 @@ class TeleopNode:
 
         pattern = self.get_separator_pattern()
         parts = []
+        last_end = 0
         matches = list(pattern.finditer(combined_msg))
         if not matches:
             return [combined_msg]
@@ -64,11 +58,14 @@ class TeleopNode:
 
         for i, match in enumerate(matches):
             start = match.start()
+            end = match.end()
+            current_sep = match.group(0)
             next_start = matches[i + 1].start() if i < len(matches) - 1 else len(combined_msg)
             content = combined_msg[start:next_start]
             parts.append(content)
+            last_end = next_start
         return parts
-    
+
     def handle_message(self, raw_message):
         """Handle received messages"""
         message_list = self.split_combined_messages(raw_message)
@@ -87,8 +84,8 @@ class TeleopNode:
                 elif "TRANSFORM" in message:
                     self.handle_tcp_transform_robot(message)
             else:
-                print(f"Unknown command: {message}")
-    
+                raise ValueError(f"Unknown command: {message}")
+
     def handle_sigma_detach(self, message):
         """Handle sigma detach command"""
         templ = "SIGMA_of_{}_DETACH_from_{}"
@@ -169,82 +166,68 @@ class TeleopNode:
         }
         
         if request_type == "timeout":
-            if key not in ['S', 'F']:
-                print(f"Unknown key: {key} for request_type: {request_type}")
-                self.teleop_state = "idle"
-                return
-            key_actions[key](rbt_id, request_type)
+            if key not in ['S','F']:
+                raise ValueError(f"Unknown key: {key} for request_type: {request_type}")
+            key_actions[key](rbt_id,request_type)
+
         elif request_type == "failure":
-            if key not in ['S', 'F', 'C', 'N', 'P']:
-                print(f"Unknown key: {key} for request_type: {request_type}")
-                self.teleop_state = "idle"
-                return
-            key_actions[key](rbt_id, request_type)
+            if key not in ['S','F','C','N','P']:
+                raise ValueError(f"Unknown key: {key} for request_type: {request_type}")
+            key_actions[key](rbt_id,request_type)
+
         else:
-            print(f"Unknown request_type: {request_type}")
-            self.teleop_state = "idle"
-    
-    def handle_success(self, rbt_id, request_type):
-        """Handle success decision"""
+            raise ValueError(f"Unknown request_type: {request_type}")
+
+    def handle_success(self,rbt_id,request_type):
         print("Success!")
-        print("Start manually resetting environment, press {'F'} when finished: ", end='', flush=True)
-        key = input().strip().upper()
+        print("Start manually resetting environment , press {'F'} when finished: ", end='', flush=True)
+        key = input().strip().upper()   # jammed manner,waiting human reset
         if key == 'F':
-            self.socket.send(f"TELEOP_TAKEOVER_RESULT_SUCCESS_from_robot{rbt_id}")
+            msg = f"TELEOP_TAKEOVER_RESULT_SUCCESS_from_robot{rbt_id}".encode()
+            self.socket.send(msg)
             self.teleop_state = "idle"
-    
-    def handle_failure(self, rbt_id, request_type):
-        """Handle failure decision"""
+
+    def handle_failure(self,rbt_id,request_type):
         print("Failure!")
-        print("Start manually resetting environment, press {'F'} when finished: ", end='', flush=True)
-        key = input().strip().upper()
+        print("Start manually resetting environment , press {'F'} when finished: ", end='', flush=True)
+        key = input().strip().upper()  # jammed manner,waiting human reset
         if key == 'F':
-            self.socket.send(f"TELEOP_TAKEOVER_RESULT_FAILURE_from_robot{rbt_id}")
+            msg = f"TELEOP_TAKEOVER_RESULT_FAILURE_from_robot{rbt_id}".encode()
+            self.socket.send(msg)
             self.teleop_state = "idle"
-    
-    def handle_continue_policy(self, rbt_id, request_type):
-        """Handle continue policy decision"""
+
+    def handle_continue_policy(self,rbt_id,request_type):
         print("Continue Agent Policy!")
-        self.socket.send(f"CONTINUE_POLICY_{rbt_id}")
+        msg = f"CONTINUE_POLICY_{rbt_id}".encode()
+        self.socket.send(msg)
         self.teleop_state = "idle"
-    
-    def handle_need_teleop(self, rbt_id, request_type):
-        """Handle need teleoperation decision"""
+
+    def handle_need_teleop(self,rbt_id,request_type):
         print("Need Teleop!")
-        print("Get ready for teleoperation, press {'S'} to START: ", end='', flush=True)
-        key = input().strip().upper()
+        print("Get ready for teleoperation , press {'S'} to START: ", end='', flush=True)
+        key = input().strip().upper()  # jammed manner,waiting human reset
         if key == 'S':
-            print("Teleoperation...")
-            print("Press {'C'} to CANCEL, {'T'} to ACCEPT, {'N'} to CONTINUE CURRENT POLICY:", end='', flush=True)
+            print("Teleoperating......")
+            print("Press {'C'} to CANCEL, {'T'} to ACCEPT, {'N'} to CONTINUE CURRENT POLICY :", end='', flush=True)
             self.teleop_ctrl_start(rbt_id)
-    
-    def handle_playback_traj(self, rbt_id, request_type):
-        """Handle playback trajectory decision"""
+
+    def handle_playback_traj(self,rbt_id,request_type):
         print("Playback Trajectory!")
-        self.socket.send(f"PLAYBACK_TRAJ_{rbt_id}")
-        self.main_human_decide(rbt_id, request_type)  # Playback should be a temporal behavior
-    
-    def teleop_ctrl_start(self, rbt_id):
-        """Start teleoperation control"""
-        self.socket.send(f"TELEOP_CTRL_START_{rbt_id}")
-        self.keyboard_listener.start_keyboard_listener()
-        listen_thread = threading.Thread(target=self.run_listen_loop, args=(rbt_id,), daemon=True)
-        listen_thread.start()
-    
-    def run_listen_loop(self, rbt_id):
-        """Run listen loop for teleoperation commands"""
+        msg = f"PLAYBACK_TRAJ_{rbt_id}".encode()
+        self.socket.send(msg)
+        self.main_human_decide(rbt_id,request_type) #playback should be a temporal behavior
+
+    def run_listen_loop(self,rbt_id):
         time.sleep(0.5)
         interval = 1.0 / self.listen_freq
         self.stop_event = None
-        
-        while self.stop_event not in ["cancel", "accept", "continue"]:
+        while self.stop_event not in ["cancel","accept","continue"]:
             start_time = time.time()
-            
-            # Check for keyboard control events
+
             if self.keyboard_listener.accept or self.keyboard_listener.cancel or self.keyboard_listener._continue:
                 if self.keyboard_listener.cancel:
                     self.stop_event = "cancel"
-                    print("Teleoperation cancelled, robot going home...")
+                    print("Teleoperation cancelled,robot going home...")
                 elif self.keyboard_listener.accept:
                     self.stop_event = "accept"
                     print("Teleoperation accepted.")
@@ -252,37 +235,74 @@ class TeleopNode:
                     self.stop_event = "continue"
                     print("Continue current policy.")
                 break
-            
-            # Send commands based on input device
+
             if self.teleop_device == "keyboard" and self.keyboard_listener.current_cmd:
                 self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:{self.keyboard_listener.current_cmd}")
+
             elif self.teleop_device == "sigma":
-                diff_p, diff_r, width = self.sigma.get_control(rbt_id)
-                diff_r = diff_r.as_quat(scalar_first=True)
+                diff_p, diff_r, width = self.sigma.get_control(rbt_id)  ##TODO:can already add robot_id
+                diff_r = diff_r.as_quat(scalar_first = True)
                 throttle = self.controller.get_throttle()
-                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}")
-            
-            # Maintain loop timing
+                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") #send realtime no matter who is ctrlling rbt
+
             elapsed = time.time() - start_time
             time.sleep(max(0, interval - elapsed))
-        
-        # Clean up after teleoperation
         self.keyboard_listener.stop_keyboard_listener()
-        time.sleep(0.5)  # Time needed to restore keyboard settings
+        time.sleep(0.5)   #time is needed to restore keyboard settings
         self.tele_ctrl_stop(rbt_id)
-    
-    def tele_ctrl_stop(self, rbt_id):
-        """Stop teleoperation control"""
+
+
+    def teleop_ctrl_start(self,rbt_id):
+        msg = f"TELEOP_CTRL_START_{rbt_id}".encode()
+        self.socket.send(msg)
+        self.keyboard_listener.start_keyboard_listener()
+        listen_thread = threading.Thread(target=self.run_listen_loop, args=(rbt_id,),daemon=True)
+        listen_thread.start()
+
+
+    def tele_ctrl_stop(self,rbt_id):
         msg = f"TELEOP_CTRL_STOP_{rbt_id}_for_{self.stop_event}".encode()
         self.socket.send(msg)
         self.teleop_state = "idle"
-    
-    def inform_teleop_state(self):
-        """Periodically report teleop state"""
-        inform_freq = 2  # Hz
+
+    def inform_teleop_state(self,inform_freq):
         while self.running:
-            current_time = time.time()
-            if current_time - self.last_query >= 1.0 / inform_freq:
-                self.last_query = current_time
-                self.socket.send(f"INFORM_TELEOP_STATE_{self.teleop_id}_{self.teleop_state}")
-            time.sleep(0.01)
+            if time.time() - self.last_query >= 1/inform_freq:
+                # if time.time() - self.last_query >= 1:
+                # if self.teleop_device == "sigma":
+                    # print("===============================================")
+                    # print("init_p_0 = {} ,init_r_0 = {}".format(self.sigma.init_p[0], self.sigma.init_r[0]))
+                    # print("init_p_1 = {} ,init_r_1 = {}".format(self.sigma.init_p[1], self.sigma.init_r[1]))
+                    # print("prev_p_0 = {} ,prev_r_0 = {}".format(self.sigma._prev_p[0], self.sigma._prev_r[0]))
+                    # print("prev_p_1 = {} ,prev_r_1 = {}".format(self.sigma._prev_p[1], self.sigma._prev_r[1]))
+                self.last_query = time.time()
+                msg = f"INFORM_TELEOP_STATE_{self.teleop_id}_{self.teleop_state}".encode()
+                self.socket.send(msg)
+
+if __name__ == "__main__":
+    inform_freq = 2
+    ctrl_freq = 10
+    teleop_device = "sigma"
+    num_robot = 2
+
+    assert teleop_device in ["sigma", "keyboard"]
+    args = parse_args()
+    args.teleop_id = 0 ##TODO:remember to delete
+    teleop_node = TeleopNode(args.teleop_id,"192.168.1.1", 12345,ctrl_freq,teleop_device,num_robot)
+    try:
+        teleop_state_thread = threading.Thread(    #inform teleop state by a freq
+            target=teleop_node.inform_teleop_state,
+            args=(inform_freq,),
+            daemon = True
+        )
+        teleop_state_thread.start()
+
+        while True:
+            pass
+
+    finally:
+        print(1)
+        teleop_node.socket.close()
+
+
+

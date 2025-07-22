@@ -2,7 +2,7 @@ device_ids: '0'
 checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mango_in_drawer/0711_22.43.38_train_diffusion_transformer_hybrid_dino_multi_gpu_0710_mango_in_drawer_ours_dagger_round2/latest.ckpt
 train_dataset_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_ours_dagger_round2
 save_buffer_path: /mnt/workspace/DP/mango_in_drawer/0722_mango_debug
-output_dir: diffusion_policy/outputs/visual/0722_mango_debug
+output_dir: diffusion_policy/outputs/visual/0710_mango_in_drawer_rollout_round3
 
 Ta: 8
 random_init: True

@@ -31,7 +31,7 @@ class Keyboard:
 
     def kill_listener(self):
         if self.listener:
-            self.listener.join()
+            self.listener.stop()  # Stop the listener first
             self.listener = None
 
     @staticmethod

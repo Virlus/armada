@@ -495,7 +495,7 @@ class RealRobotRunner:
                     while not self.robot_env.keyboard.ctn and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.help and not self.robot_env.keyboard.finish:
                         time.sleep(0.1)
 
-                    if self.robot_env.keyboard.finish: # Erase the failure flag because the episode is finished
+                    if self.robot_env.keyboard.finish and failure_flag: # Erase the failure flag because the episode is finished
                         if hasattr(self.failure_detection_module, 'failure_logs'):
                             self.failure_detection_module.failure_logs.popitem()
                         elif hasattr(self.failure_detection_module, 'failure_indices'):

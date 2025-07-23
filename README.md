@@ -31,29 +31,17 @@ python my_eval_real.py
 
 ## Rollout trained policy with human-in-the-loop intervention according to Sirius
 ```
-python rollout_sirius.py
+python run_real_rollout.py --config-name rollout_sirius
 ```
 
 ## Rollout trained policy with baseline failure detection approach (FAIL-DETECT)
 ```
-python rollout_FAIL_DETECT.py
+python run_real_rollout.py --config-name rollout_FAIL_DETECT 
 ```
 
 ## 🚨 Rollout trained policy with our failure detection method based on OT matching and action inconsistency supervision
 ```
-python real_failure_detection.py
-```
-
-## [Deprecated] Rollout trained policy with predicted trajectory visualized (need calibration)
-```
-cd diffusion_policy
-python rollout_visualize.py
-```
-
-## [Deprecated] Save the annotated predicted trajectory into a video
-```
-cd diffusion_policy
-python visualize_traj.py
+python run_real_rollout.py --config-name real_failure_detection
 ```
 
 If you would like to verify the stitched demonstrations by human intervention, please run the following command:

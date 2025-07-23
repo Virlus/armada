@@ -1,8 +1,8 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0705_23.48.55_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_0627_mug_sirius_round2/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/mug/0627_mug_sirius_round2
-save_buffer_path: /mnt/workspace/DP/mug/0627_mug_sirius_round3_test_code
-output_dir: diffusion_policy/outputs/visual/0627_mug_rollout_round3
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mango_in_drawer/0712_01.16.47_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_0710_mango_in_drawer_sirius_round2/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_sirius_round2
+save_buffer_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_sirius_round3
+output_dir: diffusion_policy/outputs/visual/0710_mango_in_drawer_rollout_round3
 
 Ta: 8
 random_init: True

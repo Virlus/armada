@@ -381,7 +381,7 @@ class TeleopNode:
         
         # Parse message - check if it contains image data
         if "_DATA:" in message:
-            # New format with embedded image data
+            # Format with embedded image data (legacy support)
             parts = message.split("_DATA:")
             header = parts[0]  # SCENE_ALIGNMENT_WITH_REF_REQUEST_{robot_id}_rewind
             image_data = parts[1]  # {side_b64}:{wrist_b64}
@@ -432,12 +432,12 @@ class TeleopNode:
             self._display_scene_alignment_with_images(rbt_id, ref_side_img, ref_wrist_img)
             
         else:
-            # Old format without image data - fallback
+            # Simple format without image data - robot displays images locally
             templ = "SCENE_ALIGNMENT_WITH_REF_REQUEST_{}_{}"
             rbt_id, context_info = parse_message_regex(message, templ)
             
-            print(f"Scene alignment with reference requested for robot {rbt_id} (no image data)")
-            print("Robot should be displaying reference alignment images. Please reset the scene and press 'C' to continue")
+            print(f"Scene alignment with reference requested for robot {rbt_id}")
+            print("Robot is displaying reference alignment images. Please reset the scene and press 'C' to continue")
             
             # Stop keyboard listener before using input()
             self.keyboard_listener.stop_keyboard_listener()

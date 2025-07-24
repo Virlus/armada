@@ -748,33 +748,47 @@ class RobotNode:
         """Request scene alignment with reference images from teleop node"""
         print("Requesting scene alignment with reference images from teleop")
         
-        # Encode images to base64 for transmission
-        import base64
-        
-        # Convert to BGR format for consistent encoding
-        ref_side_bgr = cv2.cvtColor(ref_side_cam, cv2.COLOR_RGB2BGR)
-        ref_wrist_bgr = cv2.cvtColor(ref_wrist_cam, cv2.COLOR_RGB2BGR)
-        
-        # Encode images to base64
-        _, side_buffer = cv2.imencode('.png', ref_side_bgr)
-        _, wrist_buffer = cv2.imencode('.png', ref_wrist_bgr)
-        
-        side_b64 = base64.b64encode(side_buffer).decode('utf-8')
-        wrist_b64 = base64.b64encode(wrist_buffer).decode('utf-8')
-        
-        # Send scene alignment request with encoded image data to teleop
-        align_msg = f"SCENE_ALIGNMENT_WITH_REF_REQUEST_{self.robot_id}_rewind_DATA:{side_b64}:{wrist_b64}"
+        # Send simple scene alignment request to teleop (no image data)
+        align_msg = f"SCENE_ALIGNMENT_WITH_REF_REQUEST_{self.robot_id}_rewind"
         self.socket.send(align_msg)
         
-        # Reset completion flag and wait for teleop confirmation
+        # Start local image display with reference images in robot end
+        ref_side_img = cv2.cvtColor(ref_side_cam, cv2.COLOR_RGB2BGR)
+        ref_wrist_img = cv2.cvtColor(ref_wrist_cam, cv2.COLOR_RGB2BGR)
+        self.start_scene_alignment_display_with_reference(ref_side_img, ref_wrist_img)
+        
+        print("Scene alignment with reference completed")
+    
+    def start_scene_alignment_display(self, episode_idx):
+        """Start scene alignment display in robot end, wait for teleop confirmation"""
+        # Load reference images from saved files
+        ref_side_img = cv2.imread(f"{self.output_dir}/side_{episode_idx}.png")
+        ref_wrist_img = cv2.imread(f"{self.output_dir}/wrist_{episode_idx}.png")
+
+        # Use the restored local scene alignment display
+        if ref_side_img is not None and ref_wrist_img is not None:
+            self.start_scene_alignment_display_with_reference(ref_side_img, ref_wrist_img, raw=True)
+        else:
+            print(f"⚠️  Could not load reference images for episode {episode_idx}")
+            print("Proceeding without scene alignment...")
+            time.sleep(2.0)  # Brief pause to allow manual alignment
+    
+    def start_scene_alignment_display_with_reference(self, ref_side_img, ref_wrist_img, raw=False):
+        """Start scene alignment display with provided reference images"""
+        print("Scene alignment display with reference started - waiting for teleop confirmation")
+        cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
+        cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
+
+        print("=================start image display=================")
+        
+        # Reset completion flag
         self.scene_alignment_completed = False
         
         # Add timeout mechanism to prevent infinite waiting
         start_time = time.time()
         timeout_duration = 60.0
         
-        print("Waiting for teleop to handle scene alignment...")
-        
+        # Display images until teleop confirms completion or timeout
         while not self.scene_alignment_completed:
             current_time = time.time()
             elapsed_time = current_time - start_time
@@ -785,68 +799,29 @@ class RobotNode:
                 print("🤖 Network may be disconnected, proceeding automatically")
                 break
             
-            # Just wait - no image display in robot_node
-            time.sleep(0.1)
-        
-        print("Scene alignment with reference completed")
-    
-    def start_scene_alignment_display(self, episode_idx):
-        """Start scene alignment display in robot end, wait for teleop confirmation"""
-        # Load reference images from saved files
-        ref_side_img = cv2.imread(f"{self.output_dir}/side_{episode_idx}.png")
-        ref_wrist_img = cv2.imread(f"{self.output_dir}/wrist_{episode_idx}.png")
-
-        self.start_scene_alignment_display_with_reference(ref_side_img, ref_wrist_img, raw=True)
-        
-        print("Scene alignment display started - waiting for teleop confirmation")
-        cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
-        cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
-        
-        # Reset completion flag
-        self.scene_alignment_completed = False
-        
-        # Display images until teleop confirms completion
-        while not self.scene_alignment_completed:
-            state_data = self.robot_env.get_robot_state()
-            side_img = state_data['side_img_raw']
-            wrist_img = state_data['wrist_img_raw']
-            
-            # Blend current and reference images
-            blended_side = (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8)
-            blended_wrist = (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8)
-            
-            cv2.imshow("Side", blended_side)
-            cv2.imshow("Wrist", blended_wrist)
-            cv2.waitKey(1)
-        
-        cv2.destroyAllWindows()
-        print("Scene alignment display completed")
-    
-    def start_scene_alignment_display_with_reference(self, ref_side_img, ref_wrist_img, raw=False):
-        """Start scene alignment display with provided reference images"""
-        print("Scene alignment display with reference started - waiting for teleop confirmation")
-
-        print("=================start image display=================")
-        # Reset completion flag
-        self.scene_alignment_completed = False
-        # Display images until teleop confirms completion
-        while not self.scene_alignment_completed:
-            print(self.scene_alignment_completed)
-            state_data = self.robot_env.get_robot_state()
-            if raw:
-                side_img = state_data['side_img_raw']
-                wrist_img = state_data['wrist_img_raw']
-            else:
-                side_img = cv2.cvtColor(state_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
-                wrist_img = cv2.cvtColor(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
-            
-            # Blend current and reference images
-            blended_side = (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8)
-            blended_wrist = (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8)
-            print("=================start image display11=================")
-            cv2.imshow("Side", blended_side)
-            cv2.imshow("Wrist", blended_wrist)
-            cv2.waitKey(1)
+            try:
+                state_data = self.robot_env.get_robot_state()
+                if raw:
+                    side_img = state_data['side_img_raw']
+                    wrist_img = state_data['wrist_img_raw']
+                else:
+                    side_img = cv2.cvtColor(state_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
+                    wrist_img = cv2.cvtColor(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
+                
+                # Blend current and reference images
+                blended_side = (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8)
+                blended_wrist = (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8)
+                
+                cv2.imshow("Side", blended_side)
+                cv2.imshow("Wrist", blended_wrist)
+                cv2.waitKey(1)  # Non-blocking, just for OpenCV refresh
+                
+                time.sleep(0.1)  # Prevent high CPU usage
+                
+            except Exception as e:
+                print(f"⚠️  Error during scene alignment display: {e}")
+                print("Continuing despite error...")
+                time.sleep(0.5)
         
         cv2.destroyAllWindows()
         print("Scene alignment display with reference completed")

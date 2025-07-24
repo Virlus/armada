@@ -212,7 +212,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         
         # Check for maximum episode length
         if timestep >= max_episode_length - self.Ta:
-            failure_flag = True
+            failure_flag = False
             failure_reason = "maximum episode length reached"
         
         return failure_flag, failure_reason

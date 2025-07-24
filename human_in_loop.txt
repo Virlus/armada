@@ -1,0 +1,7 @@
+conda activate test_dp
+export PYTHONPATH="${PYTHONPATH}:/home/yuwenye/projects/yzx_projs/human-in-the-loop-yzx"
+cd ~/projects/yzx_projs/human-in-the-loop-yzx/multi_robot
+
+python nodes/communication_hub.py
+python nodes/teleop_node.py --teleop_id 0
+python run_real_rollout.py --config-name multi_robot_config

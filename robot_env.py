@@ -30,9 +30,9 @@ class RobotEnv:
         # Initialize hardware components
         self.is_multi_robot_env = is_multi_robot_env
         if self.is_multi_robot_env:
-            assert robot_id and robot_info_dict
+            assert robot_id is not None and robot_info_dict is not None
             self.robot_id = robot_id
-            self.robot_ip = robot_info_dict[self.robot_id]["ip"]
+            self.robot_ip = robot_info_dict[str(self.robot_id)]["ip"]
             self.robot = FlexivRobot(self.robot_ip)
         else:
             self.robot = FlexivRobot()
@@ -42,7 +42,8 @@ class RobotEnv:
         
         self.gripper = FlexivGripper(self.robot)
         self.cameras = [CameraD400(s) for s in self.camera_serial]
-        self.keyboard = Keyboard(is_multi_robot_env=is_multi_robot_env)
+        if not is_multi_robot_env:
+            self.keyboard = Keyboard(is_multi_robot_env=is_multi_robot_env)
         self.home_pose = self.robot.init_pose
         
         # Setup image processors
@@ -127,12 +128,28 @@ class RobotEnv:
         return side_img, wrist_img
     
     def align_with_reference(self, ref_side_img, ref_wrist_img, raw=False):
+        print("=====================================================align_with_reference")
         """Align current scene with reference images"""
         cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
         cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
-        
-        while not self.keyboard.ctn:
-            state_data = self.get_robot_state()
+        if not self.is_multi_robot_env:
+            while not self.keyboard.ctn:
+                state_data = self.get_robot_state()
+                if raw:
+                    side_img = state_data['side_img_raw']
+                    wrist_img = state_data['wrist_img_raw']
+                else:
+                    side_img = cv2.cvtColor(state_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
+                    wrist_img = cv2.cvtColor(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
+                cv2.imshow("Side", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
+                cv2.imshow("Wrist", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
+                cv2.waitKey(1)
+            self.keyboard.ctn = False
+            cv2.destroyAllWindows()
+
+        else:
+            while (not input().strip().upper() == 'C'):
+                state_data = self.get_robot_state()
             if raw:
                 side_img = state_data['side_img_raw']
                 wrist_img = state_data['wrist_img_raw']
@@ -142,9 +159,6 @@ class RobotEnv:
             cv2.imshow("Side", (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8))
             cv2.imshow("Wrist", (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8))
             cv2.waitKey(1)
-        
-        self.keyboard.ctn = False
-        cv2.destroyAllWindows()
     
     def align_scene_with_file(self, output_dir, episode_idx):
         """Align current scene with reference images from a given file path"""
@@ -180,7 +194,7 @@ class RobotEnv:
         
         # Check throttle pedal state (for teleop pausing)
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+            if event.type == pygame.QUIT and not self.is_multi_robot_env:
                 self.keyboard.quit = True
         
         throttle = self.controller.get_throttle()

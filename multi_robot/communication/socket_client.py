@@ -30,7 +30,7 @@ class SocketClient:
                     if not data:
                         break
                     decoded_data = data.decode()
-                    print(f"Received from server: {decoded_data}")
+                    # print(f"Received from server: {decoded_data}")
 
                     if self.message_handler:               #process
                         self.message_handler(decoded_data)
@@ -60,7 +60,7 @@ class SocketClient:
             self.sock = None
 
 if __name__ == "__main__":
-    socket = SocketClient("127.0.0.3",8888, message_handler = None)
+    socket = SocketClient("127.0.0.1",8888, message_handler = None)
     socket.start_connection()
     while True:
         socket.send("Hello, world!")

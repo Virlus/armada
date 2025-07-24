@@ -33,7 +33,12 @@ class CommunicationHub:
             "TELEOP_CTRL_STOP",
             "SIGMA",
             "THROTTLE_SHIFT",
-            "TCP_BEFORE_TAKEOVER"
+            "TCP_BEFORE_TAKEOVER",
+            "REWIND_ROBOT",
+            "REWIND_COMPLETED",
+            "SCENE_ALIGNMENT_REQUEST",
+            "SCENE_ALIGNMENT_WITH_REF_REQUEST",
+            "SCENE_ALIGNMENT_COMPLETED"
         ]
         sorted_seps = sorted(separators, key=len, reverse=True)
         pattern = "|".join(map(re.escape, sorted_seps))
@@ -65,6 +70,7 @@ class CommunicationHub:
     def handle_message(self, raw_message, addr):
         message_list = self.split_combined_messages(raw_message)
         for message in message_list:
+            print("============message:", message)
             if message.startswith("NEED_HUMAN_CHECK"):  # From robot, frequency determined by agent
                 with self.lock:
                     self.cmd_for_add_requestQ(message, addr)
@@ -121,6 +127,26 @@ class CommunicationHub:
                 with self.lock:
                     self.report_throttle_shift_pose(message, addr)
 
+            elif message.startswith("REWIND_ROBOT"):
+                with self.lock:
+                    self.report_rewind_robot(message, addr)
+
+            elif message.startswith("REWIND_COMPLETED"):
+                with self.lock:
+                    self.report_rewind_completed(message, addr)
+
+            elif message.startswith("SCENE_ALIGNMENT_REQUEST"):
+                with self.lock:
+                    self.report_scene_alignment_request(message, addr)
+
+            elif message.startswith("SCENE_ALIGNMENT_WITH_REF_REQUEST"):
+                with self.lock:
+                    self.report_scene_alignment_with_ref_request(message, addr)
+
+            elif message.startswith("SCENE_ALIGNMENT_COMPLETED"):
+                with self.lock:
+                    self.report_scene_alignment_completed(message, addr)
+
             elif message.startswith("Hello"):
                 pass
             
@@ -129,10 +155,13 @@ class CommunicationHub:
 
     def cmd_for_add_requestQ(self, message, addr):
         rbt_id, request_type = parse_message_regex(message, "NEED_HUMAN_CHECK_from_robot{}_for_{}")
+        # print("============rbt_id", rbt_id)
         self.request_q.put((rbt_id, request_type))
 
     def update_teleop_queue(self, message, addr):
         teleop_id, teleop_state = parse_message_regex(message, "INFORM_TELEOP_STATE_{}_{}")
+        # print("============teleop_id:{}, teleop_state:{}".format(teleop_id, teleop_state))
+        
         if teleop_id not in self.teleop_dict.keys():
             self.teleop_dict[teleop_id] = addr
 
@@ -143,6 +172,7 @@ class CommunicationHub:
 
     def update_robot_state_dict(self, message, addr):
         robot_id, robot_state = parse_message_regex(message, "INFORM_ROBOT_STATE_{}_{}")
+        print("============robot_id:{}, robot_state:{}".format(robot_id, robot_state))
         if robot_id not in self.robot_dict.keys():
             self.robot_dict[robot_id] = addr
             self.robot_state_dict[robot_id] = robot_state
@@ -151,30 +181,35 @@ class CommunicationHub:
     def report_human_takeover_result(self, message, addr):
         templ = "TELEOP_TAKEOVER_RESULT_SUCCESS_from_robot{}" if "SUCCESS" in message else "TELEOP_TAKEOVER_RESULT_FAILURE_from_robot{}"
         rbt_id = parse_message_regex(message, templ)[0]
+        # print("============rbt_id:{}".format(rbt_id))
         send_msg = "TELEOP_TAKEOVER_RESULT_SUCCESS" if "SUCCESS" in message else "TELEOP_TAKEOVER_RESULT_FAILURE"
         self.socket.send(self.robot_dict[rbt_id], send_msg)
 
     def report_continue_policy(self, message, addr):
         templ = "CONTINUE_POLICY_{}"
         rbt_id = parse_message_regex(message, templ)[0]
+        print("============rbt_id:{}".format(rbt_id))
         send_msg = "CONTINUE_POLICY"
         self.socket.send(self.robot_dict[rbt_id], send_msg)
 
     def report_playback_traj(self, message, addr):
         templ = "PLAYBACK_TRAJ_{}"
         rbt_id = parse_message_regex(message, templ)[0]
+        # print("============rbt_id:{}".format(rbt_id))
         send_msg = "PLAYBACK_TRAJ"
         self.socket.send(self.robot_dict[rbt_id], send_msg)
 
     def report_teleop_ctrl_start(self, message, addr):
         templ = "TELEOP_CTRL_START_{}"
         rbt_id = parse_message_regex(message, templ)[0]
+        # print("============rbt_id:{}".format(rbt_id))
         send_msg = "TELEOP_CTRL_START"
         self.socket.send(self.robot_dict[rbt_id], send_msg)
 
     def report_teleop_ctrl_stop(self, message, addr):
         templ = "TELEOP_CTRL_STOP_{}_for_{}"
         rbt_id, stop_event = parse_message_regex(message, templ)
+        # print("============rbt_id:{}, stop_event:{}".format(rbt_id, stop_event))   
         send_msg = message
         self.socket.send(self.robot_dict[rbt_id], send_msg)
 
@@ -186,12 +221,14 @@ class CommunicationHub:
             full_msg = 'COMMAND_' + msg
             templ = "COMMAND_from_{}_to_{}:{}"
             teleop_id, rbt_id, cmd = parse_message_regex(full_msg, templ)
+            # print("============teleop_id:{}, rbt_id:{}".format(teleop_id, rbt_id))
             send_msg = full_msg
             self.socket.send(self.robot_dict[rbt_id], send_msg)
 
     def report_sigma_detach(self, message, addr):
         templ = "SIGMA_of_{}_DETACH_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
+        # print("============teleop_id:{}, rbt_id:{}".format(teleop_id, rbt_id))
         send_msg = message
         self.socket.send(self.teleop_dict[teleop_id], send_msg)
 
@@ -201,25 +238,118 @@ class CommunicationHub:
         else:
             templ = "SIGMA_of_{}_RESUME_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
+        # print("============teleop_id:{}, rbt_id:{}".format(teleop_id, rbt_id)) 
         send_msg = message
         self.socket.send(self.teleop_dict[teleop_id], send_msg)
 
     def report_sigma_reset(self, message, addr):
         templ = "SIGMA_of_{}_RESET_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
+        # print("============teleop_id:{}, rbt_id:{}".format(teleop_id, rbt_id))  
         send_msg = message
         self.socket.send(self.teleop_dict[teleop_id], send_msg)
 
     def report_sigma_transform(self, message, addr):
         templ = "SIGMA_TRANSFORM_from_{}_{}_to_{}"
         rbt_id, _, teleop_id = parse_message_regex(message, templ)
+        # print("============rbt_id:{}, teleop_id:{}".format(rbt_id, teleop_id))
         send_msg = message
         self.socket.send(self.teleop_dict[teleop_id], send_msg)
 
     def report_throttle_shift_pose(self, message, addr):
         templ = "THROTTLE_SHIFT_POSE_from_{}_to_{}:{}"
         teleop_id, rbt_id, _ = parse_message_regex(message, templ)
+        print("============teleop_id:{}, rbt_id:{}".format(teleop_id, rbt_id))
         send_msg = message
+        self.socket.send(self.robot_dict[rbt_id], send_msg)
+
+    def report_rewind_robot(self, message, addr):
+        """Forward rewind message to robot"""
+        templ = "REWIND_ROBOT_{}"
+        rbt_id = parse_message_regex(message, templ)[0]
+        print("============Rewind request for robot_id:{}".format(rbt_id))
+        send_msg = "REWIND_ROBOT"
+        self.socket.send(self.robot_dict[rbt_id], send_msg)
+
+    def report_rewind_completed(self, message, addr):
+        """Forward rewind completion message to teleop"""
+        templ = "REWIND_COMPLETED_{}"
+        rbt_id = parse_message_regex(message, templ)[0]
+        print("============Rewind completed for robot_id:{}".format(rbt_id))
+        
+        # Find the teleop that initiated the rewind (ideally track this)
+        if len(self.idle_teleop_q) > 0:
+            # For simplicity, send to the first available teleop
+            teleop_id = list(self.teleop_dict.keys())[0] if self.teleop_dict else None
+            if teleop_id is not None:
+                send_msg = f"REWIND_COMPLETED_{rbt_id}"
+                self.socket.send(self.teleop_dict[teleop_id], send_msg)
+        else:
+            print("No teleop available to receive rewind completion")
+
+    def report_scene_alignment_request(self, message, addr):
+        """Forward scene alignment request to teleop"""
+        templ = "SCENE_ALIGNMENT_REQUEST_{}_{}"
+        rbt_id, context_info = parse_message_regex(message, templ)
+        print("============Scene alignment request for robot_id:{}, context:{}".format(rbt_id, context_info))
+        
+        # Find an idle teleop to handle the request
+        if len(self.idle_teleop_q) > 0:
+            teleop_id = self.idle_teleop_q[0]
+            send_msg = f"SCENE_ALIGNMENT_REQUEST_{rbt_id}_{context_info}"
+            self.socket.send(self.teleop_dict[teleop_id], send_msg)
+        else:
+            print("No idle teleop available for scene alignment")
+
+    def report_scene_alignment_with_ref_request(self, message, addr):
+        """Forward scene alignment with reference request to teleop"""
+        
+        # Check if message contains image data
+        if "_DATA:" in message:
+            # New format with image data - extract robot_id differently
+            header_part = message.split("_DATA:")[0]
+            try:
+                # Try to extract robot_id from header: SCENE_ALIGNMENT_WITH_REF_REQUEST_{robot_id}_rewind
+                parts = header_part.split("_")
+                if len(parts) >= 4:
+                    rbt_id = parts[3]  # robot_id is at index 3
+                    context_info = "rewind_with_data"
+                else:
+                    raise ValueError("Unable to parse robot_id from header")
+            except Exception as e:
+                print(f"Error parsing message with image data: {e}")
+                print(f"Message header: {header_part}")
+                return
+            
+            print(f"============Scene alignment with ref request (with image data) for robot_id:{rbt_id}, context:{context_info}")
+            
+        else:
+            # Old format without image data
+            try:
+                templ = "SCENE_ALIGNMENT_WITH_REF_REQUEST_{}_{}"
+                rbt_id, context_info = parse_message_regex(message, templ)
+            except Exception as e:
+                print(f"Error parsing old format message: {e}")
+                print(f"Message: {message}")
+                return
+            
+            print(f"============Scene alignment with ref request (old format) for robot_id:{rbt_id}, context:{context_info}")
+        
+        # Find an idle teleop to handle the request
+        if len(self.idle_teleop_q) > 0:
+            teleop_id = self.idle_teleop_q[0]
+            # Forward the entire message as-is to preserve image data
+            self.socket.send(self.teleop_dict[teleop_id], message)
+            print(f"Forwarded to teleop {teleop_id}")
+        else:
+            print("No idle teleop available for scene alignment")
+
+    def report_scene_alignment_completed(self, message, addr):
+        """Forward scene alignment completion to robot"""
+        templ = "SCENE_ALIGNMENT_COMPLETED_{}"
+        rbt_id = parse_message_regex(message, templ)[0]
+        print("============Scene alignment completed for robot_id:{}".format(rbt_id))
+        send_msg = "SCENE_ALIGNMENT_COMPLETED"
         self.socket.send(self.robot_dict[rbt_id], send_msg)
 
     def update_request_q_workflow(self):

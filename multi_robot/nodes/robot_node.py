@@ -7,7 +7,7 @@ import dill
 import threading
 from typing import Dict, List, Any, Optional, Tuple
 from scipy.spatial.transform import Rotation as R
-
+import cv2
 from diffusion_policy.diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
@@ -23,9 +23,10 @@ from multi_robot.utils.message_distillation import parse_message_regex
 
 class RobotNode:
     def __init__(self, config, rank: int, device_ids: List[int]):
+        # self.teleop_minstep_over=True
 
         self.robot_id = config.robot_info.robot_id
-
+        self.is_multi_robot_env = True if config.robot_info.num_robots > 1 else False
         self.config = config
         self.rank = rank
         self.device_ids = device_ids
@@ -34,6 +35,9 @@ class RobotNode:
         self.device = f"cuda:{config.device_ids.split(',')[0]}"
         self.fps = 10
         self.robot_info_dict = self.config.robot_info.robot_info_dict
+
+        # Initialize distributed training
+        torch.distributed.init_process_group("nccl", rank=rank, world_size=self.world_size)
         
         # Initialize communication
         socket_ip = self.config.robot_info.socket_ip
@@ -48,11 +52,17 @@ class RobotNode:
         self._initialize_robot_env()
         self._initialize_episode_manager()
         self._initialize_replay_buffer()
-        self._initialize_failure_detection()
+        self.max_episode_length = self._calculate_max_episode_length()
+        
+        # Initialize failure detection module if specified
+        self.failure_detection_module = None
+        if hasattr(config, 'failure_detection_module') and config.failure_detection_module:
+            self._initialize_failure_detection_module()
         
         # Set random seed
         self.seed = config.seed
         np.random.seed(self.seed)
+        # print(f"DEBUG: seed: {self.seed}")
         
         # Setup output directory 
         self._setup_output_directory()
@@ -61,7 +71,7 @@ class RobotNode:
         
         # State management
         self.robot_state = "idle"  # idle / teleop_controlled / agent_controlled / error
-        self.teleop_id = None
+        self.teleop_id = 0
         self.last_query_robot = time.time() - 1
         self.inform_freq = 5  # Hz
         
@@ -88,6 +98,9 @@ class RobotNode:
 
         self.finish_episode = False
         
+        # Scene alignment state
+        self.scene_alignment_completed = False
+        # self.robot_env.keyboard.kill_listener()
     
         
     def _load_policy(self):
@@ -194,7 +207,7 @@ class RobotNode:
         if 'failure_indices' not in self.replay_buffer.keys():
             self.replay_buffer.data['failure_indices'] = np.zeros((self.replay_buffer.n_steps, ), dtype=np.bool_)
     
-    def _initialize_failure_detection(self):
+    def _initialize_failure_detection_module(self):
         """Initialize failure detection module"""
         module_name = self.config.failure_detection_module
         
@@ -265,10 +278,10 @@ class RobotNode:
         """Main rollout loop"""
         try:
             while True: 
-                self.robot_env.keyboard.create_listener() if not self.robot_env.keyboard.listener else None
+                # self.robot_env.keyboard.create_listener() if not self.robot_env.keyboard.listener else None
 
-                if self.robot_env.keyboard.quit:
-                    break
+                # if self.robot_env.keyboard.quit:
+                #     break
 
                 print(f"Rollout episode: {self.episode_idx}")
                 
@@ -283,7 +296,7 @@ class RobotNode:
                 
                 # Reset robot between episodes
                 self.reset()
-                print("Reset!")
+                # print("Reset!")
                 
                 self.episode_idx += 1
                 
@@ -298,17 +311,11 @@ class RobotNode:
             self._cleanup()
 
     def _run_single_episode(self):
-
-        self.robot_env.keyboard.create_listener() if not self.robot_env.keyboard.listener else None
-
-        self.robot_env.keyboard.finish = False
-        self.robot_env.keyboard.help = False
-        self.robot_env.keyboard.infer = False
-        self.robot_env.keyboard.discard = False
         time.sleep(1)
 
         # Reset keyboard states
-        self.finish_episode = False
+        with self.lock:
+            self.finish_episode = False
         self.robot_state = "agent_controlled"  
 
         # Initialize episode buffers
@@ -348,7 +355,7 @@ class RobotNode:
         if self.save_img or not os.path.isfile(os.path.join(self.output_dir, f"side_{self.episode_idx}.png")):
             self.robot_env.save_scene_images(self.output_dir, self.episode_idx)
         else:
-            self.robot_env.align_scene_with_file(self.output_dir, self.episode_idx)
+            self.request_scene_alignment(f"episode_start_{self.episode_idx}")
         
         # Initialize failure detection module step data
         if self.failure_detection_module:
@@ -364,35 +371,33 @@ class RobotNode:
         self.j = 0  # Episode timestep     
 
         while True:
-            if self.j >= self.max_episode_length - self.Ta:
+            if self.j >= self.max_episode_length - self.Ta and self.robot_state == "agent_controlled":
                 print("Maximum episode length reached, turning to human for help.")
-                self.robot_env.keyboard.help = True
+                self.call_human_for_help("timeout")
+                self.robot_state = "idle"
 
+            # Handle robot state actions
             if self.robot_state == "agent_controlled":
+                # self.robot_env.keyboard.create_listener() if not self.robot_env.keyboard.listener else None
                 self.run_policy() 
-
-            #==============keyboard events==============
-            # Human intervention if requested
-            if self.robot_env.keyboard.help:
-                self.socket.send(f"NEED_HUMAN_CHECK_from_robot{self.robot_id}_for_timeout")    
-
-             # Check if episode should finish
-            if self.robot_env.keyboard.discard:
-                return None
-
-            if self.robot_env.keyboard.finish:
-                break
-            #==============keyboard events==============
-
+                
             elif self.robot_state == "teleop_controlled":
+                # print("==================sleep for teleop=======================")
                 time.sleep(0.1)  # Prevent high CPU usage
             elif self.robot_state == "idle":
+                # print("==================sleep for idle=======================")
                 time.sleep(0.1)
-            if self.finish_episode:
+
+            with self.lock:
+                finish_episode_flag = self.finish_episode
+            
+            if finish_episode_flag:
+                print("===================break episode=======================")
                 break
 
         # Finalize episode and return data
         if self.finish_episode:
+            print("===================finalize episode 2=======================")
             episode_data = self._finalize_episode()
             return episode_data
         else:
@@ -400,10 +405,10 @@ class RobotNode:
             
     
     def run_policy(self):
-        self.robot_env.keyboard.create_listener() if not self.robot_env.keyboard.listener else None
+        # self.robot_env.keyboard.create_listener() if not self.robot_env.keyboard.listener else None
 
         """Run policy inference loop"""
-        while self.j < self.max_episode_length and self.robot_state == "agent_controlled" and not self.robot_env.keyboard.finish and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.help:
+        while self.j < self.max_episode_length and self.robot_state == "agent_controlled" : # and not self.robot_env.keyboard.finish and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.help:
             start_time = time.time()
             
             # Get robot state and observations
@@ -493,129 +498,177 @@ class RobotNode:
                 
                 failure_step_data = self.failure_detection_module.process_step(step_data)  #对当前step，提交机器检查stepot_matching和action_inconsistency的申请，即对这两种情形都加入_async_queue
                 
-                failure_flag, failure_reason = self.failure_detection_module.detect_failure(  #阻塞式的，从FailureDetector.async_result_queue中获取所有结果，其中if result["task_type"] == "ot_matching"则调用failure_detector.submit_failure_detection_task，
+                failure_flag, self.failure_reason = self.failure_detection_module.detect_failure(  #阻塞式的，从FailureDetector.async_result_queue中获取所有结果，其中if result["task_type"] == "ot_matching"则调用failure_detector.submit_failure_detection_task，
                 #其会对_async_queue来push"failure_detection"的请求;如果是"action_inconsistency"就会加入action_inconsistency_buffer;如果是"failure_detection",就会记录日志。
                     timestep=self.j,
                     max_episode_length=self.max_episode_length,
                     failure_step_data=failure_step_data
                 )
-                #另有线程FailureDetector._async_processing_thread会循环对_async_queue.pop，然后读出task_type,如果是"ot_matching"/”action_inconsistency"则计算出统计指标（ot_cost/动作不平均量），如果是"failure_detection"则根据先前求出的统计指标判断出ot/action有没有问题，
-                #最后三种结果都放入async_result_queue
-                #process_step，async_processing_thread,detect_failure理想的工作流程是：
-                # push_async_queue(ot,action)(func:process_step)
-                # ----->pop_async_queue(ot,action)------>metrics=compute(ot,action)------>push_async_result_queue(metrics)(func:async_processing_thread)
-                # ----->pop_async_result_queue(ot)------>push_async_queue(failure_detection) | ----->pop_async_result_queue(action)------>add_action_inconsistency_buffer(action)(func:detect_failure)
-                # ----->pop_async_queue(failure_detection)------>result=evaluate_failure(metrics)------>push_async_result_queue(result)(func:async_processing_thread)
-                # ----->pop_async_result_queue(result)------>write_logs(result)(func:detect_failure)
 
                 if failure_flag or self.j >= self.max_episode_length - self.Ta:
+                    self.robot_state = "idle"         #temporarily set to idle for human judgement
+
                     if failure_flag:
-                        print(f"Failure detected! Due to {failure_reason}")
+                        print(f"Failure detected! Due to {self.failure_reason}")
                     else:
                         print("Maximum episode length reached")
-                    
-                    print("Press 'c' to continue; Press 'd' to discard the demo; Press 'h' to request human intervention; Press 'f' to finish the episode.")
-                    while not self.robot_env.keyboard.ctn and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.help and not self.robot_env.keyboard.finish:
-                        time.sleep(0.1)
-                    
-                    if self.robot_env.keyboard.finish: # Erase the failure flag because the episode is finished
-                        if hasattr(self.failure_detection_module, 'failure_logs'):
-                            self.failure_detection_module.failure_logs.popitem()
-                        elif hasattr(self.failure_detection_module, 'failure_indices'):
-                            self.failure_detection_module.failure_indices.pop()
-                    
-                    if self.robot_env.keyboard.ctn and self.j < self.max_episode_length - self.Ta:
-                        print("False Positive failure! Continue policy rollout.")
-                        self.robot_env.keyboard.ctn = False
-                        if failure_reason == 'action inconsistency' and self.failure_detection_module.enable_action_inconsistency:
-                            self.failure_detection_module.failure_detector.expert_action_threshold = np.inf
-                            print("Reset the action inconsistency threshold to infinity temporarily")
-                        continue
-                    elif self.robot_env.keyboard.ctn and self.j >= self.max_episode_length - self.Ta:
-                        print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
-                        self.robot_env.keyboard.ctn = False
-                        self.robot_env.keyboard.help = True
-                        break
-                    
-                    # Send human check request
-                    if failure_flag:
-                        self.socket.send(f"NEED_HUMAN_CHECK_from_robot{self.robot_id}_for_failure")
+
+                     # Send human check request
+                    print("======================sending error to teleop======================== ") #print before keyboard is forbidden
+
+                    if self.j >= self.max_episode_length - self.Ta:
+                        self.call_human_for_help("timeout") #send message to teleop
                     else:
-                        self.socket.send(f"NEED_HUMAN_CHECK_from_robot{self.robot_id}_for_timeout")
-                    
-                    # Pause policy execution
-                    self.robot_state = "idle"
-                    break
+                        self.call_human_for_help("failure")
+                    return  
             # ================Detect failure===============
             
             # Check for maximum episode length without failure detection
             elif self.j >= self.max_episode_length - self.Ta:
-                print("Maximum episode length reached")
-                self.socket.send(f"NEED_HUMAN_CHECK_from_robot{self.robot_id}_for_timeout")
                 self.robot_state = "idle"
-                break
+                print("Maximum episode length reached")
+                print("======================sending error to teleop 4=========================")
+                self.call_human_for_help("timeout")
+                return  # Return from run_policy to exit the while loop
+        
+        # This should only be reached if the while loop exits normally
+        print("DEBUG: run_policy() completed normally, while loop exited")
+            
+    def call_human_for_help(self,reason):
+        # print(f"DEBUG: call_human_for_help started with reason: {reason}")
+        # self.robot_env.keyboard.help = False  # prevent send message twice in the episode main loop 
+        self.socket.send(f"NEED_HUMAN_CHECK_from_robot{self.robot_id}_for_{reason}") 
+        # print("DEBUG: Message sent to socket")
+        # self.robot_env.keyboard.kill_listener()
+        # print("DEBUG: call_human_for_help completed")
+
     
-    def get_separator_pattern(self):
-        """Get message separator pattern"""
-        separators = [
-            "READY",
-            "TELEOP_TAKEOVER_RESULT",
-            "CONTINUE_POLICY",
-            "PLAYBACK_TRAJ",
-            "TELEOP_CTRL_START",
-            "COMMAND",
-            "TELEOP_CTRL_STOP",
-            "THROTTLE_SHIFT"
-        ]
-        sorted_seps = sorted(separators, key=len, reverse=True)
-        pattern = "|".join(map(re.escape, sorted_seps))
-        return re.compile(f"({pattern})")
+    def get_message_patterns(self):
+        """Get comprehensive message patterns for robust parsing"""
+        # Pattern for floating point numbers (including negative and scientific notation)
+        float_pattern = r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?'
+        
+        patterns = {
+            'READY': r'READY_for_state_check_by_human_with_teleop_id_\d+',
+            'TELEOP_TAKEOVER_RESULT': r'TELEOP_TAKEOVER_RESULT_\w+_from_robot\d+',
+            'CONTINUE_POLICY': r'CONTINUE_POLICY_\d+',
+            'PLAYBACK_TRAJ': r'PLAYBACK_TRAJ_\d+',
+            'TELEOP_CTRL_START': r'TELEOP_CTRL_START_\d+',
+            'TELEOP_CTRL_STOP': r'TELEOP_CTRL_STOP_\d+_for_\w+',
+            'THROTTLE_SHIFT': rf'THROTTLE_SHIFT_POSE_from_\d+_to_\d+:sigma:\[(?:{float_pattern}(?:,\s*{float_pattern})*)\],\[(?:{float_pattern}(?:,\s*{float_pattern})*)\]',
+            'COMMAND': rf'COMMAND_from_\d+_to_\d+:sigma:\[(?:{float_pattern}(?:,\s*{float_pattern})*)\],\[(?:{float_pattern}(?:,\s*{float_pattern})*)\],{float_pattern},{float_pattern}',
+            'REWIND_ROBOT': r'REWIND_ROBOT',
+            'SCENE_ALIGNMENT_COMPLETED': r'SCENE_ALIGNMENT_COMPLETED'
+        }
+        return patterns
     
     def split_combined_messages(self, combined_msg):
-        """Split combined messages"""
+        """Split combined messages using robust pattern matching"""
         if not combined_msg:
             return []
-
-        pattern = self.get_separator_pattern()
-        parts = []
-        matches = list(pattern.finditer(combined_msg))
-        if not matches:
+        
+        # Single message case
+        if not any(sep in combined_msg for sep in ['READY', 'TELEOP_TAKEOVER_RESULT', 'CONTINUE_POLICY', 
+                                                   'PLAYBACK_TRAJ', 'TELEOP_CTRL_START', 'TELEOP_CTRL_STOP', 
+                                                   'THROTTLE_SHIFT', 'COMMAND', 'REWIND_ROBOT', 'SCENE_ALIGNMENT_COMPLETED']):
             return [combined_msg]
-
-        if matches[0].start() > 0:
-            parts.append(combined_msg[:matches[0].start()])
-
-        for i, match in enumerate(matches):
-            start = match.start()
-            next_start = matches[i + 1].start() if i < len(matches) - 1 else len(combined_msg)
-            content = combined_msg[start:next_start]
-            parts.append(content)
-        return parts
+        
+        patterns = self.get_message_patterns()
+        messages = []
+        remaining = combined_msg
+        
+        while remaining:
+            found_match = False
+            best_match = None
+            best_start = len(remaining)
+            best_pattern_name = None
+            
+            # Find the earliest matching pattern
+            for pattern_name, pattern in patterns.items():
+                match = re.search(pattern, remaining)
+                if match and match.start() < best_start:
+                    best_match = match
+                    best_start = match.start()
+                    best_pattern_name = pattern_name
+                    found_match = True
+            
+            if not found_match:
+                # No more patterns found, add remaining as is
+                if remaining.strip():
+                    messages.append(remaining.strip())
+                break
+            
+            # Add any content before the match
+            if best_start > 0:
+                prefix = remaining[:best_start].strip()
+                if prefix:
+                    messages.append(prefix)
+            
+            # Add the matched message
+            messages.append(best_match.group(0))
+            remaining = remaining[best_match.end():]
+        
+        return [msg for msg in messages if msg.strip()]
     
     def handle_message(self, raw_msg):
         """Handle received messages"""
+        print(f"DEBUG: Raw message received: {repr(raw_msg)}")
         message_list = self.split_combined_messages(raw_msg)
+        print(f"DEBUG: Split into {len(message_list)} messages: {[repr(msg) for msg in message_list]}")
+        
         for message in message_list:
             if message.startswith("READY"):
                 self.get_ready_takeover(message)
+
             elif message.startswith("TELEOP_TAKEOVER_RESULT"): #direct result without human teleoperation,succ/fail
                 self.detach()
-                self.finish_episode = True  #finish_episode has greater priority over robot_state
+                print(f"DEBUG: Setting finish_episode=True in thread {threading.current_thread().name}")
+                if "FAILURE" in message:
+                    self.handle_failure()
+                with self.lock:
+                    self.finish_episode = True  #finish_episode has greater priority over robot_state
+                print("===================finish episode_1=======================")
+                print(f"DEBUG: After setting, finish_episode={self.finish_episode}")
+
             elif message.startswith("CONTINUE_POLICY"):   #direct result without human teleoperation
-                self.robot_state = "agent_controlled"
-                self.detach()
+                self.handle_ctn()
             elif message.startswith("PLAYBACK_TRAJ"):
                 self.playback_traj()
             elif message.startswith("TELEOP_CTRL_START"):
                 self.start_being_teleoped()
             elif message.startswith("COMMAND"):
+                print(f"DEBUG: Processing COMMAND message: {repr(message)}")
                 self.process_teleop_command(message)
             elif message.startswith("TELEOP_CTRL_STOP"):  #direct result after human teleoperation,cancel/accept/continue
                 self.stop_teleop(message)
             elif message.startswith("THROTTLE_SHIFT"):
                 self.process_throttle_info(message)
+            elif message.startswith("REWIND_ROBOT"):
+                self.handle_prerewind_robot()
+            elif message.startswith("SCENE_ALIGNMENT_COMPLETED"):
+                self.handle_scene_alignment_completed(message)
             else:
                 print(f"未知命令: {message}")
+    
+    def handle_ctn(self):
+        self.robot_state = "agent_controlled"
+        self.detach()
+
+        assert self.j < self.max_episode_length - self.Ta
+        print("False Positive failure! Continue policy rollout.")
+        if self.failure_reason == 'action inconsistency' and self.failure_detection_module.enable_action_inconsistency:
+            self.failure_detection_module.failure_detector.expert_action_threshold = np.inf
+            print("Reset the action inconsistency threshold to infinity temporarily")
+        self.robot_state = "agent_controlled"        #get back to agent_controlled
+    
+    def handle_failure(self):
+        if hasattr(self.failure_detection_module, 'failure_logs'):
+            if self.failure_detection_module.failure_logs:  # Check if dictionary is not empty
+                self.failure_detection_module.failure_logs.popitem()
+        elif hasattr(self.failure_detection_module, 'failure_indices'):
+            if self.failure_detection_module.failure_indices:  # Check if list is not empty
+                self.failure_detection_module.failure_indices.pop()
+                    
     
     def get_ready_takeover(self, message):
         """Prepare for takeover"""
@@ -623,7 +676,6 @@ class RobotNode:
         teleop_id = parse_message_regex(message, templ)[0]
         self.teleop_id = teleop_id
 
-    
     def process_throttle_info(self, msg):
         """Process throttle shift information"""
         pattern = r"THROTTLE_SHIFT_POSE_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\]"
@@ -652,23 +704,165 @@ class RobotNode:
         self.delta_p_arr = None
         self.delta_r_arr = None
     
+    def handle_prerewind_robot(self):
+        # Perform rewinding if needed
+        print("Starting rewind process...")
+        if self.failure_detection_module and hasattr(self, 'episode_buffers') and hasattr(self, 'j'):
+            print("Rewinding robot......")
+            try:
+                self.j, curr_pos, curr_rot = self._rewind_robot(self.episode_buffers, self.j)  #TODO: remember to restore rewind
+                print(f"Rewind completed. New timestep: {self.j}")
+            except Exception as e:
+                print(f"Error during rewind: {e}")
+                print("Continuing without rewind...")
+        else:
+            print("No failure detection module or missing episode data, skipping rewind")
+        
+        # Send rewind completion message
+        print("Rewind process completed")
+        rewind_complete_msg = f"REWIND_COMPLETED_{self.robot_id}"
+        self.socket.send(rewind_complete_msg)
+    
+    def request_scene_alignment(self, context_info):
+        """Request scene alignment from teleop node"""
+        print(f"Requesting scene alignment for: {context_info}")
+        
+        # Extract episode index from context if it's episode_start
+        if context_info.startswith("episode_start_"):
+            episode_idx = context_info.split("_")[-1]
+            # Send request to teleop node to handle user interaction
+            align_msg = f"SCENE_ALIGNMENT_REQUEST_{self.robot_id}_{context_info}"
+            self.socket.send(align_msg)
+            # Start local image display in robot end
+            self.start_scene_alignment_display(episode_idx)
+        else:
+            print(f"Unknown context for scene alignment: {context_info}")
+        
+        print("Scene alignment completed")
+    
+    def handle_scene_alignment_completed(self, message):
+        """Handle scene alignment completion notification"""
+        self.scene_alignment_completed = True
+    
+    def request_scene_alignment_with_reference(self, ref_side_cam, ref_wrist_cam):
+        """Request scene alignment with reference images from teleop node"""
+        print("Requesting scene alignment with reference images from teleop")
+        
+        # Encode images to base64 for transmission
+        import base64
+        
+        # Convert to BGR format for consistent encoding
+        ref_side_bgr = cv2.cvtColor(ref_side_cam, cv2.COLOR_RGB2BGR)
+        ref_wrist_bgr = cv2.cvtColor(ref_wrist_cam, cv2.COLOR_RGB2BGR)
+        
+        # Encode images to base64
+        _, side_buffer = cv2.imencode('.png', ref_side_bgr)
+        _, wrist_buffer = cv2.imencode('.png', ref_wrist_bgr)
+        
+        side_b64 = base64.b64encode(side_buffer).decode('utf-8')
+        wrist_b64 = base64.b64encode(wrist_buffer).decode('utf-8')
+        
+        # Send scene alignment request with encoded image data to teleop
+        align_msg = f"SCENE_ALIGNMENT_WITH_REF_REQUEST_{self.robot_id}_rewind_DATA:{side_b64}:{wrist_b64}"
+        self.socket.send(align_msg)
+        
+        # Reset completion flag and wait for teleop confirmation
+        self.scene_alignment_completed = False
+        
+        # Add timeout mechanism to prevent infinite waiting
+        start_time = time.time()
+        timeout_duration = 60.0
+        
+        print("Waiting for teleop to handle scene alignment...")
+        
+        while not self.scene_alignment_completed:
+            current_time = time.time()
+            elapsed_time = current_time - start_time
+            
+            # Check for timeout
+            if elapsed_time > timeout_duration:
+                print(f"⚠️  TIMEOUT after {timeout_duration} seconds. Auto-continuing...")
+                print("🤖 Network may be disconnected, proceeding automatically")
+                break
+            
+            # Just wait - no image display in robot_node
+            time.sleep(0.1)
+        
+        print("Scene alignment with reference completed")
+    
+    def start_scene_alignment_display(self, episode_idx):
+        """Start scene alignment display in robot end, wait for teleop confirmation"""
+        # Load reference images from saved files
+        ref_side_img = cv2.imread(f"{self.output_dir}/side_{episode_idx}.png")
+        ref_wrist_img = cv2.imread(f"{self.output_dir}/wrist_{episode_idx}.png")
+
+        self.start_scene_alignment_display_with_reference(ref_side_img, ref_wrist_img, raw=True)
+        
+        print("Scene alignment display started - waiting for teleop confirmation")
+        cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
+        cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
+        
+        # Reset completion flag
+        self.scene_alignment_completed = False
+        
+        # Display images until teleop confirms completion
+        while not self.scene_alignment_completed:
+            state_data = self.robot_env.get_robot_state()
+            side_img = state_data['side_img_raw']
+            wrist_img = state_data['wrist_img_raw']
+            
+            # Blend current and reference images
+            blended_side = (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8)
+            blended_wrist = (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8)
+            
+            cv2.imshow("Side", blended_side)
+            cv2.imshow("Wrist", blended_wrist)
+            cv2.waitKey(1)
+        
+        cv2.destroyAllWindows()
+        print("Scene alignment display completed")
+    
+    def start_scene_alignment_display_with_reference(self, ref_side_img, ref_wrist_img, raw=False):
+        """Start scene alignment display with provided reference images"""
+        print("Scene alignment display with reference started - waiting for teleop confirmation")
+
+        print("=================start image display=================")
+        # Reset completion flag
+        self.scene_alignment_completed = False
+        # Display images until teleop confirms completion
+        while not self.scene_alignment_completed:
+            print(self.scene_alignment_completed)
+            state_data = self.robot_env.get_robot_state()
+            if raw:
+                side_img = state_data['side_img_raw']
+                wrist_img = state_data['wrist_img_raw']
+            else:
+                side_img = cv2.cvtColor(state_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
+                wrist_img = cv2.cvtColor(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8), cv2.COLOR_RGB2BGR)
+            
+            # Blend current and reference images
+            blended_side = (np.array(side_img) * 0.5 + np.array(ref_side_img) * 0.5).astype(np.uint8)
+            blended_wrist = (np.array(wrist_img) * 0.5 + np.array(ref_wrist_img) * 0.5).astype(np.uint8)
+            print("=================start image display11=================")
+            cv2.imshow("Side", blended_side)
+            cv2.imshow("Wrist", blended_wrist)
+            cv2.waitKey(1)
+        
+        cv2.destroyAllWindows()
+        print("Scene alignment display with reference completed")
+          
+    
     def start_being_teleoped(self):
         """Start being teleoperated"""
+
         print("Start being teleoperated, state switched to 'TELEOP_CONTROLLED'")
-
-        self.robot_env.keyboard.kill_listener() #kill keyboard listener of robot_node and turn to the one in teleop_node instead 
-        
-        # Perform rewinding if needed
-        if self.failure_detection_module:
-            self.j, curr_pos, curr_rot = self._rewind_robot(self.episode_buffers, self.j) 
-
         # Get current pose for human teleop
         self.last_p = curr_pos if 'curr_pos' in locals() else self.episode_manager.last_p[0]
         self.last_r = curr_rot if 'curr_rot' in locals() else self.episode_manager.last_r[0]
         
         # Transform sigma device from current robot pose
         translate = self.last_p - self.detach_tcp[0:3]
-        rotation = R.from_quat(self.detach_tcp[3:], scalar_first=True).inv() * self.last_r
+        rotation = (R.from_quat(self.detach_tcp[3:], scalar_first=True).inv() * self.last_r).as_quat(scalar_first=True)
         
         # Resume sigma device
         self.send_resume_sigma()
@@ -689,27 +883,42 @@ class RobotNode:
         self.reset_teleop_cmd()
         self.detach()
         assert stop_event in ["cancel","accept","continue"]
+
         if stop_event != "continue":  #success or failure
-            self.finish_episode = True   #finish_episode has greater priority over robot_state
+            if stop_event=="cancel":
+                self.handle_failure()
+            with self.lock:
+                self.finish_episode = True   #finish_episode has greater priority over robot_state
+            print("===================finish episode_2=======================")
         else:
             self.robot_state = "agent_controlled"
+            self.handle_ctn()
     
     def process_teleop_command(self, message):
         """Process teleoperation command"""
-
-        #==============simulate robot_env.human_teleop_step==============
-         # Get camera data and robot state
         state_data = self.robot_env.get_robot_state()
         tcp_pose = state_data['tcp_pose']
         joint_pos = state_data['joint_pos']
 
         if "sigma" in message:
+            print(f"DEBUG: Attempting to parse sigma command: {repr(message)}")
             pattern = r"COMMAND_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\],([^,]+),([^,]+)"
             match = re.match(pattern, message)
             
             if not match:
-                raise ValueError(f"Invalid command format: {message}")
+                print(f"DEBUG: Pattern match failed for message: {repr(message)}")
+                print(f"DEBUG: Expected pattern: COMMAND_from_X_to_Y:sigma:[array1],[array2],value1,value2")
+                print(f"DEBUG: Message length: {len(message)}")
                 
+                # Try to identify where the message might be truncated
+                if message.count('[') != message.count(']'):
+                    print("DEBUG: Message appears to have unmatched brackets - likely truncated")
+                if not message.strip().endswith(']') and ',' in message[-20:]:
+                    print("DEBUG: Message appears to end mid-value - likely truncated")
+                
+                raise ValueError(f"Invalid command format: {message[:100]}{'...' if len(message) > 100 else ''}")
+                
+            print(f"DEBUG: Successfully parsed command groups: {match.groups()}")
             teleop_id = match.group(1)
             rbt_id = match.group(2)
             diff_p_str = match.group(3)
@@ -717,11 +926,21 @@ class RobotNode:
             width = match.group(5)
             throttle = match.group(6)
             
-            # Parse arrays
-            self.diff_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")])
-            self.diff_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")])
-            self.width = float(width)
-            self.throttle = float(throttle)
+            try:
+                # Parse arrays with better error handling
+                self.diff_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")])
+                self.diff_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")])
+                self.width = float(width)
+                self.throttle = float(throttle)
+                print(f"DEBUG: Parsed arrays - diff_p: {self.diff_p_arr.shape}, diff_r: {self.diff_r_arr.shape}")
+            except ValueError as e:
+                print(f"DEBUG: Failed to parse numeric values: {e}")
+                print(f"DEBUG: diff_p_str: {repr(diff_p_str)}")
+                print(f"DEBUG: diff_r_str: {repr(diff_r_str)}")
+                print(f"DEBUG: width: {repr(width)}")
+                print(f"DEBUG: throttle: {repr(throttle)}")
+                raise ValueError(f"Failed to parse numeric values from command: {e}")
+            
             abs_p = self.robot_env.robot.init_pose[:3] + self.diff_p_arr
             abs_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True).inv() * R.from_quat(self.diff_r_arr, scalar_first=True)
             curr_p_action = abs_p - self.last_p
@@ -765,7 +984,7 @@ class RobotNode:
                     'action': np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])),
                     'action_mode': INTV
                 }
-        #==============simulate robot_env.human_teleop_step==============
+    #==============simulate robot_env.human_teleop_step==============
                 # Update observation history with latest state
                 self.episode_manager.update_observation(
                     teleop_data['policy_side_img'] / 255.0,
@@ -781,10 +1000,8 @@ class RobotNode:
                 self.episode_buffers['action'].append(teleop_data['action'])
                 self.episode_buffers['action_mode'].append(teleop_data['action_mode'])
                 self.j += 1
-
-    def playback_traj(self):
-        """Playback trajectory"""
-        self._rewind_robot(self.episode_buffers, self.j)
+        # self.teleop_minstep_over = True
+        
                         
     def inform_robot_state(self):
         """Periodically report robot state"""
@@ -859,9 +1076,10 @@ class RobotNode:
         # Prepare for human intervention by showing reference scene
         if rewind_steps > 0:
             print("Please reset the scene and press 'c' to go on to human intervention")
-            ref_side_img = cv2.cvtColor(prev_side_cam, cv2.COLOR_RGB2BGR)
-            ref_wrist_img = cv2.cvtColor(prev_wrist_cam, cv2.COLOR_RGB2BGR)
-            self.robot_env.align_with_reference(ref_side_img, ref_wrist_img)
+            print(prev_side_cam)
+            print(prev_wrist_cam)
+            # Instead of using robot_env.align_with_reference, request teleop to handle alignment  
+            self.request_scene_alignment_with_reference(prev_side_cam, prev_wrist_cam)
         
         return j, curr_pos, curr_rot
     

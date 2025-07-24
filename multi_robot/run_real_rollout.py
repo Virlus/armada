@@ -17,7 +17,7 @@ import torch
 import hydra
 from omegaconf import DictConfig
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "diffusion_policy"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../diffusion_policy"))
 
 from multi_robot.nodes.robot_node import RobotNode
 
@@ -53,7 +53,7 @@ def main_worker(rank: int, eval_cfg: DictConfig, device_ids: list):
         raise
 
 
-@hydra.main(config_path='diffusion_policy/diffusion_policy/config', version_base=None)
+@hydra.main(config_path='../diffusion_policy/diffusion_policy/config', version_base=None)
 def main(cfg: DictConfig):
     """Main entry point"""
     print(f"Starting real robot rollout with config: {cfg}")

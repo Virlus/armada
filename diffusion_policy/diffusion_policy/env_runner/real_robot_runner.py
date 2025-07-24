@@ -23,19 +23,6 @@ from hardware.my_device.macros import CAM_SERIAL
 from util.episode_utils import EpisodeManager
 
 
-"""
-real_robot_runner.py 相比新的robot_node.py特有的robot_env函数调用
-"""
-# reset_robot(random_init, random_init_pose): 支持随机初始化位置
-# save_scene_images(output_dir, episode_idx): 保存场景图像
-# align_scene_with_file(output_dir, episode_idx): 与文件中的场景对齐
-# detach_sigma(): 分离sigma设备
-# human_teleop_step(last_p, last_r): 人类远程操作步骤
-# align_with_reference(ref_side_img, ref_wrist_img): 与参考图像对齐
-# rewind_robot(curr_pos, curr_rot, prev_action): 回退机器人动作
-# sigma.resume(): 恢复sigma设备
-# sigma.transform_from_robot(translate, rotation): 从机器人转换坐标系到sigma设备
-
 class FailureDetectionModule(ABC):
     """Abstract base class for failure detection modules"""
     

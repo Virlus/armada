@@ -82,5 +82,5 @@ class SocketServer:
 
 
 if __name__ == "__main__":
-    server = SocketServer("127.0.0.3",8888)
+    server = SocketServer("127.0.0.1",8888)
     server.start_connection()

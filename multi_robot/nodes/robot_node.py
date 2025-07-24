@@ -93,6 +93,8 @@ class RobotNode:
         self.delta_p_arr = None
         self.delta_r_arr = None
         self.rewind_key = False
+        self.rewind_pos = None
+        self.rewind_rot = None
         
         # Last predicted actions for rewinding
         self._last_predicted_abs_actions = None
@@ -334,6 +336,8 @@ class RobotNode:
             random_init_pose = self.robot_env.robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
         
         robot_state = self.reset(getattr(self.config, 'random_init', False), random_init_pose)
+         # Detach teleop device
+        self.detach()
 
         # Reset observation history
         self.episode_manager.reset_observation_history()
@@ -365,8 +369,6 @@ class RobotNode:
                 'episode_manager': self.episode_manager,
                 'robot_state': robot_state
             })
-        # Detach teleop device
-        self.detach()
 
         # Policy inference loop
         self.j = 0  # Episode timestep     
@@ -536,7 +538,7 @@ class RobotNode:
                 return  # Return from run_policy to exit the while loop
         
         # This should only be reached if the while loop exits normally
-        print("DEBUG: run_policy() completed normally, while loop exited")
+        # print("DEBUG: run_policy() completed normally, while loop exited")
             
     def call_human_for_help(self,reason):
         # print(f"DEBUG: call_human_for_help started with reason: {reason}")
@@ -616,9 +618,13 @@ class RobotNode:
     
     def handle_message(self, raw_msg):
         """Handle received messages"""
-        print(f"DEBUG: Raw message received: {repr(raw_msg)}")
+        if "COMMAND" not in raw_msg:
+            pass
+            # print(f"DEBUG: Raw message received: {repr(raw_msg)}")
         message_list = self.split_combined_messages(raw_msg)
-        print(f"DEBUG: Split into {len(message_list)} messages: {[repr(msg) for msg in message_list]}")
+        if "COMMAND" not in raw_msg:
+            pass
+            # print(f"DEBUG: Split into {len(message_list)} messages: {[repr(msg) for msg in message_list]}")
         
         for message in message_list:
             if message.startswith("READY"):
@@ -626,13 +632,13 @@ class RobotNode:
 
             elif message.startswith("TELEOP_TAKEOVER_RESULT"): #direct result without human teleoperation,succ/fail
                 self.detach()
-                print(f"DEBUG: Setting finish_episode=True in thread {threading.current_thread().name}")
+                # print(f"DEBUG: Setting finish_episode=True in thread {threading.current_thread().name}")
                 if "FAILURE" in message:
                     self.handle_failure()
                 with self.lock:
                     self.finish_episode = True  #finish_episode has greater priority over robot_state
                 print("===================finish episode_1=======================")
-                print(f"DEBUG: After setting, finish_episode={self.finish_episode}")
+                # print(f"DEBUG: After setting, finish_episode={self.finish_episode}")
 
             elif message.startswith("CONTINUE_POLICY"):   #direct result without human teleoperation
                 self.handle_ctn()
@@ -641,7 +647,7 @@ class RobotNode:
             elif message.startswith("TELEOP_CTRL_START"):
                 self.start_being_teleoped()
             elif message.startswith("COMMAND"):
-                print(f"DEBUG: Processing COMMAND message: {repr(message)}")
+                # print(f"DEBUG: Processing COMMAND message: {repr(message)}")
                 self.process_teleop_command(message)
             elif message.startswith("TELEOP_CTRL_STOP"):  #direct result after human teleoperation,cancel/accept/continue
                 self.stop_teleop(message)
@@ -657,14 +663,12 @@ class RobotNode:
     
     def handle_ctn(self):
         self.robot_state = "agent_controlled"
-        self.detach()
 
         assert self.j < self.max_episode_length - self.Ta
         print("False Positive failure! Continue policy rollout.")
         if self.failure_reason == 'action inconsistency' and self.failure_detection_module.enable_action_inconsistency:
             self.failure_detection_module.failure_detector.expert_action_threshold = np.inf
             print("Reset the action inconsistency threshold to infinity temporarily")
-        self.robot_state = "agent_controlled"        #get back to agent_controlled
     
     def handle_failure(self):
         if hasattr(self.failure_detection_module, 'failure_logs'):
@@ -714,7 +718,7 @@ class RobotNode:
         print("Starting rewind process...")
         if self.failure_detection_module and hasattr(self, 'episode_buffers') and hasattr(self, 'j'):
             try:
-                self.j, curr_pos, curr_rot = self._rewind_robot(self.episode_buffers, self.j)  #TODO: remember to restore rewind
+                self.j, self.rewind_pos, self.rewind_rot = self._rewind_robot(self.episode_buffers, self.j)  #TODO: remember to restore rewind
                 print(f"Rewind completed. New timestep: {self.j}")
             except Exception as e:
                 print(f"Error during rewind: {e}")
@@ -748,7 +752,7 @@ class RobotNode:
         """Handle scene alignment completion notification"""
         self.scene_alignment_completed = True
     
-    def request_scene_alignment_with_reference(self, ref_side_cam, ref_wrist_cam):
+    def request_scene_alignment_with_reference(self, ref_side_cam, ref_wrist_cam): #rewind
         """Request scene alignment with reference images from teleop node"""
         print("Requesting scene alignment with reference images from teleop")
         
@@ -759,7 +763,7 @@ class RobotNode:
         # Start local image display with reference images in robot end
         ref_side_img = cv2.cvtColor(ref_side_cam, cv2.COLOR_RGB2BGR)
         ref_wrist_img = cv2.cvtColor(ref_wrist_cam, cv2.COLOR_RGB2BGR)
-        self.start_scene_alignment_display_with_reference(ref_side_img, ref_wrist_img)
+        self.start_scene_alignment_display_with_reference(ref_side_img, ref_wrist_img)  #这个函数内容是：一直显示照片，要等收到SCENE_ALIGNMENT_COMPLETED才会停止显示照片。
         
         print("Scene alignment with reference completed")
     
@@ -779,8 +783,7 @@ class RobotNode:
     
     def start_scene_alignment_display_with_reference(self, ref_side_img, ref_wrist_img, raw=False):
         """Start scene alignment display with provided reference images"""
-        print("Scene alignment display with reference started - waiting for teleop confirmation")  #went here
-        cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
+        print("Scene alignment display with reference started - waiting for teleop confirmation")  
         cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
 
         print("=================start image display=================")
@@ -836,8 +839,8 @@ class RobotNode:
 
         print("Start being teleoperated, state switched to 'TELEOP_CONTROLLED'")
         # Get current pose for human teleop
-        self.last_p = curr_pos if 'curr_pos' in locals() else self.episode_manager.last_p[0]
-        self.last_r = curr_rot if 'curr_rot' in locals() else self.episode_manager.last_r[0]
+        self.last_p = self.rewind_pos if self.rewind_pos is not None else self.episode_manager.last_p[0]
+        self.last_r = self.rewind_rot if self.rewind_rot is not None else self.episode_manager.last_r[0]
         
         # Transform sigma device from current robot pose
         translate = self.last_p - self.detach_tcp[0:3]
@@ -880,24 +883,26 @@ class RobotNode:
         joint_pos = state_data['joint_pos']
 
         if "sigma" in message:
-            print(f"DEBUG: Attempting to parse sigma command: {repr(message)}")
+            # print(f"DEBUG: Attempting to parse sigma command: {repr(message)}")
             pattern = r"COMMAND_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\],([^,]+),([^,]+)"
             match = re.match(pattern, message)
             
             if not match:
-                print(f"DEBUG: Pattern match failed for message: {repr(message)}")
-                print(f"DEBUG: Expected pattern: COMMAND_from_X_to_Y:sigma:[array1],[array2],value1,value2")
-                print(f"DEBUG: Message length: {len(message)}")
+                # print(f"DEBUG: Pattern match failed for message: {repr(message)}")
+                # print(f"DEBUG: Expected pattern: COMMAND_from_X_to_Y:sigma:[array1],[array2],value1,value2")
+                # print(f"DEBUG: Message length: {len(message)}")
                 
                 # Try to identify where the message might be truncated
                 if message.count('[') != message.count(']'):
-                    print("DEBUG: Message appears to have unmatched brackets - likely truncated")
+                    pass
+                    # print("DEBUG: Message appears to have unmatched brackets - likely truncated")
                 if not message.strip().endswith(']') and ',' in message[-20:]:
-                    print("DEBUG: Message appears to end mid-value - likely truncated")
+                    pass
+                    # print("DEBUG: Message appears to end mid-value - likely truncated")
                 
                 raise ValueError(f"Invalid command format: {message[:100]}{'...' if len(message) > 100 else ''}")
                 
-            print(f"DEBUG: Successfully parsed command groups: {match.groups()}")
+            # print(f"DEBUG: Successfully parsed command groups: {match.groups()}")
             teleop_id = match.group(1)
             rbt_id = match.group(2)
             diff_p_str = match.group(3)
@@ -911,13 +916,13 @@ class RobotNode:
                 self.diff_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")])
                 self.width = float(width)
                 self.throttle = float(throttle)
-                print(f"DEBUG: Parsed arrays - diff_p: {self.diff_p_arr.shape}, diff_r: {self.diff_r_arr.shape}")
+                # print(f"DEBUG: Parsed arrays - diff_p: {self.diff_p_arr.shape}, diff_r: {self.diff_r_arr.shape}")
             except ValueError as e:
-                print(f"DEBUG: Failed to parse numeric values: {e}")
-                print(f"DEBUG: diff_p_str: {repr(diff_p_str)}")
-                print(f"DEBUG: diff_r_str: {repr(diff_r_str)}")
-                print(f"DEBUG: width: {repr(width)}")
-                print(f"DEBUG: throttle: {repr(throttle)}")
+                # print(f"DEBUG: Failed to parse numeric values: {e}")
+                # print(f"DEBUG: diff_p_str: {repr(diff_p_str)}")
+                # print(f"DEBUG: diff_r_str: {repr(diff_r_str)}")
+                # print(f"DEBUG: width: {repr(width)}")
+                # print(f"DEBUG: throttle: {repr(throttle)}")
                 raise ValueError(f"Failed to parse numeric values from command: {e}")
             
             abs_p = self.robot_env.robot.init_pose[:3] + self.diff_p_arr

@@ -111,7 +111,7 @@ class TeleopNode:
             elif message.startswith("SCENE_ALIGNMENT_REQUEST"):
                 alignment_thread = threading.Thread(target=self.handle_scene_alignment_request, args=(message,), daemon=True)
                 alignment_thread.start()
-            elif message.startswith("SCENE_ALIGNMENT_WITH_REF_REQUEST"):
+            elif message.startswith("SCENE_ALIGNMENT_WITH_REF_REQUEST"): #rewind
                 alignment_thread = threading.Thread(target=self.handle_scene_alignment_with_ref_request, args=(message,), daemon=True)
                 alignment_thread.start()
             else:
@@ -289,7 +289,7 @@ class TeleopNode:
 
             # Debug keyboard listener state
             if self.keyboard_listener.accept or self.keyboard_listener.cancel or self.keyboard_listener._continue:
-                print(f"DEBUG: Keyboard state - accept:{self.keyboard_listener.accept}, cancel:{self.keyboard_listener.cancel}, continue:{self.keyboard_listener._continue}")
+                # print(f"DEBUG: Keyboard state - accept:{self.keyboard_listener.accept}, cancel:{self.keyboard_listener.cancel}, continue:{self.keyboard_listener._continue}")
                 if self.keyboard_listener.cancel:
                     self.stop_event = "cancel"
                     print("Teleoperation cancelled,robot going home...")
@@ -346,7 +346,7 @@ class TeleopNode:
         templ = "REWIND_COMPLETED_{}"
         rbt_id = parse_message_regex(message, templ)[0]
         print(f"Rewind completed for robot {rbt_id}")
-        self.rewind_completed = True
+        # self.rewind_completed = True
 
     def handle_scene_alignment_request(self, message):
         """Handle scene alignment request from robot"""
@@ -378,84 +378,31 @@ class TeleopNode:
     def handle_scene_alignment_with_ref_request(self, message):
         """Handle scene alignment with reference request from robot"""
         self.teleop_state = "busy"
+         
+        # Simple format without image data - robot displays images locally
+        templ = "SCENE_ALIGNMENT_WITH_REF_REQUEST_{}_{}"
+        rbt_id, context_info = parse_message_regex(message, templ)
         
-        # Parse message - check if it contains image data
-        if "_DATA:" in message:
-            # Format with embedded image data (legacy support)
-            parts = message.split("_DATA:")
-            header = parts[0]  # SCENE_ALIGNMENT_WITH_REF_REQUEST_{robot_id}_rewind
-            image_data = parts[1]  # {side_b64}:{wrist_b64}
-            
-            # Extract robot_id from header
-            templ = "SCENE_ALIGNMENT_WITH_REF_REQUEST_{}_{}"
-            header_match = header + "_dummy"  # Add dummy to match template
-            try:
-                rbt_id, context_info = parse_message_regex(header_match, templ)
-            except:
-                # Fallback parsing
-                rbt_id = header.split("_")[3]
-                context_info = "rewind"
-            
-            # Decode images
-            import base64
-            import cv2
-            import numpy as np
-            
-            try:
-                side_b64, wrist_b64 = image_data.split(":", 1)
-                
-                # Decode base64 to images
-                side_buffer = base64.b64decode(side_b64)
-                wrist_buffer = base64.b64decode(wrist_b64)
-                
-                # Convert to numpy arrays
-                side_array = np.frombuffer(side_buffer, dtype=np.uint8)
-                wrist_array = np.frombuffer(wrist_buffer, dtype=np.uint8)
-                
-                # Decode as images
-                ref_side_img = cv2.imdecode(side_array, cv2.IMREAD_COLOR)
-                ref_wrist_img = cv2.imdecode(wrist_array, cv2.IMREAD_COLOR)
-                
-                print(f"✅ Successfully decoded reference images from robot {rbt_id}")
-                print(f"   Side image shape: {ref_side_img.shape if ref_side_img is not None else 'None'}")
-                print(f"   Wrist image shape: {ref_wrist_img.shape if ref_wrist_img is not None else 'None'}")
-                
-            except Exception as e:
-                print(f"❌ Failed to decode images: {e}")
-                # Send completion message even if decoding fails
-                completion_msg = f"SCENE_ALIGNMENT_COMPLETED_{rbt_id}".encode()
-                self.socket.send(completion_msg)
-                self.teleop_state = "idle"
-                return
-            
-            # Display the reference images and wait for user confirmation
-            self._display_scene_alignment_with_images(rbt_id, ref_side_img, ref_wrist_img)
-            
-        else:
-            # Simple format without image data - robot displays images locally
-            templ = "SCENE_ALIGNMENT_WITH_REF_REQUEST_{}_{}"
-            rbt_id, context_info = parse_message_regex(message, templ)
-            
-            print(f"Scene alignment with reference requested for robot {rbt_id}")
-            print("Robot is displaying reference alignment images. Please reset the scene and press 'C' to continue")
-            
-            # Stop keyboard listener before using input()
-            self.keyboard_listener.stop_keyboard_listener()
-            
-            # Handle user input for scene alignment confirmation
-            key = input().strip().upper()
-            while key != 'C':
-                print("Press 'C' to continue when scene is aligned: ", end='', flush=True)
-                key = input().strip().upper()
-            
-            # Send completion message
-            completion_msg = f"SCENE_ALIGNMENT_COMPLETED_{rbt_id}".encode()
-            self.socket.send(completion_msg)
-            self.teleop_state = "idle"
-            
-            # Restart keyboard listener after completing scene alignment
-            time.sleep(0.1)
-            self.keyboard_listener.start_keyboard_listener()
+        print(f"Scene alignment with reference requested for robot {rbt_id}")
+        print("Robot is displaying reference alignment images. Please reset the scene and press 'C' to continue")
+        
+        # Stop keyboard listener before using input()
+        self.keyboard_listener.stop_keyboard_listener()
+        
+        # Handle user input for scene alignment confirmation
+        key = input().strip().upper()
+        if key == 'C':
+            # print("Press 'C' to continue when scene is aligned: ", end='', flush=True)
+            # key = input().strip().upper() #todo:here!!!!!!!!!!!!!!!!!!
+            self.rewind_completed = True
+        
+        # Send completion message
+        completion_msg = f"SCENE_ALIGNMENT_COMPLETED_{rbt_id}".encode()
+        self.socket.send(completion_msg)
+        
+        # Restart keyboard listener after completing scene alignment
+        time.sleep(0.1)
+        self.keyboard_listener.start_keyboard_listener()
 
     def _display_scene_alignment_with_images(self, rbt_id, ref_side_img, ref_wrist_img):
         """Display scene alignment with reference images in teleop node"""

@@ -278,14 +278,14 @@ class CommunicationHub:
         print("============Rewind completed for robot_id:{}".format(rbt_id))
         
         # Find the teleop that initiated the rewind (ideally track this)
-        if len(self.idle_teleop_q) > 0:
+        # if len(self.idle_teleop_q) > 0:
             # For simplicity, send to the first available teleop
-            teleop_id = list(self.teleop_dict.keys())[0] if self.teleop_dict else None
-            if teleop_id is not None:
-                send_msg = f"REWIND_COMPLETED_{rbt_id}"
-                self.socket.send(self.teleop_dict[teleop_id], send_msg)
-        else:
-            print("No teleop available to receive rewind completion")
+        teleop_id = "0"
+        if teleop_id is not None:
+            send_msg = f"REWIND_COMPLETED_{rbt_id}"
+            self.socket.send(self.teleop_dict[teleop_id], send_msg)
+        # else:
+        #     print("No teleop available to receive rewind completion")
 
     def report_scene_alignment_request(self, message, addr):
         """Forward scene alignment request to teleop"""
@@ -294,12 +294,12 @@ class CommunicationHub:
         print("============Scene alignment request for robot_id:{}, context:{}".format(rbt_id, context_info))
         
         # Find an idle teleop to handle the request
-        if len(self.idle_teleop_q) > 0:
-            teleop_id = self.idle_teleop_q[0]
-            send_msg = f"SCENE_ALIGNMENT_REQUEST_{rbt_id}_{context_info}"
-            self.socket.send(self.teleop_dict[teleop_id], send_msg)
-        else:
-            print("No idle teleop available for scene alignment")
+        # if len(self.idle_teleop_q) > 0:
+        teleop_id = "0"
+        send_msg = f"SCENE_ALIGNMENT_REQUEST_{rbt_id}_{context_info}"
+        self.socket.send(self.teleop_dict[teleop_id], send_msg)
+        # else:
+            # print("No idle teleop available for scene alignment")
 
     def report_scene_alignment_with_ref_request(self, message, addr):
         """Forward scene alignment with reference request to teleop"""
@@ -336,13 +336,13 @@ class CommunicationHub:
             print(f"============Scene alignment with ref request (old format) for robot_id:{rbt_id}, context:{context_info}")
         
         # Find an idle teleop to handle the request
-        if len(self.idle_teleop_q) > 0:
-            teleop_id = self.idle_teleop_q[0]
-            # Forward the entire message as-is to preserve image data
-            self.socket.send(self.teleop_dict[teleop_id], message)
-            print(f"Forwarded to teleop {teleop_id}")
-        else:
-            print("No idle teleop available for scene alignment")
+        # if len(self.idle_teleop_q) > 0:
+        teleop_id = "0"
+        # Forward the entire message as-is to preserve image data
+        self.socket.send(self.teleop_dict[teleop_id], message)
+        print(f"Forwarded to teleop {teleop_id}")
+        # else:
+        #     print("No idle teleop available for scene alignment")
 
     def report_scene_alignment_completed(self, message, addr):
         """Forward scene alignment completion to robot"""

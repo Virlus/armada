@@ -92,6 +92,7 @@ class RobotNode:
         self.throttle = None
         self.delta_p_arr = None
         self.delta_r_arr = None
+        self.rewind_key = False
         
         # Last predicted actions for rewinding
         self._last_predicted_abs_actions = None
@@ -387,6 +388,9 @@ class RobotNode:
             elif self.robot_state == "idle":
                 # print("==================sleep for idle=======================")
                 time.sleep(0.1)
+                if self.rewind_key:
+                    self.handle_prerewind_robot()
+                    self.rewind_key = False
 
             with self.lock:
                 finish_episode_flag = self.finish_episode
@@ -644,7 +648,8 @@ class RobotNode:
             elif message.startswith("THROTTLE_SHIFT"):
                 self.process_throttle_info(message)
             elif message.startswith("REWIND_ROBOT"):
-                self.handle_prerewind_robot()
+                self.rewind_key = True
+                
             elif message.startswith("SCENE_ALIGNMENT_COMPLETED"):
                 self.handle_scene_alignment_completed(message)
             else:
@@ -708,7 +713,6 @@ class RobotNode:
         # Perform rewinding if needed
         print("Starting rewind process...")
         if self.failure_detection_module and hasattr(self, 'episode_buffers') and hasattr(self, 'j'):
-            print("Rewinding robot......")
             try:
                 self.j, curr_pos, curr_rot = self._rewind_robot(self.episode_buffers, self.j)  #TODO: remember to restore rewind
                 print(f"Rewind completed. New timestep: {self.j}")
@@ -775,7 +779,7 @@ class RobotNode:
     
     def start_scene_alignment_display_with_reference(self, ref_side_img, ref_wrist_img, raw=False):
         """Start scene alignment display with provided reference images"""
-        print("Scene alignment display with reference started - waiting for teleop confirmation")
+        print("Scene alignment display with reference started - waiting for teleop confirmation")  #went here
         cv2.namedWindow("Side", cv2.WINDOW_AUTOSIZE)
         cv2.namedWindow("Wrist", cv2.WINDOW_AUTOSIZE)
 
@@ -1050,10 +1054,7 @@ class RobotNode:
         
         # Prepare for human intervention by showing reference scene
         if rewind_steps > 0:
-            print("Please reset the scene and press 'c' to go on to human intervention")
-            print(prev_side_cam)
-            print(prev_wrist_cam)
-            # Instead of using robot_env.align_with_reference, request teleop to handle alignment  
+            print("Please reset the scene and press 'c' in teleop node to go on to human intervention")
             self.request_scene_alignment_with_reference(prev_side_cam, prev_wrist_cam)
         
         return j, curr_pos, curr_rot

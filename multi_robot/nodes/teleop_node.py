@@ -264,7 +264,7 @@ class TeleopNode:
             # Wait for rewind completion message
             print("Waiting for robot rewind to complete...")
             self.rewind_completed = False
-            while not self.rewind_completed:
+            while not self.rewind_completed:  #在等一条叫做REWIND_COMPLETED的消息
                 time.sleep(0.1)
             
             print("Rewind completed. Starting teleoperation...")

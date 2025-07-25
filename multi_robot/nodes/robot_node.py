@@ -711,6 +711,7 @@ class RobotNode:
         # Parse arrays
         self.delta_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")])
         self.delta_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")])
+        self.robot_state = "teleop_controlled"
     
     def reset_teleop_cmd(self):
         """Reset teleop command variables"""
@@ -955,8 +956,11 @@ class RobotNode:
                 print(f"============================22222222Last throttle: {self.last_throttle}=============================")
                 self.last_throttle = False
                 self.send_resume_sigma(during_teleop=True)  #2_resume
-                while self.delta_p_arr is None or self.delta_r_arr is None: #delta_p_arr is not none when receive a msg called THROTTLE_SHIFT_POSE,which is triggered by teleop's handle_sigma_resume
-                    time.sleep(0.001)
+                if self.delta_p_arr is None or self.delta_r_arr is None: #delta_p_arr is not none when receive a msg called THROTTLE_SHIFT_POSE,which is triggered by teleop's handle_sigma_resume
+                    self.robot_state = "idle"
+                    # cv2.waitKey(1)
+                    print(f"============================helloLast throttle: {self.last_throttle}=============================")
+                print(f"============================hiiiiiiiii2Last throttle: {self.last_throttle}=============================")
                 return
                 
             # Execute command on robot

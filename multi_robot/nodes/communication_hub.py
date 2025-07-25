@@ -88,64 +88,64 @@ class CommunicationHub:
                     self.report_human_takeover_result(message, addr)
 
             elif message.startswith("CONTINUE_POLICY"):
-                with self.lock:
-                    self.report_continue_policy(message, addr)
+                # with self.lock:
+                self.report_continue_policy(message, addr)
 
             elif message.startswith("PLAYBACK_TRAJ"):
-                with self.lock:
-                    self.report_playback_traj(message, addr)
+                # with self.lock:
+                self.report_playback_traj(message, addr)
 
             elif message.startswith("TELEOP_CTRL_START"):
-                with self.lock:
-                    self.report_teleop_ctrl_start(message, addr)
+                # with self.lock:
+                self.report_teleop_ctrl_start(message, addr)
 
             elif message.startswith("COMMAND"):
-                with self.lock:
-                    self.report_teleop_cmd(message, addr)
+                # with self.lock:
+                self.report_teleop_cmd(message, addr)
 
             elif message.startswith("TELEOP_CTRL_STOP"):
-                with self.lock:
-                    self.report_teleop_ctrl_stop(message, addr)
+                # with self.lock:
+                self.report_teleop_ctrl_stop(message, addr)
 
             elif message.startswith("SIGMA") and "DETACH" in message:
-                with self.lock:
-                    self.report_sigma_detach(message, addr)
+                # with self.lock:
+                self.report_sigma_detach(message, addr)
 
             elif message.startswith("SIGMA") and "RESUME" in message:
-                with self.lock:
-                    self.report_sigma_resume(message, addr)
+                # with self.lock:
+                self.report_sigma_resume(message, addr)
 
             elif message.startswith("SIGMA") and "RESET" in message:
-                with self.lock:
-                    self.report_sigma_reset(message, addr)
+                # with self.lock:
+                self.report_sigma_reset(message, addr)
 
             elif message.startswith("SIGMA") and "TRANSFORM" in message:
-                with self.lock:
-                    self.report_sigma_transform(message, addr)
+                # with self.lock:
+                self.report_sigma_transform(message, addr)
 
             elif message.startswith("THROTTLE_SHIFT"):
-                with self.lock:
-                    self.report_throttle_shift_pose(message, addr)
+                # with self.lock:
+                self.report_throttle_shift_pose(message, addr)
 
             elif message.startswith("REWIND_ROBOT"):
-                with self.lock:
-                    self.report_rewind_robot(message, addr)
+                # with self.lock:
+                self.report_rewind_robot(message, addr)
 
             elif message.startswith("REWIND_COMPLETED"):
-                with self.lock:
-                    self.report_rewind_completed(message, addr)
+                # with self.lock:
+                self.report_rewind_completed(message, addr)
 
             elif message.startswith("SCENE_ALIGNMENT_REQUEST"):
-                with self.lock:
-                    self.report_scene_alignment_request(message, addr)
+                # with self.lock:
+                self.report_scene_alignment_request(message, addr)
 
             elif message.startswith("SCENE_ALIGNMENT_WITH_REF_REQUEST"):
-                with self.lock:
-                    self.report_scene_alignment_with_ref_request(message, addr)
+                # with self.lock:
+                self.report_scene_alignment_with_ref_request(message, addr)
 
             elif message.startswith("SCENE_ALIGNMENT_COMPLETED"):
-                with self.lock:
-                    self.report_scene_alignment_completed(message, addr)
+                # with self.lock:
+                self.report_scene_alignment_completed(message, addr)
 
             elif message.startswith("Hello"):
                 pass
@@ -258,11 +258,33 @@ class CommunicationHub:
 
     def report_throttle_shift_pose(self, message, addr):
         templ = "THROTTLE_SHIFT_POSE_from_{}_to_{}:{}"
-        teleop_id, rbt_id, _ = parse_message_regex(message, templ)
+        teleop_id, rbt_id, else_th = parse_message_regex(message, templ)
         print("============teleop_id:{}, rbt_id:{}".format(teleop_id, rbt_id))
+        # target_addr = self.robot_dict[rbt_id]
+        # conn = self.socket.active_connections.get(target_addr)
+        # # 🧪 测试发送一个简单消息
+        # test_msg = "COMMAND_CHEAT"
+        # try:
+        #     print(f"🧪 Sending test message: {test_msg}")
+        #     self.socket.send(self.robot_dict[rbt_id], test_msg)
+        #     print(f"🧪 Test message sent successfully")
+        # except Exception as e:
+        #     print(f"🧪 Test message failed: {e}")
+        
+        # if conn:
+        #     # 检查发送缓冲区
+        #     try:
+        #         import socket
+        #         send_buffer_size = conn.getsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF)
+        #         print(f"Send buffer size: {send_buffer_size}")
+        #     except:
+        #         pass
         send_msg = message
+        # send_msg = f"THROTTLE_SHIFT_POSE_from_{teleop_id}_to_{rbt_id}:sigma:{else_th}"
         try:
             self.socket.send(self.robot_dict[rbt_id], send_msg)
+            print(f"+++++++++++++++++++++++++++++++++++++++++++robot_dict_id: {self.robot_dict[rbt_id]}")
+            print(f"+++++++++++++++++++++++++++++++++++++++++++send_msg: {send_msg}")
             print(f"Message sent successfully to robot {rbt_id}")
         except Exception as e:
             print(f"ERROR sending message to robot {rbt_id}: {e}")

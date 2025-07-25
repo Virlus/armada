@@ -74,6 +74,7 @@ class RobotNode:
         self.teleop_id = 0
         self.last_query_robot = time.time() - 1
         self.inform_freq = 5  # Hz
+        self.teleop_ctrl_freq = 10   #Hz
         
         # Running state
         self.running = True
@@ -104,6 +105,8 @@ class RobotNode:
         # Scene alignment state
         self.scene_alignment_completed = False
         # self.robot_env.keyboard.kill_listener()
+
+        self.last_teleop_act_time = time.time()
     
         
     def _load_policy(self):
@@ -865,6 +868,9 @@ class RobotNode:
     
     def stop_teleop(self, message):
         """Stop teleoperation"""
+        while self.j % self.Ta:
+            time.sleep(0.001)  #hign freq to avoid missing teleop step 
+
         self.robot_state = "idle"
         print("Teleoperation terminated, state switched to 'AGENT_CONTROLLED'.")
         templ = "TELEOP_CTRL_STOP_{}_for_{}"
@@ -899,18 +905,6 @@ class RobotNode:
             match = re.match(pattern, message)
             
             if not match:
-                # print(f"DEBUG: Pattern match failed for message: {repr(message)}")
-                # print(f"DEBUG: Expected pattern: COMMAND_from_X_to_Y:sigma:[array1],[array2],value1,value2")
-                # print(f"DEBUG: Message length: {len(message)}")
-                
-                # Try to identify where the message might be truncated
-                if message.count('[') != message.count(']'):
-                    pass
-                    # print("DEBUG: Message appears to have unmatched brackets - likely truncated")
-                if not message.strip().endswith(']') and ',' in message[-20:]:
-                    pass
-                    # print("DEBUG: Message appears to end mid-value - likely truncated")
-                
                 raise ValueError(f"Invalid command format: {message[:100]}{'...' if len(message) > 100 else ''}")
                 
             # print(f"DEBUG: Successfully parsed command groups: {match.groups()}")
@@ -923,83 +917,71 @@ class RobotNode:
             
             try:
                 # Parse arrays with better error handling
-                self.diff_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")])
-                self.diff_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")])
-                self.width = float(width)
-                self.throttle = float(throttle)
-                print("=========================throttle:{}=======================".format(self.throttle))
-                # print(f"DEBUG: Parsed arrays - diff_p: {self.diff_p_arr.shape}, diff_r: {self.diff_r_arr.shape}")
+                self.diff_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")]) #no other use except this function
+                self.diff_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")]) #no other use except this function
+                self.width = float(width) #no other use
+                self.throttle = float(throttle) #no other use
             except ValueError as e:
-                # print(f"DEBUG: Failed to parse numeric values: {e}")
-                # print(f"DEBUG: diff_p_str: {repr(diff_p_str)}")
-                # print(f"DEBUG: diff_r_str: {repr(diff_r_str)}")
-                # print(f"DEBUG: width: {repr(width)}")
-                # print(f"DEBUG: throttle: {repr(throttle)}")
                 raise ValueError(f"Failed to parse numeric values from command: {e}")
             
             abs_p = self.robot_env.robot.init_pose[:3] + self.diff_p_arr
             abs_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True).inv() * R.from_quat(self.diff_r_arr, scalar_first=True)
             curr_p_action = abs_p - self.last_p
             curr_r_action = self.last_r.inv() * abs_r
-            self.last_p = abs_p
-            self.last_r = abs_r
+            self.last_p = abs_p    #no other use except this function except this function
+            self.last_r = abs_r    #no other use except this function except this function
             
             # Handle throttle detach
             if self.throttle < -0.9:
-                print(f"============================1111111Last throttle: {self.last_throttle}=============================")
                 if not self.last_throttle:
                     self.detach()
                     self.last_throttle = True
                 return
 
             if self.last_throttle:
-                print(f"============================22222222Last throttle: {self.last_throttle}=============================")
                 self.last_throttle = False
-                self.send_resume_sigma(during_teleop=True)  #2_resume
+                self.send_resume_sigma(during_teleop=True)  
                 if self.delta_p_arr is None or self.delta_r_arr is None: #delta_p_arr is not none when receive a msg called THROTTLE_SHIFT_POSE,which is triggered by teleop's handle_sigma_resume
                     self.robot_state = "idle"
-                    # cv2.waitKey(1)
-                    print(f"============================helloLast throttle: {self.last_throttle}=============================")
-                print(f"============================hiiiiiiiii2Last throttle: {self.last_throttle}=============================")
                 return
-                
+
             # Execute command on robot
             if self.robot_state == "teleop_controlled": 
-                # Deploy action to robot
-                self.robot_env.deploy_action(
-                    np.concatenate((abs_p, abs_r.as_quat(scalar_first=True))),
-                    self.width
-                )
-                self.robot_env.gripper.move_from_sigma(self.width)
-                gripper_action = self.robot_env.gripper.max_width * self.width / 1000
-                
-                # Save demo data for return
-                teleop_data = {
-                    'policy_wrist_img': state_data['policy_wrist_img'],
-                    'policy_side_img': state_data['policy_side_img'],
-                    'demo_wrist_img': state_data['demo_wrist_img'],
-                    'demo_side_img': state_data['demo_side_img'],
-                    'tcp_pose': tcp_pose,
-                    'joint_pos': joint_pos,
-                    'action': np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])),
-                    'action_mode': INTV
-                }
-    #==============simulate robot_env.human_teleop_step==============
-                # Update observation history with latest state
-                self.episode_manager.update_observation(
-                    teleop_data['policy_side_img'] / 255.0,
-                    teleop_data['policy_wrist_img'] / 255.0,
-                    teleop_data['tcp_pose'] if self.state_type == 'ee_pose' else teleop_data['joint_pos']
-                )
-                
-                # Store demo data
-                self.episode_buffers['wrist_cam'].append(teleop_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-                self.episode_buffers['side_cam'].append(teleop_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-                self.episode_buffers['tcp_pose'].append(teleop_data['tcp_pose'])
-                self.episode_buffers['joint_pos'].append(teleop_data['joint_pos'])
-                self.episode_buffers['action'].append(teleop_data['action'])
-                self.episode_buffers['action_mode'].append(teleop_data['action_mode'])
-                self.j += 1
+                if time.time() - self.last_teleop_act_time >= 1.0 / self.teleop_ctrl_freq:
+                    # Deploy action to robot
+                    self.robot_env.deploy_action(
+                        np.concatenate((abs_p, abs_r.as_quat(scalar_first=True))),
+                        self.width
+                    )
+                    self.last_teleop_act_time = time.time()
+                    self.robot_env.gripper.move_from_sigma(self.width)
+                    gripper_action = self.robot_env.gripper.max_width * self.width / 1000
+                    
+                    # Save demo data for return
+                    teleop_data = {
+                        'policy_wrist_img': state_data['policy_wrist_img'],
+                        'policy_side_img': state_data['policy_side_img'],
+                        'demo_wrist_img': state_data['demo_wrist_img'],
+                        'demo_side_img': state_data['demo_side_img'],
+                        'tcp_pose': tcp_pose,
+                        'joint_pos': joint_pos,
+                        'action': np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])),
+                        'action_mode': INTV
+                    }
+                    self.episode_manager.update_observation(
+                        teleop_data['policy_side_img'] / 255.0,
+                        teleop_data['policy_wrist_img'] / 255.0,
+                        teleop_data['tcp_pose'] if self.state_type == 'ee_pose' else teleop_data['joint_pos']
+                    )
+                    
+                    # Store demo data
+                    self.episode_buffers['wrist_cam'].append(teleop_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+                    self.episode_buffers['side_cam'].append(teleop_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+                    self.episode_buffers['tcp_pose'].append(teleop_data['tcp_pose'])
+                    self.episode_buffers['joint_pos'].append(teleop_data['joint_pos'])
+                    self.episode_buffers['action'].append(teleop_data['action'])
+                    self.episode_buffers['action_mode'].append(teleop_data['action_mode'])
+                    self.j += 1
         # self.teleop_minstep_over = True
         
                         

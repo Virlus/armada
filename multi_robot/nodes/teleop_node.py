@@ -284,10 +284,14 @@ class TeleopNode:
 
     def run_listen_loop(self,rbt_id):
         time.sleep(0.5)
+        almost_stop_t = -1
         interval = 1.0 / self.listen_freq
         self.stop_event = None
-        while self.stop_event not in ["cancel","accept","continue"]:
+        while True:
             start_time = time.time()
+
+            if almost_stop_t != -1 and time.time() - almost_stop_t >= 1.0:  #give robot node one more second to act
+                break
 
             # Debug keyboard listener state
             if self.keyboard_listener.accept or self.keyboard_listener.cancel or self.keyboard_listener._continue:
@@ -301,34 +305,26 @@ class TeleopNode:
                 else:
                     self.stop_event = "continue"
                     print("Continue current policy.")
-                break
-
+                self.send_fake_stop(rbt_id)
+                almost_stop_t = time.time()
 
             if self.teleop_device == "keyboard" and self.keyboard_listener.current_cmd:
                 self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:{self.keyboard_listener.current_cmd}")  #cmd send from here
 
             elif self.teleop_device == "sigma":
-                i = 0
-                while i % self.Ta !=0 or i==0:
-                    if i!=0:
-                        start_time = time.time()
-                    diff_p, diff_r, width = self.sigma.get_control(rbt_id)  ##TODO:can already add robot_id
-                    diff_r = diff_r.as_quat(scalar_first = True)
+                diff_p, diff_r, width = self.sigma.get_control(rbt_id)  ##TODO:can already add robot_id
+                diff_r = diff_r.as_quat(scalar_first = True)
+                # Check throttle pedal state (for teleop pausing)
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.keyboard.quit = True
+                
+                throttle = self.controller.get_throttle()
+                # if not throttle < -0.9:
+                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") #send realtime no matter who is ctrlling rbt
+                elapsed = time.time() - start_time
+                time.sleep(max(0, interval - elapsed))
 
-                    # Check throttle pedal state (for teleop pausing)
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            self.keyboard.quit = True
-                    
-                    throttle = self.controller.get_throttle()
-                    # if not throttle < -0.9:
-                    self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") #send realtime no matter who is ctrlling rbt
-                    i += 1
-                    elapsed = time.time() - start_time
-                    time.sleep(max(0, interval - elapsed))
-
-            elapsed = time.time() - start_time
-            time.sleep(max(0, interval - elapsed))
         self.keyboard_listener.stop_keyboard_listener()
         time.sleep(0.5)   #time is needed to restore keyboard settings
         self.tele_ctrl_stop(rbt_id)
@@ -343,12 +339,11 @@ class TeleopNode:
 
 
     def tele_ctrl_stop(self,rbt_id):
-        msg = f"TELEOP_CTRL_STOP_{rbt_id}_for_{self.stop_event}".encode()
-        self.socket.send(msg)
         self.teleop_state = "idle"
         
-        # Note: keyboard_listener is already stopped in run_listen_loop
-        # It will be restarted when needed by future operations
+    def send_fake_stop(self,rbt_id):
+        msg = f"TELEOP_CTRL_STOP_{rbt_id}_for_{self.stop_event}".encode()
+        self.socket.send(msg)
 
     def handle_rewind_completed(self, message):
         """Handle rewind completion notification from robot"""
@@ -481,7 +476,7 @@ class TeleopNode:
 
 if __name__ == "__main__":
     inform_freq = 2
-    ctrl_freq = 10
+    listen_freq = 30
     teleop_device = "sigma"
     num_robot = 1
 
@@ -489,7 +484,7 @@ if __name__ == "__main__":
     args = parse_args()
     args.teleop_id = 0 ##TODO:remember to delete
     # teleop_node = TeleopNode(args.teleop_id,"192.168.1.1", 12345,ctrl_freq,teleop_device,num_robot)
-    teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,ctrl_freq,teleop_device,num_robot,Ta=8)
+    teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     try:
         teleop_state_thread = threading.Thread(    #inform teleop state by a freq
             target=teleop_node.inform_teleop_state,

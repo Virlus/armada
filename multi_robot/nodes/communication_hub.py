@@ -261,7 +261,12 @@ class CommunicationHub:
         teleop_id, rbt_id, _ = parse_message_regex(message, templ)
         print("============teleop_id:{}, rbt_id:{}".format(teleop_id, rbt_id))
         send_msg = message
-        self.socket.send(self.robot_dict[rbt_id], send_msg)
+        try:
+            self.socket.send(self.robot_dict[rbt_id], send_msg)
+            print(f"Message sent successfully to robot {rbt_id}")
+        except Exception as e:
+            print(f"ERROR sending message to robot {rbt_id}: {e}")
+        
 
     def report_rewind_robot(self, message, addr):
         """Forward rewind message to robot"""

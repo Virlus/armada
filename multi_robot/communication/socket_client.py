@@ -30,7 +30,7 @@ class SocketClient:
                     if not data:
                         break
                     decoded_data = data.decode()
-                    # print(f"Received from server: {decoded_data}")
+                    print(f"Received from server: {decoded_data}")
 
                     if self.message_handler:               #process
                         self.message_handler(decoded_data)

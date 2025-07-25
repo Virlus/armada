@@ -617,6 +617,10 @@ class RobotNode:
         return [msg for msg in messages if msg.strip()]
     
     def handle_message(self, raw_msg):
+        # flag = 0
+        # if "THROTTLE_SHIFT_POSE" in raw_msg:
+        #     flag = 1
+        # print("=========================raw_msg:{}=======================".format(raw_msg))
         """Handle received messages"""
         if "COMMAND" not in raw_msg:
             pass
@@ -660,11 +664,16 @@ class RobotNode:
                 self.handle_scene_alignment_completed(message)
             else:
                 print(f"未知命令: {message}")
+            # if flag == 1:
+            #     raise RuntimeError("=====================throttle not detacted====================================")
     
     def handle_ctn(self):
         self.robot_state = "agent_controlled"
+        if self.j >= self.max_episode_length - self.Ta: # after hum
+            print("Maximum episode length reached, turning to human for help.")
+            self.call_human_for_help("timeout")
+            self.robot_state = "idle"
 
-        assert self.j < self.max_episode_length - self.Ta
         print("False Positive failure! Continue policy rollout.")
         if self.failure_reason == 'action inconsistency' and self.failure_detection_module.enable_action_inconsistency:
             self.failure_detection_module.failure_detector.expert_action_threshold = np.inf
@@ -687,6 +696,7 @@ class RobotNode:
 
     def process_throttle_info(self, msg):
         """Process throttle shift information"""
+        print(f"========================={msg}=============================")
         pattern = r"THROTTLE_SHIFT_POSE_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\]"
         match = re.match(pattern, msg)
         
@@ -848,8 +858,8 @@ class RobotNode:
         
         # Resume sigma device
         self.send_resume_sigma() #1_resume
-        time.sleep(0.1)
         self.send_transform_sigma(translate, rotation)
+        # time.sleep(0.5)
         self.robot_state = "teleop_controlled"
     
     def stop_teleop(self, message):
@@ -916,6 +926,7 @@ class RobotNode:
                 self.diff_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")])
                 self.width = float(width)
                 self.throttle = float(throttle)
+                print("=========================throttle:{}=======================".format(self.throttle))
                 # print(f"DEBUG: Parsed arrays - diff_p: {self.diff_p_arr.shape}, diff_r: {self.diff_r_arr.shape}")
             except ValueError as e:
                 # print(f"DEBUG: Failed to parse numeric values: {e}")
@@ -934,17 +945,18 @@ class RobotNode:
             
             # Handle throttle detach
             if self.throttle < -0.9:
+                print(f"============================1111111Last throttle: {self.last_throttle}=============================")
                 if not self.last_throttle:
                     self.detach()
                     self.last_throttle = True
                 return
-                
+
             if self.last_throttle:
-                while self.delta_p_arr is None or self.delta_r_arr is None:
-                    time.sleep(0.001)
-                
+                print(f"============================22222222Last throttle: {self.last_throttle}=============================")
                 self.last_throttle = False
                 self.send_resume_sigma(during_teleop=True)  #2_resume
+                while self.delta_p_arr is None or self.delta_r_arr is None: #delta_p_arr is not none when receive a msg called THROTTLE_SHIFT_POSE,which is triggered by teleop's handle_sigma_resume
+                    time.sleep(0.001)
                 return
                 
             # Execute command on robot

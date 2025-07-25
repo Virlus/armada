@@ -16,7 +16,7 @@ from hardware.my_device.logitechG29_wheel import Controller
 #TODO:
 #1.increase the ctrl freq
 #2.move c(ctn),f(finish),d(waste),h(rewind&teleop) to teleop   ok
-#3.rewind
+#3.rewind ok
 #4.throttle
 
 def parse_args():
@@ -135,9 +135,11 @@ class TeleopNode:
             templ = "SIGMA_of_{}_RESUME_from_{}_DURING_TELEOP"
             teleop_id, rbt_id = parse_message_regex(message, templ)
             self.sigma.resume(rbt_id)
+            print("================================================resumed sigma======================================================")
             last_p, last_r, _ = self.sigma.get_control(rbt_id)
             last_r = last_r.as_quat(scalar_first=True)
             self.socket.send(f"THROTTLE_SHIFT_POSE_from_{self.teleop_id}_to_{rbt_id}:sigma:{last_p.tolist()},{last_r.tolist()}")
+            print(f'=================================================sent throttle shift pose: {last_p.tolist()},{last_r.tolist()}============================================')
         else:
             templ = "SIGMA_of_{}_RESUME_from_{}"
             teleop_id, rbt_id = parse_message_regex(message, templ)
@@ -266,7 +268,7 @@ class TeleopNode:
             self.rewind_completed = False
             while not self.rewind_completed:  #在等一条叫做REWIND_COMPLETED的消息
                 time.sleep(0.1)
-            
+            time.sleep(1)
             print("Rewind completed. Starting teleoperation...")
             print("Press 'C' or 'c' to CANCEL, 'T' or 't' to ACCEPT, 'N' or 'n' to CONTINUE CURRENT POLICY :", end='', flush=True)
             self.teleop_ctrl_start(rbt_id)  # This will start keyboard_listener for teleop
@@ -303,7 +305,7 @@ class TeleopNode:
 
 
             if self.teleop_device == "keyboard" and self.keyboard_listener.current_cmd:
-                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:{self.keyboard_listener.current_cmd}")
+                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:{self.keyboard_listener.current_cmd}")  #cmd send from here
 
             elif self.teleop_device == "sigma":
                 i = 0
@@ -312,7 +314,14 @@ class TeleopNode:
                         start_time = time.time()
                     diff_p, diff_r, width = self.sigma.get_control(rbt_id)  ##TODO:can already add robot_id
                     diff_r = diff_r.as_quat(scalar_first = True)
+
+                    # Check throttle pedal state (for teleop pausing)
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            self.keyboard.quit = True
+                    
                     throttle = self.controller.get_throttle()
+                    # if not throttle < -0.9:
                     self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") #send realtime no matter who is ctrlling rbt
                     i += 1
                     elapsed = time.time() - start_time

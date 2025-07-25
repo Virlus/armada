@@ -92,7 +92,7 @@ class RobotNode:
         self.throttle = None
         self.delta_p_arr = None
         self.delta_r_arr = None
-        self.rewind_key = False
+        self.rewind_key = False     #flag 1
         self.rewind_pos = None
         self.rewind_rot = None
         
@@ -298,7 +298,7 @@ class RobotNode:
                     print(f'Saved episode {self.episode_id}')
                 
                 # Reset robot between episodes
-                self.reset()
+                self.reset()   #2_reset
                 # print("Reset!")
                 
                 self.episode_idx += 1
@@ -335,7 +335,7 @@ class RobotNode:
         if getattr(self.config, 'random_init', False):
             random_init_pose = self.robot_env.robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
         
-        robot_state = self.reset(getattr(self.config, 'random_init', False), random_init_pose)
+        robot_state = self.reset(getattr(self.config, 'random_init', False), random_init_pose) #1_reset
          # Detach teleop device
         self.detach()
 
@@ -644,7 +644,7 @@ class RobotNode:
                 self.handle_ctn()
             elif message.startswith("PLAYBACK_TRAJ"):
                 self.playback_traj()
-            elif message.startswith("TELEOP_CTRL_START"):
+            elif message.startswith("TELEOP_CTRL_START"):  #lead to resume and transform
                 self.start_being_teleoped()
             elif message.startswith("COMMAND"):
                 # print(f"DEBUG: Processing COMMAND message: {repr(message)}")
@@ -847,7 +847,7 @@ class RobotNode:
         rotation = (R.from_quat(self.detach_tcp[3:], scalar_first=True).inv() * self.last_r).as_quat(scalar_first=True)
         
         # Resume sigma device
-        self.send_resume_sigma()
+        self.send_resume_sigma() #1_resume
         time.sleep(0.1)
         self.send_transform_sigma(translate, rotation)
         self.robot_state = "teleop_controlled"
@@ -944,7 +944,7 @@ class RobotNode:
                     time.sleep(0.001)
                 
                 self.last_throttle = False
-                self.send_resume_sigma(during_teleop=True)
+                self.send_resume_sigma(during_teleop=True)  #2_resume
                 return
                 
             # Execute command on robot

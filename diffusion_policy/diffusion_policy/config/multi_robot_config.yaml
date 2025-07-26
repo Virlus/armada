@@ -30,7 +30,10 @@ policy:
 # Robot configuration
 robot_info:
   num_robots: 1
+  # for 1 rbt:
   socket_ip: "127.0.0.1"
+  # for 2 rbts:
+  socket_ip: "192.168.1.1"
   socket_port: 12345
   robot_name: flexiv
   robot_id: 0
@@ -38,7 +41,7 @@ robot_info:
     "0":
       ip: "192.168.2.100"
     "1":
-      ip: "112"
+      ip: "192.168.3.100"
 
 # Camera configuration
 camera:

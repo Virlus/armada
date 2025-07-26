@@ -411,6 +411,7 @@ class CommunicationHub:
 
 if __name__ == "__main__":
     server_freq = 50
+    #  for 1 or 2 rbts
     hub = CommunicationHub("0.0.0.0", 12345)
     hub.run()
 

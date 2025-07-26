@@ -466,13 +466,6 @@ class TeleopNode:
     def inform_teleop_state(self,inform_freq):
         while self.running:
             if time.time() - self.last_query >= 1/inform_freq:
-                # if time.time() - self.last_query >= 1:
-                # if self.teleop_device == "sigma":
-                    # print("===============================================")
-                    # print("init_p_0 = {} ,init_r_0 = {}".format(self.sigma.init_p[0], self.sigma.init_r[0]))
-                    # print("init_p_1 = {} ,init_r_1 = {}".format(self.sigma.init_p[1], self.sigma.init_r[1]))
-                    # print("prev_p_0 = {} ,prev_r_0 = {}".format(self.sigma._prev_p[0], self.sigma._prev_r[0]))
-                    # print("prev_p_1 = {} ,prev_r_1 = {}".format(self.sigma._prev_p[1], self.sigma._prev_r[1]))
                 self.last_query = time.time()
                 msg = f"INFORM_TELEOP_STATE_{self.teleop_id}_{self.teleop_state}".encode()
                 self.socket.send(msg)
@@ -486,7 +479,9 @@ if __name__ == "__main__":
     assert teleop_device in ["sigma", "keyboard"]
     args = parse_args()
     args.teleop_id = 0 ##TODO:remember to delete
-    # teleop_node = TeleopNode(args.teleop_id,"192.168.1.1", 12345,ctrl_freq,teleop_device,num_robot)
+    # for 2 rbts:
+    # teleop_node = TeleopNode(args.teleop_id,"192.168.1.1", 12345,ctrl_freq,teleop_device,num_robot,Ta=8)
+    # for 1 rbt:
     teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     try:
         teleop_state_thread = threading.Thread(    #inform teleop state by a freq

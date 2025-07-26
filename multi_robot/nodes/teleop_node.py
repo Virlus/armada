@@ -283,6 +283,7 @@ class TeleopNode:
         # The playback is handled by robot, we don't need recursive call here
 
     def run_listen_loop(self,rbt_id):
+        ready_to_end_flag = False
         time.sleep(0.5)
         almost_stop_t = -1
         interval = 1.0 / self.listen_freq
@@ -291,10 +292,11 @@ class TeleopNode:
             start_time = time.time()
 
             if almost_stop_t != -1 and time.time() - almost_stop_t >= 1.0:  #give robot node one more second to act
+                print ("Stop sending command.")
                 break
 
             # Debug keyboard listener state
-            if self.keyboard_listener.accept or self.keyboard_listener.cancel or self.keyboard_listener._continue:
+            if (self.keyboard_listener.accept or self.keyboard_listener.cancel or self.keyboard_listener._continue) and not ready_to_end_flag:
                 # print(f"DEBUG: Keyboard state - accept:{self.keyboard_listener.accept}, cancel:{self.keyboard_listener.cancel}, continue:{self.keyboard_listener._continue}")
                 if self.keyboard_listener.cancel:
                     self.stop_event = "cancel"
@@ -307,6 +309,7 @@ class TeleopNode:
                     print("Continue current policy.")
                 self.send_fake_stop(rbt_id)
                 almost_stop_t = time.time()
+                ready_to_end_flag = True
 
             if self.teleop_device == "keyboard" and self.keyboard_listener.current_cmd:
                 self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:{self.keyboard_listener.current_cmd}")  #cmd send from here

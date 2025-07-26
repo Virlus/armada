@@ -96,6 +96,9 @@ class RobotNode:
         self.rewind_key = False     #flag 1
         self.rewind_pos = None
         self.rewind_rot = None
+        self.ready_to_stop_flag = True
+        self.stop_event = None
+        self.stop_teleop_key = False
         
         # Last predicted actions for rewinding
         self._last_predicted_abs_actions = None
@@ -657,7 +660,7 @@ class RobotNode:
                 # print(f"DEBUG: Processing COMMAND message: {repr(message)}")
                 self.process_teleop_command(message)
             elif message.startswith("TELEOP_CTRL_STOP"):  #direct result after human teleoperation,cancel/accept/continue
-                self.stop_teleop(message)
+                self.ready_to_stop(message)
             elif message.startswith("THROTTLE_SHIFT"):
                 self.process_throttle_info(message)
             elif message.startswith("REWIND_ROBOT"):
@@ -865,26 +868,32 @@ class RobotNode:
         self.send_transform_sigma(translate, rotation)
         # time.sleep(0.5)
         self.robot_state = "teleop_controlled"
+        self.ready_to_stop_flag = False
+        self.stop_event = None
+        self.stop_teleop_key = False
     
-    def stop_teleop(self, message):
-        """Stop teleoperation"""
-        while self.j % self.Ta:
-            time.sleep(0.001)  #hign freq to avoid missing teleop step 
+    def ready_to_stop(self,message):
+        self.ready_to_stop_flag = True
+        if "cancel" in message:
+            self.stop_event = "cancel"
+        elif "accept" in message:
+            self.stop_event = "accept"
+        elif "continue" in message:
+            self.stop_event = "continue"
 
+    def stop_teleop(self):
         self.robot_state = "idle"
         print("Teleoperation terminated, state switched to 'AGENT_CONTROLLED'.")
-        templ = "TELEOP_CTRL_STOP_{}_for_{}"
-        rbt_id, stop_event = parse_message_regex(message, templ)
         
         # Reset pose for policy after human intervention
         self.episode_manager.initialize_pose(self.last_p, self.last_r.as_quat(scalar_first=True))
 
         self.reset_teleop_cmd()
         self.detach()
-        assert stop_event in ["cancel","accept","continue"]
+        assert self.stop_event in ["cancel","accept","continue"]
 
-        if stop_event != "continue":  #success or failure
-            if stop_event=="cancel":
+        if self.stop_event != "continue":  #success or failure
+            if self.stop_event=="cancel":
                 self.handle_failure()
             with self.lock:
                 self.finish_episode = True   #finish_episode has greater priority over robot_state
@@ -899,7 +908,7 @@ class RobotNode:
         tcp_pose = state_data['tcp_pose']
         joint_pos = state_data['joint_pos']
 
-        if "sigma" in message:
+        if "sigma" in message and not self.stop_teleop_key :
             # print(f"DEBUG: Attempting to parse sigma command: {repr(message)}")
             pattern = r"COMMAND_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\],([^,]+),([^,]+)"
             match = re.match(pattern, message)
@@ -982,7 +991,9 @@ class RobotNode:
                     self.episode_buffers['action'].append(teleop_data['action'])
                     self.episode_buffers['action_mode'].append(teleop_data['action_mode'])
                     self.j += 1
-        # self.teleop_minstep_over = True
+            if self.ready_to_stop_flag and self.j % self.Ta == 0:
+                self.stop_teleop_key = True
+                self.stop_teleop()
         
                         
     def inform_robot_state(self):
@@ -1189,4 +1200,5 @@ class RobotNode:
         self.inform_thread.start()
 
         self._run_rollout()
+    
     

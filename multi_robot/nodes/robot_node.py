@@ -306,6 +306,7 @@ class RobotNode:
                 # Reset robot between episodes
                 self.reset()   #2_reset
                 # print("Reset!")
+                self.failure_detection_module.failure_detector.last_predicted_abs_actions = None
                 
                 self.episode_idx += 1
                 

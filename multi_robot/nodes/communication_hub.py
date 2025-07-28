@@ -8,17 +8,44 @@ from multi_robot.utils.message_distillation import parse_message_regex
 
 class CommunicationHub:
     def __init__(self, socket_ip, socket_port):
+        self.running = True
         self.initialize_queue()
         self.socket = SocketServer(socket_ip, socket_port, message_handler=self.handle_message)
         self.socket.start_connection()
         self.lock = threading.Lock()
+        self.start_scene_alignment_thread()
 
     def initialize_queue(self):
         self.robot_dict = {}              # dict  robot_id -> addr
         self.teleop_dict = {}             # dict  teleop_id -> addr
         self.request_q = queue.Queue()    # tuple (robot_id, request_type)
+
+        self.scene_alignment_q = queue.Queue() # tuple (robot_id, context_info)
+
         self.idle_teleop_q = []           # list  teleop_id
         self.robot_state_dict = {}        # dict  robot_id -> state
+    
+    def start_scene_alignment_thread(self):
+        """启动场景对齐处理线程"""
+        self.scene_alignment_thread = threading.Thread(target=self.process_scene_alignment_queue, daemon=True)
+        self.scene_alignment_thread.start()
+        print("Scene alignment processing thread started")
+    
+    def process_scene_alignment_queue(self):
+        while self.running:
+            try:
+                # print("============scene_alignment_q:{}".format(self.scene_alignment_q.qsize()))
+                # print("============idle_teleop_q:{}".format(self.idle_teleop_q))
+                if not self.scene_alignment_q.empty() and len(self.idle_teleop_q) > 0:
+                    with self.lock:
+                        message, addr = self.scene_alignment_q.get()
+                        teleop_id = self.idle_teleop_q.pop(0)  # 取出一个空闲teleop
+                        self.report_scene_alignment_request(message, addr)
+
+                time.sleep(0.1)  # 避免忙等待
+            except Exception as e:
+                print(f"Error in scene alignment thread: {e}")
+                time.sleep(0.1)
 
     def get_separator_pattern(self):
         separators = [
@@ -44,33 +71,72 @@ class CommunicationHub:
         pattern = "|".join(map(re.escape, sorted_seps))
         return re.compile(f"({pattern})")
 
+    # def split_combined_messages(self, combined_msg):
+    #     if not combined_msg:
+    #         return []
+
+    #     pattern = self.get_separator_pattern()
+    #     parts = []
+    #     matches = list(pattern.finditer(combined_msg))
+    #     if not matches:
+    #         return [combined_msg]
+
+    #     if matches[0].start() > 0:
+    #         parts.append(combined_msg[:matches[0].start()])
+
+    #     for i, match in enumerate(matches):
+    #         start = match.start()
+    #         end = match.end()
+    #         current_sep = match.group(0)
+    #         next_start = matches[i + 1].start() if i < len(matches) - 1 else len(combined_msg)
+    #         content = combined_msg[start:next_start]
+    #         parts.append(content)
+    #         last_end = next_start
+    #     return parts
+
     def split_combined_messages(self, combined_msg):
+        """使用消息头尾标识符分割组合消息，返回不带分割符的纯净消息"""
         if not combined_msg:
             return []
 
-        pattern = self.get_separator_pattern()
-        parts = []
-        matches = list(pattern.finditer(combined_msg))
-        if not matches:
-            return [combined_msg]
-
-        if matches[0].start() > 0:
-            parts.append(combined_msg[:matches[0].start()])
-
-        for i, match in enumerate(matches):
-            start = match.start()
-            end = match.end()
-            current_sep = match.group(0)
-            next_start = matches[i + 1].start() if i < len(matches) - 1 else len(combined_msg)
-            content = combined_msg[start:next_start]
-            parts.append(content)
-            last_end = next_start
-        return parts
-
+        messages = []
+        start_marker = "<<MSG_START>>"
+        end_marker = "<<MSG_END>>"
+        
+        # 查找所有的消息开始和结束标记
+        remaining = combined_msg
+        
+        while remaining:
+            start_pos = remaining.find(start_marker)
+            if start_pos == -1:
+                # 没有找到开始标记，如果有剩余内容且不只是分割符，则作为普通消息处理
+                if remaining.strip() and not remaining.strip().startswith(end_marker):
+                    messages.append(remaining.strip())
+                break
+            
+            # 在开始标记之后查找结束标记
+            content_start = start_pos + len(start_marker)
+            end_pos = remaining.find(end_marker, content_start)
+            
+            if end_pos == -1:
+                # 没有找到结束标记，可能是不完整的消息
+                print(f"Warning: Incomplete message found: {remaining[start_pos:]}")
+                break
+            
+            # 提取消息内容（不包含分割符）
+            message_content = remaining[content_start:end_pos]
+            if message_content.strip():
+                messages.append(message_content.strip())
+            
+            # 处理下一个消息
+            remaining = remaining[end_pos + len(end_marker):]
+        
+        return messages
+    
     def handle_message(self, raw_message, addr):
         message_list = self.split_combined_messages(raw_message)
         for message in message_list:
-            print("============message:", message)
+            # print("============message:", message)
             if message.startswith("NEED_HUMAN_CHECK"):  # From robot, frequency determined by agent
                 with self.lock:
                     self.cmd_for_add_requestQ(message, addr)
@@ -135,11 +201,12 @@ class CommunicationHub:
                 # with self.lock:
                 self.report_rewind_completed(message, addr)
 
-            elif message.startswith("SCENE_ALIGNMENT_REQUEST"):
+            elif message.startswith("SCENE_ALIGNMENT_REQUEST"):  #must be save in buffer
                 # with self.lock:
-                self.report_scene_alignment_request(message, addr)
+                # self.report_scene_alignment_request(message, addr)
+                self.scene_alignment_q.put((message, addr))
 
-            elif message.startswith("SCENE_ALIGNMENT_WITH_REF_REQUEST"):
+            elif message.startswith("SCENE_ALIGNMENT_WITH_REF_REQUEST"): #can be directly sent to teleop
                 # with self.lock:
                 self.report_scene_alignment_with_ref_request(message, addr)
 
@@ -260,25 +327,6 @@ class CommunicationHub:
         templ = "THROTTLE_SHIFT_POSE_from_{}_to_{}:{}"
         teleop_id, rbt_id, else_th = parse_message_regex(message, templ)
         print("============teleop_id:{}, rbt_id:{}".format(teleop_id, rbt_id))
-        # target_addr = self.robot_dict[rbt_id]
-        # conn = self.socket.active_connections.get(target_addr)
-        # # 🧪 测试发送一个简单消息
-        # test_msg = "COMMAND_CHEAT"
-        # try:
-        #     print(f"🧪 Sending test message: {test_msg}")
-        #     self.socket.send(self.robot_dict[rbt_id], test_msg)
-        #     print(f"🧪 Test message sent successfully")
-        # except Exception as e:
-        #     print(f"🧪 Test message failed: {e}")
-        
-        # if conn:
-        #     # 检查发送缓冲区
-        #     try:
-        #         import socket
-        #         send_buffer_size = conn.getsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF)
-        #         print(f"Send buffer size: {send_buffer_size}")
-        #     except:
-        #         pass
         send_msg = message
         # send_msg = f"THROTTLE_SHIFT_POSE_from_{teleop_id}_to_{rbt_id}:sigma:{else_th}"
         try:

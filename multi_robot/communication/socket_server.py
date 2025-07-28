@@ -74,9 +74,33 @@ class SocketServer:
     #     else:
     #         print(f"No active connection to {addr}")
     # 在socket_server.py的send方法中：
+    # def send(self, addr, message):
+    #     if isinstance(message, str):
+    #         message = message.encode()
+    #     conn = self.active_connections.get(addr)
+    #     if conn:
+    #         try:
+    #             # 添加发送超时
+    #             conn.settimeout(0.1)  # 100ms超时
+    #             conn.send(message)
+    #             conn.settimeout(None)  # 恢复无超时
+    #         except socket.timeout:
+    #             print(f"Send timeout to {addr} - receiver may be busy")
+    #             print(f"error_message: {message}")
+    #         except (ConnectionResetError, OSError) as e:
+    #             print(f"Send failed to {addr}: {e}")
+    #             print(f"error_message: {message}")
+
     def send(self, addr, message):
+        # 添加消息头尾标识符
         if isinstance(message, str):
+            message = f"<<MSG_START>>{message}<<MSG_END>>"
             message = message.encode()
+        elif isinstance(message, bytes):
+            # 如果已经是bytes，需要先解码，添加标识符，再编码
+            decoded_message = message.decode()
+            message = f"<<MSG_START>>{decoded_message}<<MSG_END>>".encode()
+            
         conn = self.active_connections.get(addr)
         if conn:
             try:

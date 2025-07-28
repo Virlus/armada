@@ -63,36 +63,75 @@ class TeleopNode:
         pattern = "|".join(map(re.escape, sorted_seps))
         return re.compile(f"({pattern})")
     
+    # def split_combined_messages(self, combined_msg):
+    #     """Split combined messages"""
+    #     if not combined_msg:
+    #         return []
+
+    #     pattern = self.get_separator_pattern()
+    #     parts = []
+    #     last_end = 0
+    #     matches = list(pattern.finditer(combined_msg))
+    #     if not matches:
+    #         return [combined_msg]
+
+    #     if matches[0].start() > 0:
+    #         parts.append(combined_msg[:matches[0].start()])
+
+    #     for i, match in enumerate(matches):
+    #         start = match.start()
+    #         end = match.end()
+    #         current_sep = match.group(0)
+    #         next_start = matches[i + 1].start() if i < len(matches) - 1 else len(combined_msg)
+    #         content = combined_msg[start:next_start]
+    #         parts.append(content)
+    #         last_end = next_start
+    #     return parts
+
     def split_combined_messages(self, combined_msg):
-        """Split combined messages"""
+        """使用消息头尾标识符分割组合消息，返回不带分割符的纯净消息"""
         if not combined_msg:
             return []
 
-        pattern = self.get_separator_pattern()
-        parts = []
-        last_end = 0
-        matches = list(pattern.finditer(combined_msg))
-        if not matches:
-            return [combined_msg]
-
-        if matches[0].start() > 0:
-            parts.append(combined_msg[:matches[0].start()])
-
-        for i, match in enumerate(matches):
-            start = match.start()
-            end = match.end()
-            current_sep = match.group(0)
-            next_start = matches[i + 1].start() if i < len(matches) - 1 else len(combined_msg)
-            content = combined_msg[start:next_start]
-            parts.append(content)
-            last_end = next_start
-        return parts
+        messages = []
+        start_marker = "<<MSG_START>>"
+        end_marker = "<<MSG_END>>"
+        
+        # 查找所有的消息开始和结束标记
+        remaining = combined_msg
+        
+        while remaining:
+            start_pos = remaining.find(start_marker)
+            if start_pos == -1:
+                # 没有找到开始标记，如果有剩余内容且不只是分割符，则作为普通消息处理
+                if remaining.strip() and not remaining.strip().startswith(end_marker):
+                    messages.append(remaining.strip())
+                break
+            
+            # 在开始标记之后查找结束标记
+            content_start = start_pos + len(start_marker)
+            end_pos = remaining.find(end_marker, content_start)
+            
+            if end_pos == -1:
+                # 没有找到结束标记，可能是不完整的消息
+                print(f"Warning: Incomplete message found: {remaining[start_pos:]}")
+                break
+            
+            # 提取消息内容（不包含分割符）
+            message_content = remaining[content_start:end_pos]
+            if message_content.strip():
+                messages.append(message_content.strip())
+            
+            # 处理下一个消息
+            remaining = remaining[end_pos + len(end_marker):]
+        
+        return messages
 
     def handle_message(self, raw_message):
         """Handle received messages"""
         message_list = self.split_combined_messages(raw_message)
         for message in message_list:
-            print(f"Received message: {message}")
+            # print(f"Received message: {message}")
             if message.startswith("EXECUTE_HUMAN_CHECK"):
                 human_thread = threading.Thread(target=self.human_decide_process, args=(message,), daemon=True)
                 human_thread.start()
@@ -135,11 +174,11 @@ class TeleopNode:
             templ = "SIGMA_of_{}_RESUME_from_{}_DURING_TELEOP"
             teleop_id, rbt_id = parse_message_regex(message, templ)
             self.sigma.resume(rbt_id)
-            print("================================================resumed sigma======================================================")
+            # print("================================================resumed sigma======================================================")
             last_p, last_r, _ = self.sigma.get_control(rbt_id)
             last_r = last_r.as_quat(scalar_first=True)
             self.socket.send(f"THROTTLE_SHIFT_POSE_from_{self.teleop_id}_to_{rbt_id}:sigma:{last_p.tolist()},{last_r.tolist()}")
-            print(f'=================================================sent throttle shift pose: {last_p.tolist()},{last_r.tolist()}============================================')
+            # print(f'=================================================sent throttle shift pose: {last_p.tolist()},{last_r.tolist()}============================================')
         else:
             templ = "SIGMA_of_{}_RESUME_from_{}"
             teleop_id, rbt_id = parse_message_regex(message, templ)
@@ -175,7 +214,7 @@ class TeleopNode:
         self.teleop_state = "busy"
         templ = "EXECUTE_HUMAN_CHECK_state_of_robot_{}_with_request{}"
         rbt_id, request_type = parse_message_regex(message, templ)
-        print(f"New request from robot {rbt_id}.")
+        print(f"===================================New request from robot {rbt_id}.==================================")
         print(f"Request type: {request_type}")
         
         self.main_human_decide(rbt_id, request_type)
@@ -356,6 +395,7 @@ class TeleopNode:
         # self.rewind_completed = True
 
     def handle_scene_alignment_request(self, message):
+        print(f"===================================New EPISODE STARTED==================================")
         """Handle scene alignment request from robot"""
         self.teleop_state = "busy"
         templ = "SCENE_ALIGNMENT_REQUEST_{}_{}"
@@ -380,7 +420,7 @@ class TeleopNode:
         
         # Restart keyboard listener after completing scene alignment
         time.sleep(0.1)
-        self.keyboard_listener.start_keyboard_listener()
+        # self.keyboard_listener.start_keyboard_listener()
 
     def handle_scene_alignment_with_ref_request(self, message):
         """Handle scene alignment with reference request from robot"""
@@ -480,7 +520,7 @@ if __name__ == "__main__":
     args = parse_args()
     args.teleop_id = 0 ##TODO:remember to delete
     # for 2 rbts:
-    # teleop_node = TeleopNode(args.teleop_id,"192.168.1.1", 12345,ctrl_freq,teleop_device,num_robot,Ta=8)
+    # teleop_node = TeleopNode(args.teleop_id,"192.168.1.2", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     # for 1 rbt:
     teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     try:

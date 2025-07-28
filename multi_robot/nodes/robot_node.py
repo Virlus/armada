@@ -574,53 +574,92 @@ class RobotNode:
         }
         return patterns
     
+    # def split_combined_messages(self, combined_msg):
+    #     """Split combined messages using robust pattern matching"""
+    #     if not combined_msg:
+    #         return []
+        
+    #     # Single message case
+    #     if not any(sep in combined_msg for sep in ['READY', 'TELEOP_TAKEOVER_RESULT', 'CONTINUE_POLICY', 
+    #                                                'PLAYBACK_TRAJ', 'TELEOP_CTRL_START', 'TELEOP_CTRL_STOP', 
+    #                                                'THROTTLE_SHIFT', 'COMMAND', 'REWIND_ROBOT', 'SCENE_ALIGNMENT_COMPLETED']):
+    #         return [combined_msg]
+        
+    #     patterns = self.get_message_patterns()
+    #     messages = []
+    #     remaining = combined_msg
+        
+    #     while remaining:
+    #         found_match = False
+    #         best_match = None
+    #         best_start = len(remaining)
+    #         best_pattern_name = None
+            
+    #         # Find the earliest matching pattern
+    #         for pattern_name, pattern in patterns.items():
+    #             match = re.search(pattern, remaining)
+    #             if match and match.start() < best_start:
+    #                 best_match = match
+    #                 best_start = match.start()
+    #                 best_pattern_name = pattern_name
+    #                 found_match = True
+            
+    #         if not found_match:
+    #             # No more patterns found, add remaining as is
+    #             if remaining.strip():
+    #                 messages.append(remaining.strip())
+    #             break
+            
+    #         # Add any content before the match
+    #         if best_start > 0:
+    #             prefix = remaining[:best_start].strip()
+    #             if prefix:
+    #                 messages.append(prefix)
+            
+    #         # Add the matched message
+    #         messages.append(best_match.group(0))
+    #         remaining = remaining[best_match.end():]
+        
+    #     return [msg for msg in messages if msg.strip()]
+
     def split_combined_messages(self, combined_msg):
-        """Split combined messages using robust pattern matching"""
+        """使用消息头尾标识符分割组合消息，返回不带分割符的纯净消息"""
         if not combined_msg:
             return []
-        
-        # Single message case
-        if not any(sep in combined_msg for sep in ['READY', 'TELEOP_TAKEOVER_RESULT', 'CONTINUE_POLICY', 
-                                                   'PLAYBACK_TRAJ', 'TELEOP_CTRL_START', 'TELEOP_CTRL_STOP', 
-                                                   'THROTTLE_SHIFT', 'COMMAND', 'REWIND_ROBOT', 'SCENE_ALIGNMENT_COMPLETED']):
-            return [combined_msg]
-        
-        patterns = self.get_message_patterns()
+
         messages = []
+        start_marker = "<<MSG_START>>"
+        end_marker = "<<MSG_END>>"
+        
+        # 查找所有的消息开始和结束标记
         remaining = combined_msg
         
         while remaining:
-            found_match = False
-            best_match = None
-            best_start = len(remaining)
-            best_pattern_name = None
-            
-            # Find the earliest matching pattern
-            for pattern_name, pattern in patterns.items():
-                match = re.search(pattern, remaining)
-                if match and match.start() < best_start:
-                    best_match = match
-                    best_start = match.start()
-                    best_pattern_name = pattern_name
-                    found_match = True
-            
-            if not found_match:
-                # No more patterns found, add remaining as is
-                if remaining.strip():
+            start_pos = remaining.find(start_marker)
+            if start_pos == -1:
+                # 没有找到开始标记，如果有剩余内容且不只是分割符，则作为普通消息处理
+                if remaining.strip() and not remaining.strip().startswith(end_marker):
                     messages.append(remaining.strip())
                 break
             
-            # Add any content before the match
-            if best_start > 0:
-                prefix = remaining[:best_start].strip()
-                if prefix:
-                    messages.append(prefix)
+            # 在开始标记之后查找结束标记
+            content_start = start_pos + len(start_marker)
+            end_pos = remaining.find(end_marker, content_start)
             
-            # Add the matched message
-            messages.append(best_match.group(0))
-            remaining = remaining[best_match.end():]
+            if end_pos == -1:
+                # 没有找到结束标记，可能是不完整的消息
+                print(f"Warning: Incomplete message found: {remaining[start_pos:]}")
+                break
+            
+            # 提取消息内容（不包含分割符）
+            message_content = remaining[content_start:end_pos]
+            if message_content.strip():
+                messages.append(message_content.strip())
+            
+            # 处理下一个消息
+            remaining = remaining[end_pos + len(end_marker):]
         
-        return [msg for msg in messages if msg.strip()]
+        return messages
     
     def handle_message(self, raw_msg):
         # flag = 0
@@ -814,14 +853,14 @@ class RobotNode:
         
         # Display images until teleop confirms completion or timeout
         while not self.scene_alignment_completed:
-            current_time = time.time()
-            elapsed_time = current_time - start_time
+            # current_time = time.time()
+            # elapsed_time = current_time - start_time
             
-            # Check for timeout
-            if elapsed_time > timeout_duration:
-                print(f"⚠️  TIMEOUT after {timeout_duration} seconds. Auto-continuing...")
-                print("🤖 Network may be disconnected, proceeding automatically")
-                break
+            # # Check for timeout
+            # if elapsed_time > timeout_duration:
+            #     print(f"⚠️  TIMEOUT after {timeout_duration} seconds. Auto-continuing...")
+            #     print("🤖 Network may be disconnected, proceeding automatically")
+            #     break
             
             try:
                 state_data = self.robot_env.get_robot_state()

@@ -33,7 +33,7 @@ robot_info:
   # for 1 rbt:
   socket_ip: "127.0.0.1"
   # for 2 rbts:
-  socket_ip: "192.168.1.1"
+  # socket_ip: "192.168.1.2"
   socket_port: 12345
   robot_name: flexiv
   robot_id: 0

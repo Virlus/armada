@@ -40,9 +40,29 @@ class SocketClient:
             self.sock.close()
             print(f"Server disconnected")
 
+    # def send(self, data, max_retries=3):
+    #     if isinstance(data, str):
+    #         data = data.encode()
+
+    #     for attempt in range(max_retries):
+    #         if not self.sock:
+    #             continue
+    #         try:
+    #             return self.sock.send(data)
+    #         except OSError as e:
+    #             print(f"Send attempt {attempt + 1} failed: {e}")
+    #             self.sock = None
+    #     raise ConnectionError(f"Failed after {max_retries} attempts")
+
     def send(self, data, max_retries=3):
+        # 添加消息头尾标识符
         if isinstance(data, str):
+            data = f"<<MSG_START>>{data}<<MSG_END>>"
             data = data.encode()
+        elif isinstance(data, bytes):
+            # 如果已经是bytes，需要先解码，添加标识符，再编码
+            decoded_data = data.decode()
+            data = f"<<MSG_START>>{decoded_data}<<MSG_END>>".encode()
 
         for attempt in range(max_retries):
             if not self.sock:

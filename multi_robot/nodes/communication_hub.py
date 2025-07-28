@@ -450,8 +450,9 @@ class CommunicationHub:
         """Main loop to process the request queue"""
         try:
             while True:
+                # print("idle_q:",self.idle_teleop_q)
                 self.update_request_q_workflow()
-                time.sleep(0.1)
+                time.sleep(0.8)
         except KeyboardInterrupt:
             self.socket.stop()
             print("Server shutdown")

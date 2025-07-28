@@ -514,15 +514,15 @@ if __name__ == "__main__":
     inform_freq = 2
     listen_freq = 30
     teleop_device = "sigma"
-    num_robot = 1
+    num_robot = 2
 
     assert teleop_device in ["sigma", "keyboard"]
     args = parse_args()
     args.teleop_id = 0 ##TODO:remember to delete
     # for 2 rbts:
-    # teleop_node = TeleopNode(args.teleop_id,"192.168.1.2", 12345,listen_freq,teleop_device,num_robot,Ta=8)
+    teleop_node = TeleopNode(args.teleop_id,"192.168.1.2", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     # for 1 rbt:
-    teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
+    # teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     try:
         teleop_state_thread = threading.Thread(    #inform teleop state by a freq
             target=teleop_node.inform_teleop_state,

@@ -326,6 +326,7 @@ class RobotNode:
         with self.lock:
             self.finish_episode = False
         self.robot_state = "agent_controlled"  
+        self.stop_event = None
 
         # Initialize episode buffers
         self.episode_buffers = {
@@ -408,7 +409,7 @@ class RobotNode:
                 break
 
         # Finalize episode and return data
-        if self.finish_episode:
+        if self.finish_episode and self.stop_event == "accept":
             print("===================finalize episode 2=======================")
             episode_data = self._finalize_episode()
             return episode_data
@@ -682,8 +683,12 @@ class RobotNode:
             elif message.startswith("TELEOP_TAKEOVER_RESULT"): #direct result without human teleoperation,succ/fail
                 self.detach()
                 # print(f"DEBUG: Setting finish_episode=True in thread {threading.current_thread().name}")
-                if "FAILURE" in message:
-                    self.handle_failure()
+                if "SUCCESS" in message:
+                    self.stop_event = "accept"
+                    if self.failure_reason is not None and self.failure_reason != "maximum episode length reached":
+                        self.handle_redundant_failure()
+                else:
+                    self.stop_event = "cancel"
                 with self.lock:
                     self.finish_episode = True  #finish_episode has greater priority over robot_state
                 print("===================finish episode_1=======================")
@@ -724,7 +729,7 @@ class RobotNode:
             self.failure_detection_module.failure_detector.expert_action_threshold = np.inf
             print("Reset the action inconsistency threshold to infinity temporarily")
     
-    def handle_failure(self):
+    def handle_redundant_failure(self): # TODO: delete and finish condition check
         if hasattr(self.failure_detection_module, 'failure_logs'):
             if self.failure_detection_module.failure_logs:  # Check if dictionary is not empty
                 self.failure_detection_module.failure_logs.popitem()
@@ -908,7 +913,7 @@ class RobotNode:
         # time.sleep(0.5)
         self.robot_state = "teleop_controlled"
         self.ready_to_stop_flag = False
-        self.stop_event = None
+        # self.stop_event = None
         self.stop_teleop_key = False
     
     def ready_to_stop(self,message):
@@ -932,8 +937,8 @@ class RobotNode:
         assert self.stop_event in ["cancel","accept","continue"]
 
         if self.stop_event != "continue":  #success or failure
-            if self.stop_event=="cancel":
-                self.handle_failure()
+            # if self.stop_event=="accept" and self.failure_reason is not None and self.failure_reason != "maximum episode length reached":
+            #     self.handle_redundant_failure()
             with self.lock:
                 self.finish_episode = True   #finish_episode has greater priority over robot_state
             print("===================finish episode_2=======================")
@@ -1134,6 +1139,7 @@ class RobotNode:
             curr_pos, curr_rot, prev_side_cam, prev_wrist_cam = self._rewind_single_step(episode_buffers, curr_pos, curr_rot)
             j -= 1
             rewind_steps += 1
+            print("Rewinded one step...")
         
         return rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot
     

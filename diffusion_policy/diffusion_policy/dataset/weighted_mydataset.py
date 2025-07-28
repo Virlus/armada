@@ -36,6 +36,7 @@ class WeightedMyDataset(BaseImageDataset):
             shape_meta=None,
             max_n_episodes=150,
             random_crop=False,
+            color_jitter=False,
             image_shape=(3, 240, 320),
             ):
         
@@ -79,16 +80,17 @@ class WeightedMyDataset(BaseImageDataset):
             if 'rotation_rep' in shape_meta['obs']['ee_pose']:
                 self.obs_rot_transformer = RotationTransformer(from_rep='quaternion', to_rep=shape_meta['obs']['ee_pose']['rotation_rep'])
         
+        side_img_processor = []
+        wrist_img_processor = []
+
         if random_crop:
-            self.crop_randomizer = transforms.Compose([
-                # transforms.Resize((image_shape[1]+8, image_shape[2]+8), interpolation=transforms.InterpolationMode.BICUBIC),
-                transforms.RandomCrop((image_shape[1], image_shape[2]))
-            ])
-            self.image_resizer = transforms.Compose([
-                transforms.Resize((image_shape[1], image_shape[2]), interpolation=transforms.InterpolationMode.BICUBIC)
-            ])
-        else:
-            self.crop_randomizer = None
+            side_img_processor.append(transforms.RandomCrop((image_shape[1], image_shape[2])))
+            wrist_img_processor.append(transforms.Resize((image_shape[1], image_shape[2]), interpolation=transforms.InterpolationMode.BICUBIC))
+        if color_jitter:
+            side_img_processor.append(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1))
+            wrist_img_processor.append(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1))
+        self.side_img_processor = transforms.Compose(side_img_processor) if len(side_img_processor) > 0 else None
+        self.wrist_img_processor = transforms.Compose(wrist_img_processor) if len(wrist_img_processor) > 0 else None
 
         # Currently we only support multiple observation steps
         assert self.n_obs_steps > 1
@@ -275,10 +277,12 @@ class WeightedMyDataset(BaseImageDataset):
         return data
     
     def side_image_postprocess(self, img):
-        return self.crop_randomizer(img) if self.crop_randomizer is not None else img
+        img = self.side_img_processor(img) if self.side_img_processor is not None else img
+        return img
     
     def wrist_image_postprocess(self, img):
-        return self.image_resizer(img) if self.image_resizer is not None else img
+        img = self.wrist_img_processor(img) if self.wrist_img_processor is not None else img
+        return img
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.sampler.sample_sequence(idx)

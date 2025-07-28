@@ -1,7 +1,7 @@
-name: pouring_full
+name: pour_ours_dagger_round1
 
 image_shape: [3, 224, 224]
-dataset_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0518_pour_full_100
+dataset_path: /home/yuwenye/project/human-in-the-loop/diffusion_policy/data/0627_pour/0627_pour_ours_dagger_round1
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
@@ -32,7 +32,7 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.mydataset.MyDataset
-  zarr_path: /home/yuwenye/project/human-in-the-loop/third_party/diffusion_policy/data/0518_pour_full_100/replay_buffer.zarr
+  zarr_path: /home/yuwenye/project/human-in-the-loop/diffusion_policy/data/0627_pour/0627_pour_ours_dagger_round1/replay_buffer.zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}
@@ -43,4 +43,5 @@ dataset:
   n_obs_steps: ${n_obs_steps}
   shape_meta: ${shape_meta}
   random_crop: True
+  color_jitter: True
   image_shape: ${task.image_shape}

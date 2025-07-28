@@ -234,6 +234,9 @@ def main(rank, eval_cfg, device_ids):
                 break
             print(f"Rollout episode: {episode_idx}")
 
+            # Reset action inconsistency calculation buffers in failure detector
+            failure_detector.last_predicted_abs_actions = None
+
             # Reset keyboard states
             robot_env.keyboard.finish = False
             robot_env.keyboard.help = False

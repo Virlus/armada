@@ -265,6 +265,8 @@ class RealRobotRunner:
                     break
                 
                 print(f"Rollout episode: {self.episode_idx}")
+                if self.eval_cfg.failure_detection_module == 'action_inconsistency_ot':
+                    self.failure_detection_module.failure_detector.last_predicted_abs_actions = None
                 
                 # Run single episode
                 episode_data = self._run_single_episode(episode_id=self.episode_id+1)

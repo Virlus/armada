@@ -258,13 +258,13 @@ class TeleopNode:
         else:
             raise ValueError(f"Unknown request_type: {request_type}")
         
-        # Restart keyboard listener if not entering teleop mode (handle_need_teleop starts its own listener)
-        if key != 'N':  # 'N' is for teleop, which starts its own listener
-            # Give a moment for any ongoing operations to complete
-            time.sleep(0.1)
-            # Only restart if teleop_state is idle (not busy with ongoing teleop)
-            if self.teleop_state == "idle":
-                self.keyboard_listener.start_keyboard_listener()
+        # # Restart keyboard listener if not entering teleop mode (handle_need_teleop starts its own listener)
+        # if key != 'N':  # 'N' is for teleop, which starts its own listener
+        #     # Give a moment for any ongoing operations to complete
+        #     time.sleep(0.1)
+        #     # Only restart if teleop_state is idle (not busy with ongoing teleop)
+        #     if self.teleop_state == "idle":
+        #         self.keyboard_listener.start_keyboard_listener()
 
     def handle_success(self,rbt_id,request_type):
         print("Success!")

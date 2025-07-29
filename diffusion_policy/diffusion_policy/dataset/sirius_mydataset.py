@@ -16,6 +16,7 @@ from diffusion_policy.dataset.base_dataset import BaseImageDataset
 from diffusion_policy.common.normalize_util import get_image_range_normalizer
 from diffusion_policy.model.common.rotation_transformer import RotationTransformer
 from scipy.spatial.transform import Rotation as R
+import kornia.augmentation as K
 
 HUMAN = 0
 ROBOT = 1
@@ -90,12 +91,20 @@ class SiriusMyDataset(BaseImageDataset):
             side_img_processor.append(transforms.Resize((image_shape[1]+8, image_shape[2]+8), interpolation=transforms.InterpolationMode.BICUBIC))
             side_img_processor.append(transforms.RandomCrop((image_shape[1], image_shape[2])))
             wrist_img_processor.append(transforms.Resize((image_shape[1], image_shape[2]), interpolation=transforms.InterpolationMode.BICUBIC))
+        
+        # GPU-based color augmentation using Kornia
+        self.color_jitter = None
         if color_jitter:
-            side_img_processor.append(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1))
-            wrist_img_processor.append(transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1))
+            self.color_jitter = K.ColorJitter(
+                brightness=0.4, 
+                contrast=0.4, 
+                saturation=0.4, 
+                hue=0.1
+            )
+
         self.side_img_processor = transforms.Compose(side_img_processor) if len(side_img_processor) > 0 else None
         self.wrist_img_processor = transforms.Compose(wrist_img_processor) if len(wrist_img_processor) > 0 else None
-        
+
         # Currently we only support multiple observation steps
         assert self.n_obs_steps > 1
         
@@ -306,6 +315,21 @@ class SiriusMyDataset(BaseImageDataset):
     def wrist_image_postprocess(self, img):
         img = self.wrist_img_processor(img) if self.wrist_img_processor is not None else img
         return img
+    
+    def gpu_color_augment(self, data):
+        """Apply GPU-based color augmentation"""
+        if self.color_jitter is not None:
+            # Apply color jitter to both camera views
+            batch_size = data['obs']['side_img'].shape[0]
+            horizon = data['obs']['side_img'].shape[1]
+            if 'side_img' in data['obs']:
+                jittered_side_img = self.color_jitter(data['obs']['side_img'].view(-1, *data['obs']['side_img'].shape[-3:]))
+                data['obs']['side_img'] = jittered_side_img.view(batch_size, horizon, *data['obs']['side_img'].shape[-3:])
+            if 'wrist_img' in data['obs']:
+                jittered_wrist_img = self.color_jitter(data['obs']['wrist_img'].view(-1, *data['obs']['wrist_img'].shape[-3:]))
+                data['obs']['wrist_img'] = jittered_wrist_img.view(batch_size, horizon, *data['obs']['wrist_img'].shape[-3:])
+        
+        return data
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.sampler.sample_sequence(idx)

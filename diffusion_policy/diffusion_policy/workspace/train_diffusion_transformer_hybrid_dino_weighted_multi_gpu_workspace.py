@@ -174,6 +174,8 @@ class TrainDiffusionTransformerHybridDinoWeightedMultiGPUWorkspace(BaseWorkspace
                     for batch_idx, batch in enumerate(tepoch):
                         # device transfer
                         batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
+                        if hasattr(dataset, 'gpu_color_augment'):
+                            batch = dataset.gpu_color_augment(batch)
                         if train_sampling_batch is None:
                             train_sampling_batch = batch
 

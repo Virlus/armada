@@ -87,6 +87,7 @@ class SiriusMyDataset(BaseImageDataset):
         wrist_img_processor = []
 
         if random_crop:
+            side_img_processor.append(transforms.Resize((image_shape[1]+8, image_shape[2]+8), interpolation=transforms.InterpolationMode.BICUBIC))
             side_img_processor.append(transforms.RandomCrop((image_shape[1], image_shape[2])))
             wrist_img_processor.append(transforms.Resize((image_shape[1], image_shape[2]), interpolation=transforms.InterpolationMode.BICUBIC))
         if color_jitter:

@@ -66,3 +66,4 @@ dependencies:
     - dm-control==1.0.9
     - POT==0.9.5
     - huggingface-hub==0.25.0
+    - kornia==0.8.1

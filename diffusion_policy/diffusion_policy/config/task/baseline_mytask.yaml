@@ -1,7 +1,7 @@
 name: baseline_extract_training_data
 
 image_shape: [3, 224, 224]
-dataset_path: /home/yuwenye/project/human-in-the-loop/baseline_data/rollout/0604_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95
+dataset_path: /home/yuwenye/project/human-in-the-loop/baseline_data/rollout/0627_mug_ours_dagger_round3
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
@@ -32,7 +32,7 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.mydataset.MyDataset
-  zarr_path: /home/yuwenye/project/human-in-the-loop/baseline_data/rollout/0604_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95/replay_buffer.zarr
+  zarr_path: /home/yuwenye/project/human-in-the-loop/baseline_data/rollout/0627_mug_ours_dagger_round3/replay_buffer.zarr
   horizon: ${horizon}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}

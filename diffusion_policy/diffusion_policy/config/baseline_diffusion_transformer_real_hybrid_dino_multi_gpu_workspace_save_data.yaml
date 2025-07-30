@@ -3,7 +3,7 @@ defaults:
   - task: baseline_mytask
 
 device_ids: '0'
-output_dir: /home/yuwenye/project/human-in-the-loop/baseline_data/training/0620_mug_ours_dagger_new_failure_detection_round3_2_action_90_ot_cost_95_dense_feats
+output_dir: /home/yuwenye/project/human-in-the-loop/baseline_data/training/0627_mug_ours_dagger_round3
 
 name: baseline_diffusion_transformer_real_hybrid_dino_multi_gpu_workspace_save_data
 _target_: diffusion_policy.workspace.baseline_diffusion_transformer_real_hybrid_dino_multi_gpu_workspace_save_data.BaselineDiffusionTransformerHybridDinoMultiGPUWorkspaceSaveData
@@ -93,7 +93,7 @@ dataloader:
 
 training:
   device: "cuda:0"
-  seed: 42
+  seed: 2
   resume: True
-  resume_path: outputs/2025.06.11/13.17.19_train_diffusion_transformer_hybrid_dino_multi_gpu_mug_dagger_new_round2
+  resume_path: outputs/2025.07.06/11.06.54_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_mug_ours_dagger_round2
   use_ema: True

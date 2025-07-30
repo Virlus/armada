@@ -1,18 +1,19 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mango_in_drawer/0711_22.43.38_train_diffusion_transformer_hybrid_dino_multi_gpu_0710_mango_in_drawer_ours_dagger_round2/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_ours_dagger_round2
-save_buffer_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_ours_dagger_round3
-output_dir: diffusion_policy/outputs/visual/0710_mango_in_drawer_rollout_round3
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/fold_towel/0729_15.06.55_train_diffusion_transformer_hybrid_dino_multi_gpu_0728_fold_towel_initial/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/fold_towel/0728_fold_towel
+save_buffer_path: /mnt/workspace/DP/fold_towel/0728_fold_towel_ours_dagger_round1
+output_dir: diffusion_policy/outputs/visual/0728_fold_towel_rollout_round1
 
 Ta: 8
 random_init: True
-seed: 2
+seed: 0
 
 # Failure detection configuration
 failure_detection_module: action_inconsistency_ot
 
 # Failure detection hyperparameters
 enable_action_inconsistency: True
+enable_OT: True
 inconsistency_metric: expert
 num_samples: 4
 num_expert_candidates: 50

@@ -1,15 +1,15 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mango_in_drawer/0712_01.16.47_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_0710_mango_in_drawer_sirius_round2/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_sirius_round2
-save_buffer_path: /mnt/workspace/DP/mango_in_drawer/0710_mango_in_drawer_sirius_round3
-output_dir: diffusion_policy/outputs/visual/0710_mango_in_drawer_rollout_round3
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/fold_towel/0729_15.06.55_train_diffusion_transformer_hybrid_dino_multi_gpu_0728_fold_towel_initial/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/fold_towel/0728_fold_towel_sirius_round1
+save_buffer_path: /mnt/workspace/DP/fold_towel/0728_fold_towel_sirius_round1_2
+output_dir: diffusion_policy/outputs/visual/0728_fold_towel_rollout_round1
 
 Ta: 8
 random_init: True
-seed: 2
+seed: 0
 
 # No failure detection for Sirius rollout
-# failure_detection_module: null
+failure_detection_module: null
 
 # Sirius-related hyperparameters  
 post_process_action_mode: True

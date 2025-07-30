@@ -596,7 +596,7 @@ class RealRobotRunner:
         curr_rot = R.from_quat(curr_tcp[3:], scalar_first=True)
         
         # Let failure detection module determine rewinding behavior
-        if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding'):
+        if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding') and self.failure_detection_module.enable_OT:
             rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_with_failure_detection(episode_buffers, curr_timestep, curr_pos, curr_rot)
         else:
             rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_simple(episode_buffers, curr_timestep, curr_pos, curr_rot)

@@ -8,7 +8,7 @@ from scipy.spatial.transform import Rotation as R
 import pygame
 
 from multi_robot.communication.socket_client import SocketClient
-from multi_robot.utils.message_distillation import parse_message_regex
+from multi_robot.utils.message_distillation import parse_message_regex, split_combined_messages, MessageHandler
 from multi_robot.utils.keyboard_listener import KeyboardListener
 from hardware.my_device.sigma import Sigma7
 from hardware.my_device.logitechG29_wheel import Controller
@@ -24,137 +24,90 @@ def parse_args():
     parser.add_argument('--teleop_id', type=int, required=False, default=0)
 
     return parser.parse_args()
-class TeleopNode:
-    def __init__(self, teleop_id, socket_ip, socket_port, listen_freq=10, teleop_device="sigma", num_robot=1,Ta=8):
+class TeleopNode(MessageHandler):
+    """Teleoperation node that handles human operator input and intervention.
+    Manages teleoperation devices, user interface, and communication with robot nodes."""
+    
+    def __init__(self, teleop_id, socket_ip, socket_port, listen_freq=10, teleop_device="sigma", num_robot=1, Ta=8):
+        # Initialize basic parameters
+        self._setup_basic_params(teleop_id, listen_freq, teleop_device, Ta)
+        
+        # Setup communication
+        self._setup_communication(socket_ip, socket_port)
+        
+        # Initialize teleop devices
+        self._initialize_devices(num_robot)
+        
+        # Initialize MessageHandler after all attributes are set
+        super().__init__()
+
+    def _setup_basic_params(self, teleop_id, listen_freq, teleop_device, Ta):
+        """Setup basic teleop parameters."""
         self.Ta = Ta
         self.teleop_id = teleop_id
         self.stop_event = None
         self.listen_freq = listen_freq
-        self.socket = SocketClient(socket_ip, socket_port, message_handler=self.handle_message)
-        self.socket.start_connection()
-        self.lock = threading.Lock()
-        self.last_query = time.time() - 1
         self.running = True
         self.teleop_state = "idle"  # busy / idle
         self.teleop_device = teleop_device  # keyboard/sigma
         self.keyboard_listener = KeyboardListener(teleop_device)
-        
-        # Rewind completion flag
         self.rewind_completed = False
-        
-        # Initialize teleop input devices
+        self.last_query = time.time() - 1
+
+    def _setup_communication(self, socket_ip, socket_port):
+        """Setup communication with hub."""
+        self.socket = SocketClient(socket_ip, socket_port, message_handler=self.handle_message)
+        self.socket.start_connection()
+        self.lock = threading.Lock()
+
+    def _initialize_devices(self, num_robot):
+        """Initialize teleop input devices."""
         if self.teleop_device == "sigma":
             self.sigma = Sigma7(num_robot=num_robot)
             pygame.init()
             self.controller = Controller(0)
-    
-    def get_separator_pattern(self):
-        """Get message separator pattern"""
-        separators = [
-            "EXECUTE_HUMAN_CHECK",
-            "SIGMA",
-            "TCP_BEFORE_TAKEOVER",
-            "REWIND_ROBOT",
-            "REWIND_COMPLETED", 
-            "SCENE_ALIGNMENT_REQUEST",
-            "SCENE_ALIGNMENT_WITH_REF_REQUEST"
-        ]
-        sorted_seps = sorted(separators, key=len, reverse=True)
-        pattern = "|".join(map(re.escape, sorted_seps))
-        return re.compile(f"({pattern})")
-    
-    # def split_combined_messages(self, combined_msg):
-    #     """Split combined messages"""
-    #     if not combined_msg:
-    #         return []
 
-    #     pattern = self.get_separator_pattern()
-    #     parts = []
-    #     last_end = 0
-    #     matches = list(pattern.finditer(combined_msg))
-    #     if not matches:
-    #         return [combined_msg]
-
-    #     if matches[0].start() > 0:
-    #         parts.append(combined_msg[:matches[0].start()])
-
-    #     for i, match in enumerate(matches):
-    #         start = match.start()
-    #         end = match.end()
-    #         current_sep = match.group(0)
-    #         next_start = matches[i + 1].start() if i < len(matches) - 1 else len(combined_msg)
-    #         content = combined_msg[start:next_start]
-    #         parts.append(content)
-    #         last_end = next_start
-    #     return parts
-
-    def split_combined_messages(self, combined_msg):
-        """使用消息头尾标识符分割组合消息，返回不带分割符的纯净消息"""
-        if not combined_msg:
-            return []
-
-        messages = []
-        start_marker = "<<MSG_START>>"
-        end_marker = "<<MSG_END>>"
+    def _setup_message_routes(self):
+        """Define message routing table based on original handle_message logic"""
         
-        # 查找所有的消息开始和结束标记
-        remaining = combined_msg
+         # Register handlers
+        self.threaded_handlers = {
+            "EXECUTE_HUMAN_CHECK": self.human_decide_process,
+            "SCENE_ALIGNMENT_REQUEST": self.handle_scene_alignment_request,
+            "SCENE_ALIGNMENT_WITH_REF_REQUEST": self.handle_scene_alignment_with_ref_request,
+        }
+        self.unthreaded_handlers = {
+            "REWIND_COMPLETED": self.handle_rewind_completed,
+        }
+        for msg_type, handler in self.threaded_handlers.items():
+            self.register_handler(msg_type, handler, use_thread=True)
+        for msg_type, handler in self.unthreaded_handlers.items():
+            self.register_handler(msg_type, handler)
+            
+        self.register_pattern_handler(
+            lambda msg: msg.startswith("SIGMA"),
+            self._handle_sigma_message
+        )
+
+    def _handle_sigma_message(self, message: str):
+        """Handle SIGMA messages with device assertion and sub-routing"""
+        assert self.teleop_device == "sigma"
         
-        while remaining:
-            start_pos = remaining.find(start_marker)
-            if start_pos == -1:
-                # 没有找到开始标记，如果有剩余内容且不只是分割符，则作为普通消息处理
-                if remaining.strip() and not remaining.strip().startswith(end_marker):
-                    messages.append(remaining.strip())
+        sigma_handlers = {
+            "DETACH": self.handle_sigma_detach,
+            "RESUME": self.handle_sigma_resume,
+            "RESET": self.handle_sigma_reset,
+            "TRANSFORM": self.handle_tcp_transform_robot,
+        }
+        
+        for action, handler in sigma_handlers.items():
+            if action in message:
+                handler(message)
                 break
-            
-            # 在开始标记之后查找结束标记
-            content_start = start_pos + len(start_marker)
-            end_pos = remaining.find(end_marker, content_start)
-            
-            if end_pos == -1:
-                # 没有找到结束标记，可能是不完整的消息
-                print(f"Warning: Incomplete message found: {remaining[start_pos:]}")
-                break
-            
-            # 提取消息内容（不包含分割符）
-            message_content = remaining[content_start:end_pos]
-            if message_content.strip():
-                messages.append(message_content.strip())
-            
-            # 处理下一个消息
-            remaining = remaining[end_pos + len(end_marker):]
-        
-        return messages
 
-    def handle_message(self, raw_message):
-        """Handle received messages"""
-        message_list = self.split_combined_messages(raw_message)
-        for message in message_list:
-            # print(f"Received message: {message}")
-            if message.startswith("EXECUTE_HUMAN_CHECK"):
-                human_thread = threading.Thread(target=self.human_decide_process, args=(message,), daemon=True)
-                human_thread.start()
-            elif message.startswith("SIGMA"):
-                assert self.teleop_device == "sigma"
-                if "DETACH" in message:
-                    self.handle_sigma_detach(message)
-                elif "RESUME" in message:
-                    self.handle_sigma_resume(message)
-                elif "RESET" in message:
-                    self.handle_sigma_reset(message)
-                elif "TRANSFORM" in message:
-                    self.handle_tcp_transform_robot(message)
-            elif message.startswith("REWIND_COMPLETED"):
-                self.handle_rewind_completed(message)
-            elif message.startswith("SCENE_ALIGNMENT_REQUEST"):
-                alignment_thread = threading.Thread(target=self.handle_scene_alignment_request, args=(message,), daemon=True)
-                alignment_thread.start()
-            elif message.startswith("SCENE_ALIGNMENT_WITH_REF_REQUEST"): #rewind
-                alignment_thread = threading.Thread(target=self.handle_scene_alignment_with_ref_request, args=(message,), daemon=True)
-                alignment_thread.start()
-            else:
-                raise ValueError(f"Unknown command: {message}")
+    def _handle_unknown_message(self, message: str):
+        """Custom handler raises exception for unknown messages"""
+        raise ValueError(f"Unknown command: {message}")
 
     def handle_sigma_detach(self, message):
         """Handle sigma detach command"""
@@ -174,11 +127,11 @@ class TeleopNode:
             templ = "SIGMA_of_{}_RESUME_from_{}_DURING_TELEOP"
             teleop_id, rbt_id = parse_message_regex(message, templ)
             self.sigma.resume(rbt_id)
-            # print("================================================resumed sigma======================================================")
+            
             last_p, last_r, _ = self.sigma.get_control(rbt_id)
             last_r = last_r.as_quat(scalar_first=True)
             self.socket.send(f"THROTTLE_SHIFT_POSE_from_{self.teleop_id}_to_{rbt_id}:sigma:{last_p.tolist()},{last_r.tolist()}")
-            # print(f'=================================================sent throttle shift pose: {last_p.tolist()},{last_r.tolist()}============================================')
+           
         else:
             templ = "SIGMA_of_{}_RESUME_from_{}"
             teleop_id, rbt_id = parse_message_regex(message, templ)
@@ -202,6 +155,9 @@ class TeleopNode:
         )
     
     def human_decide_process(self, message):
+        """Process human decision requests from robot.
+        Handles intervention requests and presents options to human operator."""
+        
         """
         Human intervention process.
         Key options:
@@ -209,7 +165,6 @@ class TeleopNode:
         'F' for Failure
         'C' for Continue policy
         'N' for Need teleop-ctrl
-        'P' for Playback trajectory
         """
         self.teleop_state = "busy"
         templ = "EXECUTE_HUMAN_CHECK_state_of_robot_{}_with_request{}"
@@ -225,48 +180,45 @@ class TeleopNode:
     def main_human_decide(self, rbt_id, request_type):
         """Main human decision logic"""
         self.keyboard_listener.stop_keyboard_listener()  # Stop keyboard listener to prevent conflict with input()
-        if request_type == "failure":
-            print("Press 'S' for SUCCESS / 'F' for FAILURE / ")
-            print("'C' for CONTINUING AGENT policy / 'N' for needing TELEOP-CTRL ", end='', flush=True)
-        elif request_type == "timeout":
-            print("Press 'S' for SUCCESS / 'F' for FAILURE / ")
-            print("'C' for CONTINUING AGENT policy / 'N' for needing TELEOP-CTRL ", end='', flush=True)
         
-        key = input().strip().upper()
-        
+        # Define valid options and actions
+        valid_options = ['S', 'F', 'C', 'N']
         key_actions = {
             'S': self.handle_success,
             'F': self.handle_failure,
             'C': self.handle_continue_policy,
             'N': self.handle_need_teleop,
-            'P': self.handle_playback_traj
         }
         
-        if request_type == "timeout":
-            if key not in ['S','F','C','N']:
-                raise ValueError(f"Unknown key: {key} for request_type: {request_type}")
-                if key == 'C':
-                    key = 'N'
-                    print ("Already timeout, cannot continue policy.")
-            key_actions[key](rbt_id,request_type)
+        # Display options based on request type
+        self._display_decision_options(request_type)
+        
+        # Get user input
+        key = input().strip().upper()
+        
+        # Handle timeout-specific logic
+        if request_type == "timeout" and key == 'C':
+            key = 'N'
+            print("Already timeout, cannot continue policy, teleop is needed.")
+        
+        # Validate input
+        if key not in valid_options:
+            raise ValueError(f"Unknown key: {key} for request_type: {request_type}")
+        
+        # Execute action
+        key_actions[key](rbt_id, request_type)
 
-        elif request_type == "failure":
-            if key not in ['S','F','C','N']:
-                raise ValueError(f"Unknown key: {key} for request_type: {request_type}")
-            key_actions[key](rbt_id,request_type)
-
+    def _display_decision_options(self, request_type):
+        """Display decision options to user."""
+        if request_type in ["failure", "timeout"]:
+            print("Press 'S' for SUCCESS / 'F' for FAILURE / ")
+            print("'C' for CONTINUING AGENT policy / 'N' for needing TELEOP-CTRL ", end='', flush=True)
         else:
             raise ValueError(f"Unknown request_type: {request_type}")
-        
-        # # Restart keyboard listener if not entering teleop mode (handle_need_teleop starts its own listener)
-        # if key != 'N':  # 'N' is for teleop, which starts its own listener
-        #     # Give a moment for any ongoing operations to complete
-        #     time.sleep(0.1)
-        #     # Only restart if teleop_state is idle (not busy with ongoing teleop)
-        #     if self.teleop_state == "idle":
-        #         self.keyboard_listener.start_keyboard_listener()
 
     def handle_success(self,rbt_id,request_type):
+        """Handle success decision from human operator.
+        Processes successful task completion and environment reset."""
         print("Success!")
         # Note: keyboard_listener already stopped in main_human_decide
         print("Start manually resetting environment , press 'F' when finished: ", end='', flush=True)
@@ -277,6 +229,8 @@ class TeleopNode:
             self.teleop_state = "idle"
 
     def handle_failure(self,rbt_id,request_type):
+        """Handle failure decision from human operator.
+        Processes task failure and environment reset."""
         print("Failure!")
         # Note: keyboard_listener already stopped in main_human_decide
         print("Start manually resetting environment , press 'F' when finished: ", end='', flush=True)
@@ -287,12 +241,16 @@ class TeleopNode:
             self.teleop_state = "idle"
 
     def handle_continue_policy(self,rbt_id,request_type):
+        """Handle continue policy decision from human operator.
+        Instructs robot to continue autonomous policy execution."""
         print("Continue Agent Policy!")
         msg = f"CONTINUE_POLICY_{rbt_id}".encode()
         self.socket.send(msg)
         self.teleop_state = "idle"
 
     def handle_need_teleop(self,rbt_id,request_type):
+        """Handle teleoperation request from human operator.
+        Initiates robot rewind and starts teleoperation session."""
         print("Need Teleop!")
         # Note: keyboard_listener already stopped in main_human_decide
         print("Get ready for teleoperation , press 'S' to START: ", end='', flush=True)
@@ -305,23 +263,16 @@ class TeleopNode:
             # Wait for rewind completion message
             print("Waiting for robot rewind to complete...")
             self.rewind_completed = False
-            while not self.rewind_completed:  #在等一条叫做REWIND_COMPLETED的消息
+            while not self.rewind_completed:  # Wait for REWIND_COMPLETED message
                 time.sleep(0.1)
             time.sleep(1)
             print("Rewind completed. Starting teleoperation...")
             print("Press 'C' or 'c' to CANCEL, 'T' or 't' to ACCEPT, 'N' or 'n' to CONTINUE CURRENT POLICY :", end='', flush=True)
             self.teleop_ctrl_start(rbt_id)  # This will start keyboard_listener for teleop
 
-    def handle_playback_traj(self,rbt_id,request_type):
-        print("Playback Trajectory!")
-        # Note: keyboard_listener already stopped in main_human_decide
-        msg = f"PLAYBACK_TRAJ_{rbt_id}".encode()
-        self.socket.send(msg)
-        print("Trajectory playback initiated. Please wait and then make another decision.")
-        # Return to allow main_human_decide to handle subsequent decisions
-        # The playback is handled by robot, we don't need recursive call here
-
     def run_listen_loop(self,rbt_id):
+        """Run listening loop for teleoperation commands.
+        Continuously sends commands and monitors for stop conditions."""
         ready_to_end_flag = False
         time.sleep(0.5)
         almost_stop_t = -1
@@ -334,7 +285,7 @@ class TeleopNode:
                 print ("Stop sending command.")
                 break
 
-            # Debug keyboard listener state
+            # Check if keyboard listener indicates session should end
             if (self.keyboard_listener.accept or self.keyboard_listener.cancel or self.keyboard_listener._continue) and not ready_to_end_flag:
                 # print(f"DEBUG: Keyboard state - accept:{self.keyboard_listener.accept}, cancel:{self.keyboard_listener.cancel}, continue:{self.keyboard_listener._continue}")
                 if self.keyboard_listener.cancel:
@@ -363,7 +314,7 @@ class TeleopNode:
                 
                 throttle = self.controller.get_throttle()
                 # if not throttle < -0.9:
-                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") #send realtime no matter who is ctrlling rbt
+                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
                 elapsed = time.time() - start_time
                 time.sleep(max(0, interval - elapsed))
 
@@ -373,6 +324,8 @@ class TeleopNode:
 
 
     def teleop_ctrl_start(self,rbt_id):
+        """Start teleoperation control session.
+        Sends start command to robot and initializes keyboard listener."""
         msg = f"TELEOP_CTRL_START_{rbt_id}".encode()
         self.socket.send(msg)
         self.keyboard_listener.start_keyboard_listener()
@@ -381,13 +334,19 @@ class TeleopNode:
 
 
     def tele_ctrl_stop(self,rbt_id):
+        """Stop teleoperation control session.
+        Resets teleop state to idle after session ends."""
         self.teleop_state = "idle"
         
     def send_fake_stop(self,rbt_id):
+        """Send stop command to robot with event type.
+        Transmits teleoperation stop signal with appropriate stop event."""
         msg = f"TELEOP_CTRL_STOP_{rbt_id}_for_{self.stop_event}".encode()
         self.socket.send(msg)
 
     def handle_rewind_completed(self, message):
+        """Handle rewind completion notification from robot.
+        Updates rewind status when robot confirms rewind completion."""
         """Handle rewind completion notification from robot"""
         templ = "REWIND_COMPLETED_{}"
         rbt_id = parse_message_regex(message, templ)[0]
@@ -395,6 +354,8 @@ class TeleopNode:
         # self.rewind_completed = True
 
     def handle_scene_alignment_request(self, message):
+        """Handle scene alignment request from robot.
+        Guides human operator through scene alignment process."""
         print(f"===================================New EPISODE STARTED==================================")
         """Handle scene alignment request from robot"""
         self.teleop_state = "busy"
@@ -439,8 +400,6 @@ class TeleopNode:
         # Handle user input for scene alignment confirmation
         key = input().strip().upper()
         if key == 'C':
-            # print("Press 'C' to continue when scene is aligned: ", end='', flush=True)
-            # key = input().strip().upper() #todo:here!!!!!!!!!!!!!!!!!!
             self.rewind_completed = True
         
         # Send completion message
@@ -455,7 +414,7 @@ class TeleopNode:
         """Display scene alignment with reference images in teleop node"""
         import cv2
         
-        print(f"🖼️  Displaying reference images for robot {rbt_id}")
+        print(f"Displaying reference images for robot {rbt_id}")
         print("Please align the scene with the reference images, then press 'C' to continue")
         
         # Stop keyboard listener to prevent conflicts
@@ -504,6 +463,8 @@ class TeleopNode:
 
 
     def inform_teleop_state(self,inform_freq):
+        """Periodically report teleop state to hub.
+        Sends current teleop state at regular intervals."""
         while self.running:
             if time.time() - self.last_query >= 1/inform_freq:
                 self.last_query = time.time()
@@ -518,7 +479,7 @@ if __name__ == "__main__":
 
     assert teleop_device in ["sigma", "keyboard"]
     args = parse_args()
-    args.teleop_id = 0 ##TODO:remember to delete
+    args.teleop_id = 0 
     # for 2 rbts:
     teleop_node = TeleopNode(args.teleop_id,"192.168.1.2", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     # for 1 rbt:

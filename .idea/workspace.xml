@@ -5,10 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f2fad3c1-868d-44dd-8846-fa260a3a9aae" name="更改" comment="">
-      <change beforePath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/env_runner/real_robot_runner.py" beforeDir="false" afterPath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/env_runner/real_robot_runner.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/failure_detection/failure_detector.py" beforeDir="false" afterPath="$PROJECT_DIR$/failure_detection/failure_detector.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/real_failure_detection.py" beforeDir="false" afterPath="$PROJECT_DIR$/real_failure_detection.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/util/failure_detection_util.py" beforeDir="false" afterPath="$PROJECT_DIR$/util/failure_detection_util.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/HilMRS" beforeDir="false" afterPath="$PROJECT_DIR$/HilMRS" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/HilMRS/nodes/communication_hub.py" beforeDir="false" afterPath="$PROJECT_DIR$/HilMRS/nodes/communication_hub.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/HilMRS/nodes/robot_node.py" beforeDir="false" afterPath="$PROJECT_DIR$/HilMRS/nodes/robot_node.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/HilMRS/nodes/teleop_node.py" beforeDir="false" afterPath="$PROJECT_DIR$/HilMRS/nodes/teleop_node.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/HilMRS/real/robot_env.py" beforeDir="false" afterPath="$PROJECT_DIR$/HilMRS/real/robot_env.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -43,7 +44,7 @@
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
     "git-widget-placeholder": "master",
-    "last_opened_file_path": "/home/noematrix/Desktop/HilMRS",
+    "last_opened_file_path": "/home/noematrix/Desktop/alignanything",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -76,6 +77,7 @@
       <workItem from="1752645410883" duration="245000" />
       <workItem from="1752645680941" duration="327000" />
       <workItem from="1752718235534" duration="6061000" />
+      <workItem from="1753780441877" duration="39000" />
     </task>
     <servers />
   </component>

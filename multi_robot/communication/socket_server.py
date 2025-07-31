@@ -61,36 +61,6 @@ class SocketServer:
             conn.close()
             print(f"Client {addr} disconnected")
 
-    # def send(self, addr, message):
-    #     if isinstance(message, str):
-    #         message = message.encode()
-    #     conn = self.active_connections.get(addr)
-    #     if conn:
-    #         try:
-    #             conn.send(message)
-    #         except (ConnectionResetError, OSError) as e:
-    #             raise ValueError(f"Send failed to {addr}: {e}")
-    #             # self.active_connections.pop(addr, None)
-    #     else:
-    #         print(f"No active connection to {addr}")
-    # 在socket_server.py的send方法中：
-    # def send(self, addr, message):
-    #     if isinstance(message, str):
-    #         message = message.encode()
-    #     conn = self.active_connections.get(addr)
-    #     if conn:
-    #         try:
-    #             # 添加发送超时
-    #             conn.settimeout(0.1)  # 100ms超时
-    #             conn.send(message)
-    #             conn.settimeout(None)  # 恢复无超时
-    #         except socket.timeout:
-    #             print(f"Send timeout to {addr} - receiver may be busy")
-    #             print(f"error_message: {message}")
-    #         except (ConnectionResetError, OSError) as e:
-    #             print(f"Send failed to {addr}: {e}")
-    #             print(f"error_message: {message}")
-
     def send(self, addr, message):
         # 添加消息头尾标识符
         if isinstance(message, str):

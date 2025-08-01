@@ -5,11 +5,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f2fad3c1-868d-44dd-8846-fa260a3a9aae" name="更改" comment="">
-      <change beforePath="$PROJECT_DIR$/HilMRS" beforeDir="false" afterPath="$PROJECT_DIR$/HilMRS" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/HilMRS/nodes/communication_hub.py" beforeDir="false" afterPath="$PROJECT_DIR$/HilMRS/nodes/communication_hub.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/HilMRS/nodes/robot_node.py" beforeDir="false" afterPath="$PROJECT_DIR$/HilMRS/nodes/robot_node.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/HilMRS/nodes/teleop_node.py" beforeDir="false" afterPath="$PROJECT_DIR$/HilMRS/nodes/teleop_node.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/HilMRS/real/robot_env.py" beforeDir="false" afterPath="$PROJECT_DIR$/HilMRS/real/robot_env.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/config/multi_robot_config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/config/multi_robot_config.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/config/real_failure_detection_original.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/config/real_failure_detection.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/env_runner/real_robot_runner.py" beforeDir="false" afterPath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/env_runner/real_robot_runner.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/failure_detection/action_inconsistency_ot.py" beforeDir="false" afterPath="$PROJECT_DIR$/failure_detection/action_inconsistency_ot.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/failure_detection/failure_detector.py" beforeDir="false" afterPath="$PROJECT_DIR$/failure_detection/failure_detector.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/multi_robot/nodes/robot_node.py" beforeDir="false" afterPath="$PROJECT_DIR$/multi_robot/nodes/robot_node.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -38,22 +41,22 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "master",
-    "last_opened_file_path": "/home/noematrix/Desktop/alignanything",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "settings.codegpt.prompts",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/noematrix/Desktop/alignanything&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;settings.codegpt.prompts&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -78,6 +81,7 @@
       <workItem from="1752645680941" duration="327000" />
       <workItem from="1752718235534" duration="6061000" />
       <workItem from="1753780441877" duration="39000" />
+      <workItem from="1754014540920" duration="2531000" />
     </task>
     <servers />
   </component>

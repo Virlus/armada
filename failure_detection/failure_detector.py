@@ -21,12 +21,14 @@ class FailureDetector:
         ot_percentile: float = 95.0,
         max_queue_size: int = 2,
         episode_manager: EpisodeManager = None,
-        enable_action_inconsistency: bool = True
+        enable_action_inconsistency: bool = True,
+        enable_OT: bool = True
     ):
         self.Ta = Ta
         self.action_inconsistency_percentile = action_inconsistency_percentile
         self.ot_percentile = ot_percentile
         self.enable_action_inconsistency = enable_action_inconsistency
+        self.enable_OT = enable_OT
         # Initialize from episode manager
         self.action_rot_transformer = episode_manager.action_rot_transformer
         self.action_dim = episode_manager.action_dim
@@ -158,6 +160,7 @@ class FailureDetector:
                     # Failure detection task
                     action_inconsistency_buffer = data["action_inconsistency_buffer"]
                     expert_action_threshold = data["expert_action_threshold"]
+                    enable_OT = data["enable_OT"]
                     greedy_ot_cost = data["greedy_ot_cost"]
                     greedy_ot_plan = data["greedy_ot_plan"]
                     idx = data["idx"]
@@ -171,7 +174,7 @@ class FailureDetector:
                     
                     # OT detection is always enabled
                     ot_flag = False
-                    if expert_ot_threshold is not None:
+                    if enable_OT and expert_ot_threshold is not None:
                         ot_flag = torch.sum(greedy_ot_cost[:idx+1]) > expert_ot_threshold
                     
                     failure_flag = inconsistency_violation or ot_flag #True 为有问题
@@ -262,6 +265,7 @@ class FailureDetector:
                 "idx": idx,
                 "expert_ot_threshold": self.expert_ot_threshold,
                 "enable_action_inconsistency": self.enable_action_inconsistency,
+                "enable_OT": self.enable_OT,
                 "max_episode_length": max_episode_length
             })
             return True
@@ -317,8 +321,8 @@ class FailureDetector:
                 np.array(self.success_action_inconsistencies), 
                 self.action_inconsistency_percentile
             )
-            
-        if greedy_ot_cost is not None and timesteps is not None:
+
+        if greedy_ot_cost is not None and timesteps is not None and self.enable_OT:
             self.success_ot_values = np.concatenate((
                 self.success_ot_values, 
                 np.sum(greedy_ot_cost[:timesteps].detach().cpu().numpy(), keepdims=True)
@@ -329,7 +333,7 @@ class FailureDetector:
         return self.expert_action_threshold, self.expert_ot_threshold
     
     def update_percentile_fp(self, ot_fp=False, action_fp=False):
-        if ot_fp:
+        if ot_fp and self.enable_OT:
             self.ot_percentile = min(self.ot_percentile + 2.5, 100)
         if action_fp and self.enable_action_inconsistency:
             self.action_inconsistency_percentile = min(self.action_inconsistency_percentile + 2.5, 100)
@@ -340,13 +344,14 @@ class FailureDetector:
                 self.action_inconsistency_percentile
             )
         
-        if len(self.success_ot_values) > 0:
+        if self.enable_OT and len(self.success_ot_values) > 0:
             self.expert_ot_threshold = np.percentile(self.success_ot_values, self.ot_percentile)
         
         return self.expert_action_threshold, self.expert_ot_threshold
     
     def update_percentile_fn(self):
-        self.ot_percentile = max(self.ot_percentile - 2.5, 0)
+        if self.enable_OT:
+            self.ot_percentile = max(self.ot_percentile - 2.5, 0)
         if self.enable_action_inconsistency:
             self.action_inconsistency_percentile = max(self.action_inconsistency_percentile - 2.5, 0)
         
@@ -356,7 +361,7 @@ class FailureDetector:
                 self.action_inconsistency_percentile
             )
         
-        if len(self.success_ot_values) > 0:
+        if self.enable_OT and len(self.success_ot_values) > 0:
             self.expert_ot_threshold = np.percentile(self.success_ot_values, self.ot_percentile)
         
         return self.expert_action_threshold, self.expert_ot_threshold
@@ -368,12 +373,13 @@ class FailureDetector:
             self.action_inconsistency_percentile = success_stats['action_inconsistency_percentile'] if 'action_inconsistency_percentile' in success_stats else self.action_inconsistency_percentile
             if len(self.success_action_inconsistencies) > 0:
                 self.expert_action_threshold = np.percentile(self.success_action_inconsistencies, self.action_inconsistency_percentile)
-        
-        # OT detection is always enabled
-        self.success_ot_values = success_stats['ot_values']
-        self.ot_percentile = success_stats['ot_percentile'] if 'ot_percentile' in success_stats else self.ot_percentile
-        if len(self.success_ot_values) > 0:
-            self.expert_ot_threshold = np.percentile(self.success_ot_values, self.ot_percentile)
+
+        if self.enable_OT:
+            self.success_ot_values = success_stats['ot_values']
+            self.ot_percentile = success_stats[
+                'ot_percentile'] if 'ot_percentile' in success_stats else self.ot_percentile
+            if len(self.success_ot_values) > 0:
+                self.expert_ot_threshold = np.percentile(self.success_ot_values, self.ot_percentile)
         
     def get_success_statistics(self):
         """Get the current success statistics for saving"""

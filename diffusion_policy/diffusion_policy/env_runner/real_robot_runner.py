@@ -406,7 +406,7 @@ class RealRobotRunner:
             policy_obs = self.episode_manager.get_policy_observation()
             with torch.no_grad():
                 if hasattr(self.policy, 'predict_action'):
-                    if self.failure_detection_module and hasattr(self.failure_detection_module, 'needs_latent') and self.failure_detection_module.needs_latent:
+                    if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding') and self.failure_detection_module.enable_OT:
                         curr_action, curr_latent = self.policy.predict_action(policy_obs, return_latent=True)
                     else:
                         curr_action = self.policy.predict_action(policy_obs)

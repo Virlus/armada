@@ -50,6 +50,8 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         
         # Extract failure detection parameters
         self.enable_action_inconsistency = cfg.enable_action_inconsistency
+        self.enable_OT = cfg.enable_OT
+        assert self.enable_action_inconsistency or self.enable_OT, "At least one of the evaluation metrics should be enabled"
         self.inconsistency_metric = cfg.inconsistency_metric
         self.num_samples = cfg.num_samples
         self.num_expert_candidates = cfg.num_expert_candidates
@@ -64,7 +66,8 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             ot_percentile=self.ot_percentile,
             max_queue_size=3,
             episode_manager=self.episode_manager,
-            enable_action_inconsistency=self.enable_action_inconsistency
+            enable_action_inconsistency=self.enable_action_inconsistency,
+            enable_OT = self.enable_OT
         )
         self.failure_detector.start_async_processing()
         
@@ -73,7 +76,8 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         self.wrist_img_processor = Resize((self.img_shape[1], self.img_shape[2]))
         
         # Prepare human demonstration data
-        self._prepare_human_demo_data()
+        if self.enable_OT:
+            self._prepare_human_demo_data()
         
         # Load previous success statistics if available
         self._load_success_statistics()
@@ -196,7 +200,15 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             elif result["task_type"] == "action_inconsistency" and result["idx"] <= idx:
                 # Track action inconsistency for failure detection
                 self.action_inconsistency_buffer.extend([result["action_inconsistency"]] * self.Ta)
-            
+                if not self.enable_OT:  # Only when OT is disabled does action inconsistency part submits failure detection task
+                    self.failure_detector.submit_failure_detection_task(
+                        action_inconsistency_buffer=self.action_inconsistency_buffer[
+                                                    :int(result["idx"] + 1) * self.Ta].copy(),
+                        idx=result["idx"],
+                        greedy_ot_cost=self.greedy_ot_cost.clone(),
+                        greedy_ot_plan=self.greedy_ot_plan.clone(),
+                        max_episode_length=self.max_episode_length
+                    )
             elif result["task_type"] == "failure_detection" and result["idx"] <= idx:
                 failure_flag = result["failure_flag"]
                 failure_reason = result["failure_reason"]
@@ -211,8 +223,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
                     break
         
         # Check for maximum episode length
-        if timestep >= max_episode_length - self.Ta:
-            failure_flag = False
+        if not failure_flag and timestep >= max_episode_length - self.Ta:
             failure_reason = "maximum episode length reached"
         
         return failure_flag, failure_reason
@@ -225,26 +236,37 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             # Initialize episode-specific data
             self.action_inconsistency_buffer = []
             self.failure_logs = OrderedDict()
-            
-            # Match the current rollout with the closest expert episode
-            rollout_init_latent = self.episode_manager.extract_latent().unsqueeze(0)
-            self.candidate_expert_indices = self.episode_manager.find_matching_expert_demo(
-                rollout_init_latent,
-                self.all_human_latent,
-                self.human_demo_indices,
-                self.num_expert_candidates
-            )
-            
-            self.matched_human_idx = self.human_demo_indices[self.candidate_expert_indices[0]]
-            self.human_latent = self.all_human_latent[self.matched_human_idx]
-            self.demo_len = self.human_eps_len[self.matched_human_idx]
-            
-            # Initialize the rollout optimal transport components
-            self.expert_weight = torch.ones((self.demo_len // self.Ta,), device=self.device) / float(self.demo_len // self.Ta)
-            self.expert_indices = torch.arange(self.demo_len // self.Ta, device=self.device)
-            self.greedy_ot_plan = torch.zeros((self.demo_len // self.Ta, self.max_episode_length // self.Ta), device=self.device)
-            self.greedy_ot_cost = torch.zeros((self.max_episode_length // self.Ta,), device=self.device)
-            self.rollout_latent = torch.zeros((self.max_episode_length // self.Ta, int(self.To * self.obs_feature_dim)), device=self.device)
+
+            if self.enable_OT:
+                # Match the current rollout with the closest expert episode
+                rollout_init_latent = self.episode_manager.extract_latent().unsqueeze(0)
+                self.candidate_expert_indices = self.episode_manager.find_matching_expert_demo(
+                    rollout_init_latent,
+                    self.all_human_latent,
+                    self.human_demo_indices,
+                    self.num_expert_candidates
+                )
+
+                self.matched_human_idx = self.human_demo_indices[self.candidate_expert_indices[0]]
+                self.human_latent = self.all_human_latent[self.matched_human_idx]
+                self.demo_len = self.human_eps_len[self.matched_human_idx]
+
+                # Initialize the rollout optimal transport components
+                self.expert_weight = torch.ones((self.demo_len // self.Ta,), device=self.device) / float(
+                    self.demo_len // self.Ta)
+                self.expert_indices = torch.arange(self.demo_len // self.Ta, device=self.device)
+                self.greedy_ot_plan = torch.zeros((self.demo_len // self.Ta, self.max_episode_length // self.Ta),
+                                                  device=self.device)
+                self.greedy_ot_cost = torch.zeros((self.max_episode_length // self.Ta,), device=self.device)
+                self.rollout_latent = torch.zeros(
+                    (self.max_episode_length // self.Ta, int(self.To * self.obs_feature_dim)), device=self.device)
+
+                return {'matched_human_idx': self.matched_human_idx}
+            else:
+                self.greedy_ot_plan = torch.zeros(
+                    (self.max_episode_length // self.Ta, self.max_episode_length // self.Ta), device=self.device)
+                self.greedy_ot_cost = torch.zeros((self.max_episode_length // self.Ta,), device=self.device)
+                return {}  # dummy
             
             return {'matched_human_idx': self.matched_human_idx}
         
@@ -268,7 +290,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
                 )
             
             # Update rollout latent
-            if idx >= 0 and curr_latent is not None:
+            if self.enable_OT and idx >= 0 and curr_latent is not None:
                 self.rollout_latent[idx] = curr_latent[0].reshape(-1)
                 
                 # Submit OT matching task
@@ -329,7 +351,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             )
             
             if len(self.failure_logs) > 0:  # False positive
-                ot_fp = 2 in self.failure_logs.values()  # OT
+                ot_fp = 2 in self.failure_logs.values() and self.enable_OT # OT
                 action_fp = 1 in self.failure_logs.values() and self.enable_action_inconsistency  # ACTION_INCONSISTENCY
                 self.failure_detector.update_percentile_fp(ot_fp=ot_fp, action_fp=action_fp)
                 print("False positive trajectory! Raising percentiles...")
@@ -337,7 +359,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             print("Action inconsistency threshold: ", self.failure_detector.expert_action_threshold)
         else:
             # Check for false negative
-            has_ot_data = len(self.failure_detector.success_ot_values) > 0
+            has_ot_data = self.enable_OT and len(self.failure_detector.success_ot_values) > 0
             has_action_data = self.enable_action_inconsistency and len(self.failure_detector.success_action_inconsistencies) > 0
             if len(self.failure_logs) == 0 and (has_ot_data or has_action_data):
                 self.failure_detector.update_percentile_fn()
@@ -347,7 +369,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         
         # Create visualization
         try:
-            if hasattr(self, 'matched_human_idx') and self.matched_human_idx is not None:
+            if self.enable_OT and hasattr(self, 'matched_human_idx') and self.matched_human_idx is not None:
                 eps_side_img = (torch.from_numpy(self.replay_buffer.get_episode(self.matched_human_idx)['side_cam']).permute(0, 3, 1, 2) / 255.0).to(self.device)
                 action_inconsistency_buffer = np.array(self.action_inconsistency_buffer)
                 

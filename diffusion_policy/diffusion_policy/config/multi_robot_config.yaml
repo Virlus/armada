@@ -13,6 +13,7 @@ failure_detection_module: action_inconsistency_ot
 
 # Failure detection hyperparameters
 enable_action_inconsistency: True
+enable_OT: True
 inconsistency_metric: expert
 num_samples: 4
 num_expert_candidates: 50

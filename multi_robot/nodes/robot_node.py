@@ -18,76 +18,81 @@ from hardware.my_device.macros import CAM_SERIAL
 from util.episode_utils import EpisodeManager
 from multi_robot.communication.socket_client import SocketClient
 from multi_robot.utils.message_distillation import parse_message_regex, split_combined_messages, MessageHandler
+from diffusion_policy.diffusion_policy.env_runner.real_robot_runner import RealRobotRunner
 
 
-class RobotNode(MessageHandler):
+class RobotNode(RealRobotRunner):
     """Robot node that manages policy execution, teleoperation, and human intervention.
     Handles autonomous control, human takeover, and communication with teleop nodes."""
     def __init__(self, config, rank: int, device_ids: List[int]):
-        # Configuration and device setup
-        self._setup_config(config, rank, device_ids)
+        # Configuration and device setup for multi-robot
+        self._setup_robot_config(config, rank, device_ids)
         
-        # Initialize distributed training
-        torch.distributed.init_process_group("nccl", rank=rank, world_size=self.world_size)
+        # Initialize MessageHandler as a component first
+        from multi_robot.utils.message_distillation import MessageHandler
+        self.message_handler = MessageHandler()
+        self._setup_message_routes()
+        
+        # Initialize base RealRobotRunner with adapted config
+        eval_cfg = self._adapt_config_for_base(config)
+        super().__init__(eval_cfg, rank, device_ids)
         
         # Initialize communication
         self._setup_communication()
         
-        # Initialize components
-        self._initialize_components()
-        
-        # Initialize state management
-        self._initialize_state()
-        
-        super().__init__()
+        # Initialize robot-specific state management
+        self._initialize_robot_state()
 
-    def _setup_config(self, config, rank: int, device_ids: List[int]):
-        """Setup configuration and device parameters."""
+    def _setup_robot_config(self, config, rank: int, device_ids: List[int]):
+        """Setup robot-specific configuration and device parameters."""
         self.config = config
-        self.rank = rank
-        self.device_ids = device_ids
-        self.world_size = len(device_ids)
-        self.device_id = device_ids[rank]
-        self.device = f"cuda:{config.device_ids.split(',')[0]}"
-        self.fps = 10
-        
         # Robot-specific configuration
         self.robot_id = config.robot_info.robot_id
         self.is_multi_robot_env = config.robot_info.num_robots > 1
         self.robot_info_dict = config.robot_info.robot_info_dict
+    
+    def _adapt_config_for_base(self, config):
+        """Adapt robot config to work with RealRobotRunner base class."""
+        # Create a compatible eval_cfg for the base class
+        eval_cfg = type('EvalConfig', (), {})()
+        
+        # Copy essential attributes
+        eval_cfg.checkpoint_path = config.checkpoint_path
+        eval_cfg.policy = config.policy if hasattr(config, 'policy') else type('Policy', (), {'num_inference_steps': 1})()
+        eval_cfg.output_dir = config.output_dir
+        eval_cfg.train_dataset_path = config.train_dataset_path
+        eval_cfg.save_buffer_path = config.save_buffer_path
+        eval_cfg.seed = config.seed
+        eval_cfg.failure_detection_module = getattr(config, 'failure_detection_module', None)
+        eval_cfg.random_init = getattr(config, 'random_init', False)
+        eval_cfg.post_process_action_mode = getattr(config, 'post_process_action_mode', False)
+        eval_cfg.sirius_termination = getattr(config, 'sirius_termination', False)
+        eval_cfg.num_samples = getattr(config, 'num_samples', 1)
+        eval_cfg.Ta = getattr(config, 'Ta', None)
+        
+        return eval_cfg
 
     def _setup_communication(self):
         """Setup communication with hub."""
         socket_ip = self.config.robot_info.socket_ip
         socket_port = self.config.robot_info.socket_port
-        self.socket = SocketClient(socket_ip, socket_port, message_handler=self.handle_message)
+        self.socket = SocketClient(socket_ip, socket_port, message_handler=self.message_handler.handle_message)
         self.socket.start_connection()
         self.lock = threading.Lock()
 
-    def _initialize_components(self):
-        """Initialize all system components."""
-        self._load_policy()
-        self._setup_transformers()
-        self._initialize_robot_env()
-        self._initialize_episode_manager()
-        self._initialize_replay_buffer()
-        self.max_episode_length = self._calculate_max_episode_length()
-        
-        # Initialize failure detection module if specified
-        self.failure_detection_module = None
-        if hasattr(self.config, 'failure_detection_module') and self.config.failure_detection_module:
-            self._initialize_failure_detection_module()
-        
-        # Setup output directory and extract round number
-        self._setup_output_directory()
-        self.num_round = self._extract_round_number()
+    def _initialize_robot_env(self):
+        """Override to support multi-robot environment initialization."""
+        self.robot_env = RobotEnv(
+            camera_serial=CAM_SERIAL if not self.is_multi_robot_env else self.config.camera.serial, 
+            img_shape=self.img_shape, 
+            fps=self.fps,
+            is_multi_robot_env=True,
+            robot_id=self.robot_id,
+            robot_info_dict=self.robot_info_dict
+        )
 
-    def _initialize_state(self):
-        """Initialize all state variables."""
-        # Set random seed
-        self.seed = self.config.seed
-        np.random.seed(self.seed)
-        
+    def _initialize_robot_state(self):
+        """Initialize robot-specific state variables."""
         # Robot state management
         self.robot_state = "idle"  # idle / teleop_controlled / agent_controlled / error
         self.teleop_id = 0
@@ -97,8 +102,6 @@ class RobotNode(MessageHandler):
         
         # Running state
         self.running = True
-        self.episode_id = 0
-        self.episode_idx = 0
         
         # Sigma device control variables
         self._initialize_sigma_variables()
@@ -142,7 +145,7 @@ class RobotNode(MessageHandler):
             "SCENE_ALIGNMENT_COMPLETED": self.handle_scene_alignment_completed,
         }
         for msg_type, handler in handlers.items():
-            self.register_handler(msg_type, handler)
+            self.message_handler.register_handler(msg_type, handler)
 
     def _handle_teleop_takeover_result(self, message: str):
         """Process the result of a teleop takeover request.
@@ -168,69 +171,7 @@ class RobotNode(MessageHandler):
         print(f"Unknown command: {message}")
     
         
-    def _load_policy(self):
-        """Load policy model from checkpoint.
-        Initializes the neural network policy for autonomous control."""
-        """Load policy model"""
-        payload = torch.load(open(self.config.checkpoint_path, 'rb'), pickle_module=dill)
-        self.cfg = payload['cfg']
-        
-        # Override some config values according to evaluation config
-        self.cfg.policy.num_inference_steps = self.config.policy.num_inference_steps
-        self.cfg.output_dir = self.config.output_dir
-        if 'obs_encoder' in self.cfg.policy:
-            self.cfg.policy.obs_encoder.pretrained_path = None
-        
-        # Initialize workspace
-        import hydra
-        cls = hydra.utils.get_class(self.cfg._target_)
-        workspace = cls(self.cfg, self.rank, self.world_size, self.device_id, self.device)
-        workspace.load_payload(payload, exclude_keys=None, include_keys=None)
-        
-        # Get policy from workspace
-        self.policy = workspace.model.module
-        if self.cfg.training.use_ema:
-            self.policy = workspace.ema_model.module
-        
-        self.policy.to(self.device)
-        self.policy.eval()
-        
-        # Extract policy parameters
-        self.To = self.policy.n_obs_steps
-        self.Ta = self.policy.n_action_steps
-        self.obs_feature_dim = self.policy.obs_feature_dim
-        self.img_shape = self.cfg.task['shape_meta']['obs']['wrist_img']['shape']
 
-        # Override Ta with evaluation config
-        if hasattr(self.config, 'Ta'):
-            self.Ta = self.config.Ta
-    
-    def _setup_transformers(self):
-        """Setup rotation transformers"""
-        self.action_dim = self.cfg.shape_meta['action']['shape'][0]
-        self.action_rot_transformer = None
-        self.obs_rot_transformer = None
-        
-        # Check if we need to transform rotation representation
-        if 'rotation_rep' in self.cfg.shape_meta['action']:
-            self.action_rot_transformer = RotationTransformer(
-                from_rep='quaternion', 
-                to_rep=self.cfg.shape_meta['action']['rotation_rep']
-            )
-        
-        if 'ee_pose' in self.cfg.shape_meta['obs']:
-            self.ee_pose_dim = self.cfg.shape_meta['obs']['ee_pose']['shape'][0]
-            self.state_type = 'ee_pose'
-            self.state_shape = self.cfg.task['shape_meta']['obs']['ee_pose']['shape']
-            if 'rotation_rep' in self.cfg.shape_meta['obs']['ee_pose']:
-                self.obs_rot_transformer = RotationTransformer(
-                    from_rep='quaternion', 
-                    to_rep=self.cfg.shape_meta['obs']['ee_pose']['rotation_rep']
-                )
-        else:
-            self.ee_pose_dim = self.cfg.shape_meta['obs']['qpos']['shape'][0]
-            self.state_type = 'qpos'
-            self.state_shape = self.cfg.task['shape_meta']['obs']['qpos']['shape']
     
     def _initialize_robot_env(self):
         """Initialize robot environment"""
@@ -243,103 +184,7 @@ class RobotNode(MessageHandler):
             robot_info_dict=self.robot_info_dict
         )
     
-    def _initialize_episode_manager(self):
-        """Initialize episode manager"""
-        num_samples = getattr(self.config, 'num_samples', 1)
-        self.episode_manager = EpisodeManager(
-            policy=self.policy,
-            obs_rot_transformer=self.obs_rot_transformer,
-            action_rot_transformer=self.action_rot_transformer,
-            obs_feature_dim=self.obs_feature_dim,
-            img_shape=self.img_shape,
-            state_type=self.state_type,
-            state_shape=self.state_shape,
-            action_dim=self.action_dim,
-            To=self.To,
-            Ta=self.Ta,
-            device=self.device,
-            num_samples=num_samples
-        )
-    
-    def _initialize_replay_buffer(self):
-        """Initialize replay buffer"""
-        zarr_path = os.path.join(self.config.train_dataset_path, 'replay_buffer.zarr')
-        self.replay_buffer = ReplayBuffer.copy_from_path(zarr_path, keys=None)
-        
-        # Add action_mode if not present
-        if 'action_mode' not in self.replay_buffer.keys():
-            self.replay_buffer.data['action_mode'] = np.full((self.replay_buffer.n_steps, ), HUMAN)
-        
-        # Add failure_indices if not present
-        if 'failure_indices' not in self.replay_buffer.keys():
-            self.replay_buffer.data['failure_indices'] = np.zeros((self.replay_buffer.n_steps, ), dtype=np.bool_)
-    
-    def _initialize_failure_detection_module(self):
-        """Initialize failure detection module"""
-        module_name = self.config.failure_detection_module
-        
-        if module_name:
-            if module_name == 'action_inconsistency_ot':
-                from failure_detection.action_inconsistency_ot import ActionInconsistencyOTModule
-                self.failure_detection_module = ActionInconsistencyOTModule()
-            elif module_name == 'baseline_logp':
-                from failure_detection.baseline_logp import BaselineLogpModule
-                self.failure_detection_module = BaselineLogpModule()
-            else:
-                raise ValueError(f"Unknown failure detection module: {module_name}")
-            
-            # Initialize the module
-            self.failure_detection_module.initialize(
-                cfg=self.config,
-                device=self.device,
-                policy=self.policy,
-                replay_buffer=self.replay_buffer,
-                episode_manager=self.episode_manager,
-                Ta=self.Ta,
-                To=self.To,
-                ee_pose_dim=self.ee_pose_dim,
-                img_shape=self.img_shape,
-                obs_feature_dim=self.obs_feature_dim,
-                max_episode_length=self.max_episode_length
-            )
-        else:
-            self.failure_detection_module = None
 
-    def _setup_output_directory(self):
-        """Setup output directory"""
-        self.save_img = False
-        self.output_dir = os.path.join(self.config.output_dir, f"seed_{self.seed}")
-        if os.path.isdir(self.output_dir):
-            print(f"Output directory {self.output_dir} already exists, will not overwrite it.")
-        else:
-            os.makedirs(self.output_dir)
-            print(f"Created output directory: {self.output_dir}")
-            self.save_img = True
-        
-        # Create save buffer directory
-        os.makedirs(self.config.save_buffer_path, exist_ok=True)
-    
-    def _extract_round_number(self) -> int:
-        """Extract round number from save buffer path"""
-        match_round = re.search(r'round(\d)', self.config.save_buffer_path)
-        if match_round:
-            return int(match_round.group(1))
-        return 0
-    
-    def _calculate_max_episode_length(self) -> int:
-        """Calculate maximum episode length based on human demonstrations"""
-        human_demo_indices = []
-        for i in range(self.replay_buffer.n_episodes):
-            episode_start = self.replay_buffer.episode_ends[i-1] if i > 0 else 0
-            if np.any(self.replay_buffer.data['action_mode'][episode_start: self.replay_buffer.episode_ends[i]] == HUMAN):
-                human_demo_indices.append(i)
-        
-        human_eps_len = []
-        for i in human_demo_indices:
-            human_episode = self.replay_buffer.get_episode(i)
-            human_eps_len.append(human_episode['action'].shape[0])
-        
-        return int(max(human_eps_len) // self.Ta * self.Ta)
 
     def _run_rollout(self):
         """Main rollout loop"""
@@ -461,7 +306,7 @@ class RobotNode(MessageHandler):
 
         # Finalize episode and return data
         if self.finish_episode and self.stop_event == "accept":
-            episode_data = self._finalize_episode()
+            episode_data = self._finalize_episode(self.episode_buffers, self.episode_id)
             return episode_data
         else:
             return None
@@ -486,7 +331,7 @@ class RobotNode(MessageHandler):
             policy_obs = self.episode_manager.get_policy_observation()
             with torch.no_grad():
                 if hasattr(self.policy, 'predict_action'):
-                    if self.failure_detection_module and hasattr(self.failure_detection_module, 'needs_latent') and self.failure_detection_module.needs_latent:
+                    if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding') and self.failure_detection_module.enable_OT:
                         curr_action, curr_latent = self.policy.predict_action(policy_obs, return_latent=True)
                     else:
                         curr_action = self.policy.predict_action(policy_obs)
@@ -1030,127 +875,7 @@ class RobotNode(MessageHandler):
         
         return j, curr_pos, curr_rot
     
-    def _rewind_with_failure_detection(self, episode_buffers: Dict[str, List], curr_timestep: int, curr_pos: np.ndarray, curr_rot: R) -> int:
-        """Rewind with failure detection module guidance"""
-        rewind_steps = 0
-        j = curr_timestep
-        if hasattr(self.failure_detection_module, 'greedy_ot_cost'):
-            total_greedy_ot_cost = torch.sum(self.failure_detection_module.greedy_ot_cost[:curr_timestep // self.Ta])
-        
-        for i in range(curr_timestep):
-            # Check if failure detection module says to stop rewinding
-            if j % self.Ta == 0 and j > 0:
-                if self.failure_detection_module.should_stop_rewinding(j, episode_buffers, total_greedy_ot_cost):
-                    print("Failure detection module says to stop rewinding.")
-                    break
-                
-                # Rewind the OT plan if it's an action inconsistency + OT module
-                if hasattr(self.failure_detection_module, '_rewind_ot_plan'):
-                    self.failure_detection_module._rewind_ot_plan(j)
-            
-            # Rewind one step
-            curr_pos, curr_rot, prev_side_cam, prev_wrist_cam = self._rewind_single_step(episode_buffers, curr_pos, curr_rot)
-            j -= 1
-            rewind_steps += 1
-            print("Rewinded one step...")
-        
-        return rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot
-    
-    def _rewind_simple(self, episode_buffers: Dict[str, List], curr_timestep: int, curr_pos: np.ndarray, curr_rot: R) -> int:
-        """Simple rewinding with step limit"""
-        rewind_steps = 0
-        j = curr_timestep
-        
-        for i in range(curr_timestep):
-            # Simple stop condition: limit to 3 Ta-step chunks
-            if j % self.Ta == 0 and j > 0:
-                if i // self.Ta >= 3:
-                    print("Stop rewinding (reached 3 Ta-step limit).")
-                    break
-            
-            # Rewind one step
-            curr_pos, curr_rot, prev_side_cam, prev_wrist_cam = self._rewind_single_step(episode_buffers, curr_pos, curr_rot)
-            j -= 1
-            rewind_steps += 1
-        
-        return rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot
-    
-    def _rewind_single_step(self, episode_buffers: Dict[str, List], curr_pos: np.ndarray, curr_rot: R) -> Tuple[np.ndarray, R]:
-        """Rewind a single step"""
-        # Get previous action data to rewind
-        prev_wrist_cam = episode_buffers['wrist_cam'].pop()
-        prev_side_cam = episode_buffers['side_cam'].pop()
-        episode_buffers['tcp_pose'].pop()
-        episode_buffers['joint_pos'].pop()
-        prev_action = episode_buffers['action'].pop()
-        episode_buffers['action_mode'].pop()
-        
-        # Let failure detection module handle additional buffer cleanup
-        if self.failure_detection_module and hasattr(self.failure_detection_module, 'rewind_step_cleanup'):
-            self.failure_detection_module.rewind_step_cleanup()
-        
-        # Rewind robot by applying inverse action
-        curr_pos, curr_rot = self.robot_env.rewind_robot(curr_pos, curr_rot, prev_action)
-        
-        return curr_pos, curr_rot, prev_side_cam, prev_wrist_cam
-    
-    def _finalize_episode(self) -> Dict[str, Any]:
-        """Finalize episode and return episode data"""
-        episode = dict()
-        episode['wrist_cam'] = np.stack(self.episode_buffers['wrist_cam'], axis=0)
-        episode['side_cam'] = np.stack(self.episode_buffers['side_cam'], axis=0)
-        episode['tcp_pose'] = np.stack(self.episode_buffers['tcp_pose'], axis=0)
-        episode['joint_pos'] = np.stack(self.episode_buffers['joint_pos'], axis=0)
-        episode['action'] = np.stack(self.episode_buffers['action'], axis=0)
-        
-        # Process action mode
-        if getattr(self.config, 'post_process_action_mode', False):
-            episode['action_mode'] = postprocess_action_mode(np.array(self.episode_buffers['action_mode']))
-        else:
-            episode['action_mode'] = np.array(self.episode_buffers['action_mode'])
-        
-        assert episode['action_mode'].shape[0] % self.Ta == 0, "A Ta-step chunking is required for the entire demo"
-        
-        # Finalize failure detection
-        if self.failure_detection_module:
-            failure_episode_data = self.failure_detection_module.finalize_episode({
-                'episode': episode,
-                'episode_id': self.episode_id
-            })
-            episode.update(failure_episode_data)
-        else:
-            # Default: no failure indices
-            episode['failure_indices'] = np.zeros((episode['action_mode'].shape[0],), dtype=np.bool_)
-        
-        return episode
 
-    def _should_terminate(self) -> bool:
-        """Check if rollout should terminate"""
-        # Sirius-specific termination condition
-        if hasattr(self.config, 'sirius_termination') and self.config.sirius_termination:
-            human_actions = np.sum(self.replay_buffer.data['action_mode'] == HUMAN)
-            intervention_actions = np.sum(self.replay_buffer.data['action_mode'] == INTV)
-            
-            if intervention_actions * 3 / self.num_round >= human_actions:
-                return True
-            
-            progress = intervention_actions * 300 / self.num_round / human_actions if human_actions > 0 else 0
-            print(f"Current progress: {progress:.2f}%")
-        
-        return False
-    
-    def _cleanup(self):
-        """Cleanup resources"""
-        # Save the replay buffer
-        save_zarr_path = os.path.join(self.config.save_buffer_path, 'replay_buffer.zarr')
-        self.replay_buffer.save_to_path(save_zarr_path)
-        
-        # Cleanup failure detection module
-        if self.failure_detection_module and hasattr(self.failure_detection_module, 'cleanup'):
-            self.failure_detection_module.cleanup()
-        
-        print("Saved replay buffer to", save_zarr_path)
-        torch.distributed.destroy_process_group() 
     
     def _main_thread(self):
         """Main execution thread.Starts state reporting thread and runs rollout loop."""

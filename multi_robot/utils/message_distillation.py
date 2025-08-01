@@ -63,12 +63,12 @@ class MessageHandler:
         """Override this method to define message routes"""
         pass
     
-    def register_handler(self, prefix: str, handler: Callable, use_lock: bool = False, use_thread: bool = False):
+    def register_handler(self, prefix: str, handler: Callable, use_lock: bool = False, use_thread: bool = False, lock_obj: Optional[Any] = None):
         """Register a message handler for given prefix"""
         def wrapper(message: str, *args, **kwargs):
             try:
-                if use_lock and hasattr(self, 'lock'):
-                    with self.lock:
+                if use_lock and lock_obj is not None:
+                    with lock_obj:
                         return handler(message, *args, **kwargs)
                 else:
                     return handler(message, *args, **kwargs)

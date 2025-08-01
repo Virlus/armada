@@ -1,0 +1,29 @@
+device_ids: '0'
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/fold_towel/0729_15.06.55_train_diffusion_transformer_hybrid_dino_multi_gpu_0728_fold_towel_initial/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/fold_towel/0728_fold_towel
+save_buffer_path: /mnt/workspace/DP/fold_towel/0728_fold_towel_ours_dagger_round1
+output_dir: diffusion_policy/outputs/visual/0728_fold_towel_rollout_round1
+
+Ta: 8
+random_init: True
+seed: 0
+
+# Failure detection configuration
+failure_detection_module: action_inconsistency_ot
+
+# Failure detection hyperparameters
+enable_action_inconsistency: True
+enable_OT: True
+inconsistency_metric: expert
+num_samples: 4
+num_expert_candidates: 50
+action_inconsistency_percentile: 90
+ot_percentile: 95
+soft_ot_ratio: 0.2
+
+# Sirius-related hyperparameters
+post_process_action_mode: False
+sirius_termination: False
+
+policy:
+  num_inference_steps: 8

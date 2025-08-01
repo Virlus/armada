@@ -24,7 +24,7 @@ def parse_args():
     parser.add_argument('--teleop_id', type=int, required=False, default=0)
 
     return parser.parse_args()
-class TeleopNode(MessageHandler):
+class TeleopNode:
     """Teleoperation node that handles human operator input and intervention.
     Manages teleoperation devices, user interface, and communication with robot nodes."""
     
@@ -32,14 +32,15 @@ class TeleopNode(MessageHandler):
         # Initialize basic parameters
         self._setup_basic_params(teleop_id, listen_freq, teleop_device, Ta)
         
-        # Setup communication
+        # Initialize MessageHandler as a component
+        self.message_handler = MessageHandler()
+        self._setup_message_routes()
+        
+        # Setup communication (after message_handler is ready)
         self._setup_communication(socket_ip, socket_port)
         
         # Initialize teleop devices
         self._initialize_devices(num_robot)
-        
-        # Initialize MessageHandler after all attributes are set
-        super().__init__()
 
     def _setup_basic_params(self, teleop_id, listen_freq, teleop_device, Ta):
         """Setup basic teleop parameters."""
@@ -56,7 +57,7 @@ class TeleopNode(MessageHandler):
 
     def _setup_communication(self, socket_ip, socket_port):
         """Setup communication with hub."""
-        self.socket = SocketClient(socket_ip, socket_port, message_handler=self.handle_message)
+        self.socket = SocketClient(socket_ip, socket_port, message_handler=self.message_handler.handle_message)
         self.socket.start_connection()
         self.lock = threading.Lock()
 
@@ -80,11 +81,11 @@ class TeleopNode(MessageHandler):
             "REWIND_COMPLETED": self.handle_rewind_completed,
         }
         for msg_type, handler in self.threaded_handlers.items():
-            self.register_handler(msg_type, handler, use_thread=True)
+            self.message_handler.register_handler(msg_type, handler, use_thread=True)
         for msg_type, handler in self.unthreaded_handlers.items():
-            self.register_handler(msg_type, handler)
+            self.message_handler.register_handler(msg_type, handler)
             
-        self.register_pattern_handler(
+        self.message_handler.register_pattern_handler(
             lambda msg: msg.startswith("SIGMA"),
             self._handle_sigma_message
         )

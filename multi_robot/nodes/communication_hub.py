@@ -7,7 +7,7 @@ from typing import Dict, Any, Tuple
 from multi_robot.communication.socket_server import SocketServer
 from multi_robot.utils.message_distillation import parse_message_regex, split_combined_messages, MessageHandler
 
-class CommunicationHub(MessageHandler):
+class CommunicationHub:
     """Central communication hub that manages message routing between robot and teleop nodes.
     Acts as a broker to handle requests, state updates, and command distribution."""
     
@@ -16,10 +16,11 @@ class CommunicationHub(MessageHandler):
         self.initialize_queue()
         self.lock = threading.Lock()
         
-        # Initialize MessageHandler after attributes are set
-        super().__init__()
+        # Initialize MessageHandler as a component
+        self.message_handler = MessageHandler()
+        self._setup_message_routes()
         
-        self.socket = SocketServer(socket_ip, socket_port, message_handler=self.handle_message)
+        self.socket = SocketServer(socket_ip, socket_port, message_handler=self.message_handler.handle_message)
         self.socket.start_connection()
         self.start_scene_alignment_thread()
 
@@ -51,11 +52,11 @@ class CommunicationHub(MessageHandler):
         
         # Register handlers
         for msg_type, handler in locked_handlers.items():
-            self.register_handler(msg_type, handler, use_lock=True)
+            self.message_handler.register_handler(msg_type, handler, use_lock=True, lock_obj=self.lock)
         for msg_type, handler in unlocked_handlers.items():
-            self.register_handler(msg_type, handler)
-        self.register_handler("SCENE_ALIGNMENT_REQUEST", self._handle_scene_alignment_request)
-        self.register_pattern_handler(
+            self.message_handler.register_handler(msg_type, handler)
+        self.message_handler.register_handler("SCENE_ALIGNMENT_REQUEST", self._handle_scene_alignment_request)
+        self.message_handler.register_pattern_handler(
             lambda msg: msg.startswith("SIGMA"),
             self._handle_sigma_message
         )

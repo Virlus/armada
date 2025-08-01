@@ -4,16 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="f2fad3c1-868d-44dd-8846-fa260a3a9aae" name="更改" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/config/multi_robot_config.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/config/multi_robot_config.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/config/real_failure_detection_original.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/config/real_failure_detection.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/env_runner/real_robot_runner.py" beforeDir="false" afterPath="$PROJECT_DIR$/diffusion_policy/diffusion_policy/env_runner/real_robot_runner.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/failure_detection/action_inconsistency_ot.py" beforeDir="false" afterPath="$PROJECT_DIR$/failure_detection/action_inconsistency_ot.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/failure_detection/failure_detector.py" beforeDir="false" afterPath="$PROJECT_DIR$/failure_detection/failure_detector.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/multi_robot/nodes/robot_node.py" beforeDir="false" afterPath="$PROJECT_DIR$/multi_robot/nodes/robot_node.py" afterDir="false" />
-    </list>
+    <list default="true" id="f2fad3c1-868d-44dd-8846-fa260a3a9aae" name="更改" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -81,7 +72,7 @@
       <workItem from="1752645680941" duration="327000" />
       <workItem from="1752718235534" duration="6061000" />
       <workItem from="1753780441877" duration="39000" />
-      <workItem from="1754014540920" duration="2531000" />
+      <workItem from="1754014540920" duration="3412000" />
     </task>
     <servers />
   </component>

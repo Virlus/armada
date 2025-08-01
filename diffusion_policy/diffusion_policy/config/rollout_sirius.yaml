@@ -1,12 +1,12 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/fold_towel/0729_15.06.55_train_diffusion_transformer_hybrid_dino_multi_gpu_0728_fold_towel_initial/latest.ckpt
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/fold_towel/0731_15.54.43_train_diffusion_transformer_hybrid_dino_weighted_multi_gpu_0728_fold_towel_sirius_round1/latest.ckpt
 train_dataset_path: /mnt/workspace/DP/fold_towel/0728_fold_towel_sirius_round1
-save_buffer_path: /mnt/workspace/DP/fold_towel/0728_fold_towel_sirius_round1_2
-output_dir: diffusion_policy/outputs/visual/0728_fold_towel_rollout_round1
+save_buffer_path: /mnt/workspace/DP/fold_towel/0728_fold_towel_sirius_round2
+output_dir: diffusion_policy/outputs/visual/0728_fold_towel_rollout_round2
 
 Ta: 8
 random_init: True
-seed: 0
+seed: 1
 
 # No failure detection for Sirius rollout
 failure_detection_module: null

@@ -89,7 +89,7 @@ class CommunicationHub:
         self.teleop_dict = {}             # dict  teleop_id -> addr
         self.request_q = queue.Queue()    # tuple (robot_id, request_type)
         self.scene_alignment_q = queue.Queue() # tuple (robot_id, context_info)
-        self.idle_teleop_q = []    # queue.Queue()  teleop_id
+        self.idle_teleop_q = queue.Queue()    # queue.Queue()  teleop_id
         self.idle_teleop_set = set()      # set to track idle teleop_ids for fast lookup
         self.robot_state_dict = {}        # dict  robot_id -> state
     
@@ -105,14 +105,12 @@ class CommunicationHub:
         Pairs alignment requests with available teleop nodes and forwards them."""
         while self.running:
             try:
-                need_send = False
-                with self.lock:
-                    if not self.scene_alignment_q.empty() and len(self.idle_teleop_q):
-                        need_send = True
+                if not self.scene_alignment_q.empty() and not self.idle_teleop_q.empty():
+                    with self.lock:
                         message, addr = self.scene_alignment_q.get()
-                        teleop_id = self.idle_teleop_q.pop(0)  
-                if need_send:
-                    self.report_scene_alignment_request(message, addr)
+                        teleop_id = self.idle_teleop_q.get()  
+                        self.idle_teleop_set.discard(teleop_id) 
+                        self.report_scene_alignment_request(message, addr)
 
                 time.sleep(0.1)  
             except Exception as e:
@@ -133,11 +131,12 @@ class CommunicationHub:
         if teleop_id not in self.teleop_dict.keys():
             self.teleop_dict[teleop_id] = addr
 
-        if teleop_state == "idle" and teleop_id not in self.idle_teleop_q:
-            self.idle_teleop_q.append(teleop_id)
-        elif teleop_state == "busy" and teleop_id in self.idle_teleop_q:
-            self.idle_teleop_q.remove(teleop_id)
-
+        if teleop_state == "idle" and teleop_id not in self.idle_teleop_set:
+            self.idle_teleop_q.put(teleop_id)
+            self.idle_teleop_set.add(teleop_id)
+        elif teleop_state == "busy" and teleop_id in self.idle_teleop_set:
+            self.idle_teleop_set.remove(teleop_id)
+            # Note: teleop_id will be naturally removed from queue when get() is called
 
     def update_robot_state_dict(self, message, addr):
         """Update robot state information in the central state dictionary.
@@ -168,6 +167,7 @@ class CommunicationHub:
         """Forward continue policy command from teleop to robot.
         Instructs robot to continue with autonomous policy execution."""
         self.socket.send(self.teleop_dict["0"], message)
+
 
     def report_teleop_ctrl_start(self, message, addr):
         """Forward teleop control start command from teleop to robot.
@@ -281,16 +281,14 @@ class CommunicationHub:
         self.socket.send(self.robot_dict[rbt_id], send_msg)
 
     def update_request_q_workflow(self):
-        need_send = False
         """Process the top element of the request queue if teleop is available.
         Coordinates human check requests between robots and teleop nodes."""
-        with self.lock:
-            if not self.request_q.empty() and len(self.idle_teleop_q):
-                cur_idle_teleop_id = self.idle_teleop_q.pop(0)
+        if not self.request_q.empty() and not self.idle_teleop_q.empty():
+            with self.lock:
+                cur_idle_teleop_id = self.idle_teleop_q.get()
+                self.idle_teleop_set.remove(cur_idle_teleop_id)
                 cur_request = self.request_q.get()
-                need_send = True
 
-        if need_send:
             # Inform the robot
             rbt_id, request_type = cur_request[0], cur_request[1]
             addr_rbt = self.robot_dict[rbt_id]
@@ -308,7 +306,6 @@ class CommunicationHub:
         try:
             while True:
                 self.update_request_q_workflow()
-                # print("==============q:",self.idle_teleop_q)
                 time.sleep(0.8)
         except KeyboardInterrupt:
             self.socket.stop()

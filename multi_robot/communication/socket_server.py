@@ -51,7 +51,7 @@ class SocketServer:
                     if not data:
                         break
                     decoded_data = data.decode()
-                    print(f"Received from {addr}: {decoded_data}")
+                    # print(f"Received from {addr}: {decoded_data}")
                     # self.send(addr,"hi")gi
                     if self.message_handler:          #process
                         self.message_handler(decoded_data, addr)
@@ -84,6 +84,7 @@ class SocketServer:
             except (ConnectionResetError, OSError) as e:
                 print(f"Send failed to {addr}: {e}")
                 print(f"error_message: {message}")
+                raise RuntimeError
 
     def stop(self):
         self.running = False

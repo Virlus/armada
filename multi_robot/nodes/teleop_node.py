@@ -79,6 +79,7 @@ class TeleopNode:
         }
         self.unthreaded_handlers = {
             "REWIND_COMPLETED": self.handle_rewind_completed,
+            "TIMEOUT":self.handle_demo_timeout,
         }
         for msg_type, handler in self.threaded_handlers.items():
             self.message_handler.register_handler(msg_type, handler, use_thread=True)
@@ -190,6 +191,11 @@ class TeleopNode:
             'C': self.handle_continue_policy,
             'N': self.handle_need_teleop,
         }
+        #TODO:REMEMBER TO CANCEL
+        if request_type=="timeout":
+            print("Timeout,directly enter next episode....")
+            key_actions['F'](rbt_id, request_type)
+            return
         
         # Display options based on request type
         self._display_decision_options(request_type)
@@ -222,24 +228,26 @@ class TeleopNode:
         Processes successful task completion and environment reset."""
         print("Success!")
         # Note: keyboard_listener already stopped in main_human_decide
-        print("Start manually resetting environment , press 'F' when finished: ", end='', flush=True)
-        key = input().strip().upper()   # jammed manner,waiting human reset
-        if key == 'F':
-            msg = f"TELEOP_TAKEOVER_RESULT_SUCCESS_from_robot{rbt_id}".encode()
-            self.socket.send(msg)
-            self.teleop_state = "idle"
+        #TODO:REMEMBER TO CANCEL
+        # print("Start manually resetting environment , press 'F' when finished: ", end='', flush=True)
+        # key = input().strip().upper()   # jammed manner,waiting human reset
+        # if key == 'F':
+        msg = f"TELEOP_TAKEOVER_RESULT_SUCCESS_from_robot{rbt_id}".encode()
+        self.socket.send(msg)
+        self.teleop_state = "idle"
 
     def handle_failure(self,rbt_id,request_type):
         """Handle failure decision from human operator.
         Processes task failure and environment reset."""
         print("Failure!")
         # Note: keyboard_listener already stopped in main_human_decide
-        print("Start manually resetting environment , press 'F' when finished: ", end='', flush=True)
-        key = input().strip().upper()  # jammed manner,waiting human reset
-        if key == 'F':
-            msg = f"TELEOP_TAKEOVER_RESULT_FAILURE_from_robot{rbt_id}".encode()
-            self.socket.send(msg)
-            self.teleop_state = "idle"
+        #TODO:REMEMBER TO CANCEL
+        # print("Start manually resetting environment , press 'F' when finished: ", end='', flush=True)
+        # key = input().strip().upper()  # jammed manner,waiting human reset
+        # if key == 'F':
+        msg = f"TELEOP_TAKEOVER_RESULT_FAILURE_from_robot{rbt_id}".encode()
+        self.socket.send(msg)
+        self.teleop_state = "idle"
 
     def handle_continue_policy(self,rbt_id,request_type):
         """Handle continue policy decision from human operator.
@@ -354,6 +362,11 @@ class TeleopNode:
         print(f"Rewind completed for robot {rbt_id}")
         # self.rewind_completed = True
 
+    def handle_demo_timeout(self, message):
+        templ = "TIMEOUT_of_{}"
+        rbt_id = parse_message_regex(message, templ)[0]
+        print(f"=================Robot_{rbt_id} timeout !!!!==============")
+
     def handle_scene_alignment_request(self, message):
         """Handle scene alignment request from robot.
         Guides human operator through scene alignment process."""
@@ -397,7 +410,10 @@ class TeleopNode:
         
         # Stop keyboard listener before using input()
         self.keyboard_listener.stop_keyboard_listener()
-        
+
+        while self.keyboard_listener.listener is not None:
+            time.sleep(0.01)
+
         # Handle user input for scene alignment confirmation
         key = input().strip().upper()
         if key == 'C':
@@ -410,58 +426,6 @@ class TeleopNode:
         # Restart keyboard listener after completing scene alignment
         time.sleep(0.1)
         self.keyboard_listener.start_keyboard_listener()
-
-    def _display_scene_alignment_with_images(self, rbt_id, ref_side_img, ref_wrist_img):
-        """Display scene alignment with reference images in teleop node"""
-        import cv2
-        
-        print(f"Displaying reference images for robot {rbt_id}")
-        print("Please align the scene with the reference images, then press 'C' to continue")
-        
-        # Stop keyboard listener to prevent conflicts
-        self.keyboard_listener.stop_keyboard_listener()
-        
-        try:
-            # Create OpenCV windows
-            cv2.namedWindow("Reference_Side", cv2.WINDOW_AUTOSIZE)
-            cv2.namedWindow("Reference_Wrist", cv2.WINDOW_AUTOSIZE) 
-            
-            # Display reference images
-            cv2.imshow("Reference_Side", ref_side_img)
-            cv2.imshow("Reference_Wrist", ref_wrist_img)
-            cv2.waitKey(1)
-            
-            print("Reference images displayed. Press 'C' when scene is aligned: ", end='', flush=True)
-            
-            # Wait for user confirmation
-            key = input().strip().upper()
-            while key != 'C':
-                print("Press 'C' to continue when scene is aligned: ", end='', flush=True)
-                key = input().strip().upper()
-            
-            # Close OpenCV windows
-            cv2.destroyAllWindows()
-            
-            print("✅ Scene alignment confirmed!")
-            
-        except Exception as e:
-            print(f"❌ Error displaying images: {e}")
-            # Close windows in case of error
-            try:
-                cv2.destroyAllWindows()
-            except:
-                pass
-        
-        finally:
-            # Send completion message
-            completion_msg = f"SCENE_ALIGNMENT_COMPLETED_{rbt_id}".encode()
-            self.socket.send(completion_msg)
-            self.teleop_state = "idle"
-            
-            # Restart keyboard listener
-            time.sleep(0.1)
-            self.keyboard_listener.start_keyboard_listener()
-
 
     def inform_teleop_state(self,inform_freq):
         """Periodically report teleop state to hub.

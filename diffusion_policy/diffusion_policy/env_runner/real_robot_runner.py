@@ -506,10 +506,6 @@ class RealRobotRunner:
                     if self.robot_env.keyboard.ctn and j < self.max_episode_length - self.Ta:
                         print("False Positive failure! Continue policy rollout.")
                         self.robot_env.keyboard.ctn = False
-                        if failure_reason == 'action inconsistency' and self.failure_detection_module.enable_action_inconsistency:
-                            self.failure_detection_module.failure_detector.expert_action_threshold = np.inf
-                            print("Reset the action inconsistency threshold to infinity temporarily")
-                        continue
                     elif self.robot_env.keyboard.ctn and j >= self.max_episode_length - self.Ta:
                         print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
                         self.robot_env.keyboard.ctn = False

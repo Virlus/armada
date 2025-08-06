@@ -472,9 +472,6 @@ def main(rank, eval_cfg, device_ids):
                         if robot_env.keyboard.ctn and j < max_episode_length - Ta:
                             print("False Positive failure! Continue policy rollout.")
                             robot_env.keyboard.ctn = False
-                            # Temporarily ignore threshold if action inconsistency triggered false positive
-                            if failure_reason == "action inconsistency" and enable_action_inconsistency:
-                                failure_detector.expert_action_threshold = np.inf
                             continue
                         elif robot_env.keyboard.ctn and j >= max_episode_length - Ta:
                             print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")

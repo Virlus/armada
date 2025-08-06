@@ -416,7 +416,8 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
     
     def _rewind_ot_plan(self, j: int):
         """Rewind the OT plan and adjust failure logs"""
-        if hasattr(self, 'expert_weight') and hasattr(self, 'greedy_ot_plan'):
+        assert hasattr(self, 'expert_weight') and hasattr(self, 'greedy_ot_plan')
+        if self.expert_weight is not None and self.greedy_ot_plan is not None:
             # Rewind the OT plan
             recovered_expert_weight = torch.zeros((self.demo_len // self.Ta,), device=self.device)
             recovered_expert_weight[self.expert_indices] = self.expert_weight.to(recovered_expert_weight.dtype)
@@ -425,17 +426,17 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             self.greedy_ot_plan[:, j // self.Ta - 1] = 0.
             self.greedy_ot_cost[j // self.Ta - 1] = 0.
             
-            # Adjust failure indices if needed
-            if len(self.failure_logs) > 0:
-                latest_failure_timestep, latest_failure_type = self.failure_logs.popitem()
-                if latest_failure_timestep == j // self.Ta - 1:
-                    for timestep, failure_type in self.failure_logs.items():
-                        if timestep >= latest_failure_timestep - 1:
-                            self.failure_logs.move_to_end(timestep)
-                            _, _ = self.failure_logs.popitem()
-                    self.failure_logs[latest_failure_timestep - 1] = latest_failure_type
-                else:
-                    self.failure_logs[latest_failure_timestep] = latest_failure_type
+        # Adjust failure indices if needed
+        if len(self.failure_logs) > 0:
+            latest_failure_timestep, latest_failure_type = self.failure_logs.popitem()
+            if latest_failure_timestep == j // self.Ta - 1:
+                for timestep, failure_type in self.failure_logs.items():
+                    if timestep >= latest_failure_timestep - 1:
+                        self.failure_logs.move_to_end(timestep)
+                        _, _ = self.failure_logs.popitem()
+                self.failure_logs[latest_failure_timestep - 1] = latest_failure_type
+            else:
+                self.failure_logs[latest_failure_timestep] = latest_failure_type
     
     def cleanup(self):
         """Cleanup resources"""

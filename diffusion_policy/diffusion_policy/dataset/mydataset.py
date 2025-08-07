@@ -79,7 +79,8 @@ class MyDataset(BaseImageDataset):
         if random_crop:
             side_img_processor.append(transforms.Resize((image_shape[1]+8, image_shape[2]+8), interpolation=transforms.InterpolationMode.BICUBIC))
             side_img_processor.append(transforms.RandomCrop((image_shape[1], image_shape[2])))
-            wrist_img_processor.append(transforms.Resize((image_shape[1], image_shape[2]), interpolation=transforms.InterpolationMode.BICUBIC))
+            wrist_img_processor.append(transforms.Resize((image_shape[1]+8, image_shape[2]+8), interpolation=transforms.InterpolationMode.BICUBIC))
+            wrist_img_processor.append(transforms.RandomCrop((image_shape[1], image_shape[2])))
         
         # GPU-based color augmentation using Kornia
         self.color_jitter = None

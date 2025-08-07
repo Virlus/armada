@@ -648,6 +648,8 @@ class RealRobotRunner:
                 # Rewind the failure logs as well if it's an action inconsistency module
                 if self.failure_detection_module and hasattr(self.failure_detection_module, '_rewind_ot_plan'):
                     self.failure_detection_module._rewind_ot_plan(j)
+                elif self.failure_detection_module and hasattr(self.failure_detection_module, '_rewind_failure_logs'):
+                    self.failure_detection_module._rewind_failure_logs(j)
             
             # Rewind one step
             curr_pos, curr_rot, prev_side_cam, prev_wrist_cam = self._rewind_single_step(episode_buffers, curr_pos, curr_rot)

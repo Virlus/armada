@@ -43,7 +43,10 @@ class RobotEnv:
             Resize((img_shape[1]+8, img_shape[2]+8), interpolation=BICUBIC),
             CenterCrop((img_shape[1], img_shape[2]))
         ])
-        self.policy_wrist_image_processor = Resize((img_shape[1], img_shape[2]), interpolation=BICUBIC)
+        self.policy_wrist_image_processor = Compose([
+            Resize((img_shape[1]+8, img_shape[2]+8), interpolation=BICUBIC),
+            CenterCrop((img_shape[1], img_shape[2]))
+        ])
 
         self.demo_image_processor = Compose([
             Resize((img_shape[1]+8, img_shape[2]+8), interpolation=BICUBIC),

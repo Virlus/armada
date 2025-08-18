@@ -58,6 +58,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         self.action_inconsistency_percentile = cfg.action_inconsistency_percentile
         self.ot_percentile = cfg.ot_percentile
         self.soft_ot_ratio = cfg.soft_ot_ratio
+        self.update_stats = cfg.update_stats
         
         # Initialize failure detector
         self.failure_detector = FailureDetector(
@@ -339,6 +340,9 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         if len(self.failure_logs) > 0:
             failure_signal[list(self.failure_logs.keys())] = 1
         failure_indices = np.repeat(failure_signal, self.Ta)
+
+        if not self.update_stats:
+            return {'failure_indices': failure_indices}
         
         # Update success statistics
         success = INTV not in episode['action_mode']

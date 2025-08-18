@@ -1,12 +1,12 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/mug/0706_11.06.54_train_diffusion_transformer_hybrid_dino_multi_gpu_0627_mug_ours_dagger_round2/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/mug/0627_mug_ours_dagger_round3
-save_buffer_path: /mnt/workspace/DP/mug/0627_mug_ours_dagger_round3_demo_0804
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/demo/0811_21.05.37_train_diffusion_transformer_hybrid_dino_multi_gpu_0807_fold_towel_two_robots_demo_round2/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/demo/0812_fold_towel_two_robots_round2_base
+save_buffer_path: /mnt/workspace/DP/demo/0812_fold_towel_two_robots_round2_demo
 output_dir: diffusion_policy/outputs/visual/demo
 
 Ta: 8
 random_init: True
-seed: 2
+seed: 10
 
 # Failure detection configuration
 failure_detection_module: action_inconsistency_ot
@@ -20,6 +20,7 @@ num_expert_candidates: 50
 action_inconsistency_percentile: 90
 ot_percentile: 95
 soft_ot_ratio: 0.2
+update_stats: False
 
 # Sirius-related hyperparameters
 post_process_action_mode: False

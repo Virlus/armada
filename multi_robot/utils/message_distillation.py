@@ -73,7 +73,9 @@ class MessageHandler:
                 else:
                     return handler(message, *args, **kwargs)
             except Exception as e:
-                print(f"Error handling message '{message}': {e}")
+                import traceback
+                # print(f"Error handling message '{message}': {e}")
+                print(traceback.format_exc())
                 
         if use_thread:
             def threaded_wrapper(message: str, *args, **kwargs):

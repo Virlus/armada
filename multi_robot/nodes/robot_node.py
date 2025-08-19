@@ -472,9 +472,6 @@ class RobotNode(RealRobotRunner):
                 self.finish_episode = True
 
         print("False Positive failure! Continue policy rollout.")
-        if self.failure_reason == 'action inconsistency' and self.failure_detection_module.enable_action_inconsistency:
-            self.failure_detection_module.failure_detector.expert_action_threshold = np.inf
-            print("Reset the action inconsistency threshold to infinity temporarily")
     
     def handle_redundant_failure(self):
         """Handle redundant failure detection.

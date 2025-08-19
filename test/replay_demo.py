@@ -110,7 +110,7 @@ def main(args):
         else:
             first_failure_index = np.where(curr_action_mode == INTV)[0][0]
             total_sample_count += first_failure_index
-            TNR_buffer.append(first_failure_index - np.sum(curr_failure_indices[:first_failure_index]))
+            TNR_buffer.append(first_failure_index - np.sum(curr_failure_indices[:first_failure_index-8]))
 
     print(f"Sample-level TNR: {np.sum(TNR_buffer) / total_sample_count * 100:.2f}%")
 
@@ -177,6 +177,6 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--demo_path', type=str, required=True)
     parser.add_argument('-s', '--start_index', type=int, required=True)
     parser.add_argument('-ref', '--reference', type=str, default='')
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/debug')
+    parser.add_argument('-o', '--output', type=str, default='./debug')
     args = parser.parse_args()
     main(args)

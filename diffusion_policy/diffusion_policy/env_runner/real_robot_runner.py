@@ -12,7 +12,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from collections import OrderedDict
 from scipy.spatial.transform import Rotation as R
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../.."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../.."))
 from diffusion_policy.diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
@@ -265,6 +265,8 @@ class RealRobotRunner:
                     break
                 
                 print(f"Rollout episode: {self.episode_idx}")
+                if self.eval_cfg.failure_detection_module == 'action_inconsistency_ot':
+                    self.failure_detection_module.failure_detector.last_predicted_abs_actions = None
                 
                 # Run single episode
                 episode_data = self._run_single_episode(episode_id=self.episode_id+1)
@@ -498,7 +500,7 @@ class RealRobotRunner:
                     while not self.robot_env.keyboard.ctn and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.help and not self.robot_env.keyboard.finish:
                         time.sleep(0.1)
 
-                    if self.robot_env.keyboard.finish: # Erase the failure flag because the episode is finished
+                    if self.robot_env.keyboard.finish and failure_flag: # Erase the failure flag because the episode is finished
                         if hasattr(self.failure_detection_module, 'failure_logs'):
                             self.failure_detection_module.failure_logs.popitem()
                         elif hasattr(self.failure_detection_module, 'failure_indices'):
@@ -507,10 +509,6 @@ class RealRobotRunner:
                     if self.robot_env.keyboard.ctn and j < self.max_episode_length - self.Ta:
                         print("False Positive failure! Continue policy rollout.")
                         self.robot_env.keyboard.ctn = False
-                        if failure_reason == 'action inconsistency' and self.failure_detection_module.enable_action_inconsistency:
-                            self.failure_detection_module.failure_detector.expert_action_threshold = np.inf
-                            print("Reset the action inconsistency threshold to infinity temporarily")
-                        continue
                     elif self.robot_env.keyboard.ctn and j >= self.max_episode_length - self.Ta:
                         print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
                         self.robot_env.keyboard.ctn = False

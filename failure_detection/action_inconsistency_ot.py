@@ -114,9 +114,9 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             eps_state = torch.from_numpy(eps_state).to(self.device)
             demo_len = human_episode['action'].shape[0]
             
-            human_latent = torch.zeros((demo_len // self.Ta, int(self.To * self.obs_feature_dim)), device=self.device)
-            for idx in range(demo_len // self.Ta):
-                human_demo_idx = idx * self.Ta
+            human_latent = torch.zeros((self.max_episode_length // self.Ta, int(self.To * self.obs_feature_dim)), device=self.device)
+            for idx in range(self.max_episode_length // self.Ta):
+                human_demo_idx = min(idx * self.Ta, (demo_len // self.Ta - 1) * self.Ta)
                 if human_demo_idx < self.To - 1:
                     indices = [0] * (self.To - 1 - human_demo_idx) + list(range(human_demo_idx + 1))
                     obs_dict = {
@@ -135,7 +135,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
                     obs_features = self.policy.extract_latent(obs_dict)
                     human_latent[idx] = obs_features.squeeze(0).reshape(-1)
             
-            self.human_eps_len.append(eps_side_img.shape[0])
+            self.human_eps_len.append(self.max_episode_length)
             self.all_human_latent.append(human_latent)
     
     def _load_success_statistics(self):
@@ -415,7 +415,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
     
     def rewind_step_cleanup(self):
         """Clean up action inconsistency buffer during rewinding"""
-        if self.enable_action_inconsistency and len(self.action_inconsistency_buffer) > 0:
+        if len(self.action_inconsistency_buffer) > 0:
             self.action_inconsistency_buffer.pop()
     
     def _rewind_ot_plan(self, j: int):

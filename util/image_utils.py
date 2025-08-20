@@ -77,7 +77,7 @@ def create_failure_visualization(action_inconsistency_buffer, greedy_ot_plan, gr
     
     # Add expert demonstration images
     for y in range(demo_len // Ta):
-        human_array = (eps_side_img[int(y * Ta)].permute(1, 2, 0).detach().cpu().numpy() * 255).astype(np.uint8).clip(0, 255)
+        human_array = (eps_side_img[min(int(y * Ta), (eps_side_img.shape[0] // Ta - 1) * Ta)].permute(1, 2, 0).detach().cpu().numpy() * 255).astype(np.uint8).clip(0, 255)
         img = process_image(human_array, (100, 100), highlight=False)
         img = np.array(img)
         imagebox = OffsetImage(img, zoom=1)

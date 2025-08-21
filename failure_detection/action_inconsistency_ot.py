@@ -11,6 +11,7 @@ from diffusion_policy.diffusion_policy.env_runner.real_robot_runner import Failu
 from failure_detection.failure_detector import FailureDetector
 from robot_env import INTV, HUMAN
 from util.image_utils import create_failure_visualization
+from util.online_ot_visualizer import OTVisualizationModule
 
 
 class ActionInconsistencyOTModule(FailureDetectionModule):
@@ -33,6 +34,9 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         self.action_inconsistency_buffer = []
         self.failure_logs = OrderedDict()
         self.needs_latent = True
+        
+        # Online OT visualization
+        self.ot_visualizer = None
         
     def initialize(self, cfg: Dict[str, Any], device: torch.device, **kwargs):
         """Initialize the failure detection module"""
@@ -82,6 +86,11 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         
         # Load previous success statistics if available
         self._load_success_statistics()
+        
+        # Initialize online OT visualization if enabled
+        if hasattr(cfg, 'enable_visualization') and cfg.enable_visualization:
+            self.ot_visualizer = OTVisualizationModule(enable_visualization=True)
+            self.ot_visualizer.initialize(output_dir=cfg.output_dir, fps=10)
         
     def _prepare_human_demo_data(self):
         """Prepare human demonstration data for matching"""
@@ -182,6 +191,30 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
                 self.greedy_ot_plan = result["greedy_ot_plan"]
                 self.greedy_ot_cost = result["greedy_ot_cost"]
                 
+                # Update OT visualization if enabled
+                if self.ot_visualizer is not None and result["idx"] >= 0:
+                    # Get current OT cost and cumulative cost
+                    current_ot_cost = self.greedy_ot_cost[result["idx"]].item()
+                    cumulative_ot_cost = torch.sum(self.greedy_ot_cost[:result["idx"]+1]).item()
+                    
+                    # Get side camera image from current robot state if available
+                    side_img = None
+                    if hasattr(self, '_current_robot_state') and self._current_robot_state is not None:
+                        if 'demo_side_img' in self._current_robot_state:
+                            side_img_tensor = self._current_robot_state['demo_side_img']
+                            if side_img_tensor.shape[0] == 3:  # (channels, height, width) -> (height, width, channels)
+                                side_img_tensor = side_img_tensor.permute(1, 2, 0)
+                            # Convert tensor to numpy array (keep RGB format for visualizer)
+                            side_img = (side_img_tensor.detach().cpu().numpy()).astype(np.uint8)
+                    
+                    # Add step to visualization
+                    self.ot_visualizer.add_step(
+                        timestep=result["idx"],
+                        ot_cost=current_ot_cost,
+                        side_image=side_img,
+                        cumulative_ot_cost=cumulative_ot_cost
+                    )
+                
                 # If action inconsistency is disabled, pad buffer with zeros
                 if not self.enable_action_inconsistency:
                     current_buffer_length = len(self.action_inconsistency_buffer)
@@ -239,6 +272,12 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             self.action_inconsistency_buffer = []
             self.failure_logs = OrderedDict()
             
+            # Start OT visualization for new episode
+            if self.ot_visualizer is not None:
+                episode_idx = step_data.get('episode_idx', 0)
+                ot_threshold = self.failure_detector.expert_ot_threshold if hasattr(self.failure_detector, 'expert_ot_threshold') else None
+                self.ot_visualizer.start_episode(episode_idx=episode_idx, ot_threshold=ot_threshold)
+            
             if self.enable_OT:
                 # Match the current rollout with the closest expert episode
                 rollout_init_latent = self.episode_manager.extract_latent().unsqueeze(0)
@@ -272,6 +311,10 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             curr_latent = step_data['curr_latent']
             timestep = step_data['timestep']
             predicted_abs_actions = step_data['predicted_abs_actions']
+            
+            # Store current robot state for visualization
+            if 'robot_state' in step_data:
+                self._current_robot_state = step_data['robot_state']
             
             idx = timestep // self.Ta - 1
             
@@ -366,6 +409,19 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
                 print("OT threshold: ", self.failure_detector.expert_ot_threshold)
                 print("Action inconsistency threshold: ", self.failure_detector.expert_action_threshold)
         
+        # End OT visualization
+        if self.ot_visualizer is not None:
+            success = INTV not in episode['action_mode']
+            failure_reason = None
+            if not success and len(self.failure_logs) > 0:
+                failure_types = list(self.failure_logs.values())
+                if 2 in failure_types:  # OT violation
+                    failure_reason = "OT violation"
+                elif 1 in failure_types:  # Action inconsistency
+                    failure_reason = "Action inconsistency"
+            
+            self.ot_visualizer.end_episode(success=success, failure_reason=failure_reason)
+        
         # Create visualization
         try:
             if self.enable_OT and hasattr(self, 'matched_human_idx') and self.matched_human_idx is not None:
@@ -451,4 +507,8 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             success_stats = self.failure_detector.get_success_statistics()
             import os
             np.savez(os.path.join(self.cfg.save_buffer_path, 'success_stats.npz'), **success_stats)
-            print("Saved success statistics") 
+            print("Saved success statistics")
+        
+        # Cleanup OT visualization
+        if self.ot_visualizer is not None:
+            self.ot_visualizer.cleanup() 

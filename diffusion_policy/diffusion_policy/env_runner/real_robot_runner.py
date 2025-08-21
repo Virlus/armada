@@ -347,7 +347,8 @@ class RealRobotRunner:
             self.failure_detection_module.process_step({
                 'step_type': 'episode_start',
                 'episode_manager': self.episode_manager,
-                'robot_state': robot_state
+                'robot_state': robot_state,
+                'episode_idx': self.episode_idx
             })
         
         # Detach teleop device
@@ -476,7 +477,8 @@ class RealRobotRunner:
                     'policy_obs': policy_obs,
                     'curr_latent': curr_latent,
                     'timestep': j,
-                    'episode_manager': self.episode_manager
+                    'episode_manager': self.episode_manager,
+                    'robot_state': robot_state
                 }
                 
                 failure_step_data = self.failure_detection_module.process_step(step_data)

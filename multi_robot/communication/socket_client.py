@@ -55,12 +55,12 @@ class SocketClient:
     #     raise ConnectionError(f"Failed after {max_retries} attempts")
 
     def send(self, data, max_retries=3):
-        # 添加消息头尾标识符
+        # Add message start/end delimiters
         if isinstance(data, str):
             data = f"<<MSG_START>>{data}<<MSG_END>>"
             data = data.encode()
         elif isinstance(data, bytes):
-            # 如果已经是bytes，需要先解码，添加标识符，再编码
+            # If already bytes, decode first, add delimiters, then encode
             decoded_data = data.decode()
             data = f"<<MSG_START>>{decoded_data}<<MSG_END>>".encode()
 

@@ -448,7 +448,7 @@ class calibration():
 
     def cal(self,optimize=False):
         ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(self.objpoints, self.imgpoints, self.gray.shape[::-1], self.mtx, None)
-        self.mtx = mtx # 这一行是加的，希望以新校准的intr为准。后面的代码其实混用了 self.mtx 和 mtx，不知道有没有精度问题
+        self.mtx = mtx # This line is added, hoping to use newly calibrated intrinsics as reference. The following code actually mixes self.mtx and mtx, not sure if there are precision issues
         print(mtx)
           #ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(self.objpoints, self.imgpoints, self.gray.shape[::-1], self.mtx, None)
         # Hm2w = []  # robot end-effector pose

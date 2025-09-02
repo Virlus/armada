@@ -62,22 +62,22 @@ class SocketServer:
             print(f"Client {addr} disconnected")
 
     def send(self, addr, message):
-        # 添加消息头尾标识符
+        # Add message start/end delimiters
         if isinstance(message, str):
             message = f"<<MSG_START>>{message}<<MSG_END>>"
             message = message.encode()
         elif isinstance(message, bytes):
-            # 如果已经是bytes，需要先解码，添加标识符，再编码
+            # If already bytes, decode first, add delimiters, then encode
             decoded_message = message.decode()
             message = f"<<MSG_START>>{decoded_message}<<MSG_END>>".encode()
             
         conn = self.active_connections.get(addr)
         if conn:
             try:
-                # 添加发送超时
-                conn.settimeout(0.1)  # 100ms超时
+                # Add send timeout
+                conn.settimeout(0.1)  # 100ms timeout
                 conn.send(message)
-                conn.settimeout(None)  # 恢复无超时
+                conn.settimeout(None)  # Restore no timeout
             except socket.timeout:
                 print(f"Send timeout to {addr} - receiver may be busy")
                 print(f"error_message: {message}")

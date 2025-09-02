@@ -481,16 +481,16 @@ class RealRobotRunner:
                     'robot_state': robot_state
                 }
                 
-                failure_step_data = self.failure_detection_module.process_step(step_data)  #对当前step，提交机器检查stepot_matching和action_inconsistency的申请，即对这两种情形都加入_async_queue
+                failure_step_data = self.failure_detection_module.process_step(step_data)  # For current step, submit machine check requests for step ot_matching and action_inconsistency, i.e., add both situations to _async_queue
                 
-                failure_flag, failure_reason = self.failure_detection_module.detect_failure(  #阻塞式的，从FailureDetector.async_result_queue中获取所有结果，其中if result["task_type"] == "ot_matching"则调用failure_detector.submit_failure_detection_task，
-                #其会对_async_queue来push"failure_detection"的请求;如果是"action_inconsistency"就会加入action_inconsistency_buffer;如果是"failure_detection",就会记录日志。
+                failure_flag, failure_reason = self.failure_detection_module.detect_failure(  # Blocking call, get all results from FailureDetector.async_result_queue, where if result["task_type"] == "ot_matching" then call failure_detector.submit_failure_detection_task,
+                # which will push "failure_detection" request to _async_queue; if "action_inconsistency" it will be added to action_inconsistency_buffer; if "failure_detection", it will log.
                     timestep=j,
                     max_episode_length=self.max_episode_length,
                     failure_step_data=failure_step_data
                 )
-                #另有线程FailureDetector._async_processing_thread会循环对_async_queue.pop，然后读出task_type,如果是"ot_matching"/”action_inconsistency"则计算出统计指标（ot_cost/动作不平均量），如果是"failure_detection"则根据先前求出的统计指标判断出ot/action有没有问题，
-                #最后三种结果都放入async_result_queue
+                # Another thread FailureDetector._async_processing_thread will loop to pop from _async_queue, then read task_type, if "ot_matching"/"action_inconsistency" then compute statistical metrics (ot_cost/action inconsistency), if "failure_detection" then determine if ot/action has problems based on previously computed statistical metrics,
+                # finally all three types of results are put into async_result_queue
                 
                 if failure_flag or j >= self.max_episode_length - self.Ta:
                     if failure_flag:

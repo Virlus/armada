@@ -31,7 +31,7 @@ def create_video(input_folder, output_file, fps=30, codec='libx264'):
             img_path = os.path.join(episode_folder, img_name)
             image = imageio.imread(img_path)
             
-            # 调整图像尺寸为能被16整除（视频编码要求）
+            # Adjust image size to be divisible by 16 (video encoding requirement)
             if image.shape[1] % 16 != 0 or image.shape[0] % 16 != 0:
                 new_width = (image.shape[1] // 16) * 16
                 new_height = (image.shape[0] // 16) * 16

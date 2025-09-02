@@ -104,14 +104,15 @@ def rematch_expert_episode(
     curr_rollout_latent: Tensor
 ) -> Tensor:
     """
-    给定候选专家隐变量和当前rollout隐变量，用OT对总运输成本排序，得到成本从小到大的候选专家索引
+    Given candidate expert latent variables and current rollout latent variables, 
+    use OT to sort by total transport cost, getting candidate expert indices from lowest to highest cost
     """
     ot_costs = []
     for expert_latent in candidate_expert_latent:
-        dist_mat = cosine_distance(expert_latent, curr_rollout_latent) #代价矩阵
-        ot_plan = optimal_transport_plan(expert_latent, curr_rollout_latent, dist_mat) #sinkhorn算法求解传输计划
-        ot_cost = torch.sum(ot_plan * dist_mat) #总运输成本OT_cost,代价矩阵和传输计划的逐元素积
+        dist_mat = cosine_distance(expert_latent, curr_rollout_latent) # Cost matrix
+        ot_plan = optimal_transport_plan(expert_latent, curr_rollout_latent, dist_mat) # Sinkhorn algorithm to solve transport plan
+        ot_cost = torch.sum(ot_plan * dist_mat) # Total transport cost OT_cost, element-wise product of cost matrix and transport plan
         ot_costs.append(ot_cost)
 
-    candidate_expert_indices = candidate_expert_indices[Tensor(ot_costs).argsort()]  #candidate_expert_indices 会按 ot_costs 从小到大排列
+    candidate_expert_indices = candidate_expert_indices[Tensor(ot_costs).argsort()]  # candidate_expert_indices sorted by ot_costs from lowest to highest
     return candidate_expert_indices

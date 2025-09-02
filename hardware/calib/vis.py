@@ -118,7 +118,7 @@ for i, filename in enumerate(flangeposList):
     # c = o3d.geometry.TriangleMesh.create_coordinate_frame(0.05).transform(ppp)
     # g_list.extend([c])
 
-    # 添加桌面框
+    # Add desktop frame
     points = [
         [0.3, -0.4, 0],
         [0.9, -0.4, 0],

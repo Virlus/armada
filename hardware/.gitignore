@@ -7,7 +7,7 @@ data/
 logs
 logs/
 .vscode/
-# flexiv_rdk/
+flexiv_rdk/
 sigma_sdk/
 dependencies/
 workspace/

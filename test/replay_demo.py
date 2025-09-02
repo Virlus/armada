@@ -177,6 +177,6 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--demo_path', type=str, required=True)
     parser.add_argument('-s', '--start_index', type=int, required=True)
     parser.add_argument('-ref', '--reference', type=str, default='')
-    parser.add_argument('-o', '--output', type=str, default='/mnt/workspace/DP/debug')
+    parser.add_argument('-o', '--output', type=str, default='./debug')
     args = parser.parse_args()
     main(args)

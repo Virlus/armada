@@ -134,7 +134,7 @@ def main(rank, eval_cfg, device_ids):
     robot_env = RobotEnv(camera_serial=CAM_SERIAL, img_shape=img_shape, fps=fps)
     
     # Initialize policy interaction helper
-    episode_manager = EpisodeManager(
+    episode_manager = EpisodeManager(   #TODO:maybe useful
         policy=policy,
         obs_rot_transformer=obs_rot_transformer,
         action_rot_transformer=action_rot_transformer,
@@ -150,7 +150,7 @@ def main(rank, eval_cfg, device_ids):
     )
     
     # Initialize failure detector
-    failure_detector = FailureDetector(
+    failure_detector = FailureDetector(  #TODO:maybe useful
         Ta=Ta,
         action_inconsistency_percentile=action_inconsistency_percentile,
         ot_percentile=ot_percentile,
@@ -158,7 +158,7 @@ def main(rank, eval_cfg, device_ids):
         episode_manager=episode_manager,
         enable_action_inconsistency=enable_action_inconsistency
     )
-    failure_detector.start_async_processing()
+    failure_detector.start_async_processing() # async_thread task: loop through queue to read task requests: "ot_matching"/"action_inconsistency"/"failure_detection", requests are sent around line 380 via failure_detector.submit...
     
     # Initialize demonstration buffer
     zarr_path = os.path.join(eval_cfg.train_dataset_path, 'replay_buffer.zarr')
@@ -178,7 +178,7 @@ def main(rank, eval_cfg, device_ids):
     all_human_latent = []
     human_eps_len = []
 
-    for i in tqdm.tqdm(human_demo_indices, desc="Obtaining latent for human demo"):
+    for i in tqdm.tqdm(human_demo_indices, desc="Obtaining latent for human demo"):  #extract obs latent for human demo
         human_episode = replay_buffer.get_episode(i)
         eps_side_img = (side_img_processor(torch.from_numpy(human_episode['side_cam']).permute(0, 3, 1, 2)) / 255.0).to(device)
         eps_wrist_img = (wrist_img_processor(torch.from_numpy(human_episode['wrist_cam']).permute(0, 3, 1, 2)) / 255.0).to(device)
@@ -229,7 +229,8 @@ def main(rank, eval_cfg, device_ids):
     os.makedirs(eval_cfg.save_buffer_path, exist_ok=True)
     
     try:
-        while True: 
+        while True:
+            #TODO: EPISODE COLUMN
             if robot_env.keyboard.quit:
                 break
             print(f"Rollout episode: {episode_idx}")
@@ -279,7 +280,7 @@ def main(rank, eval_cfg, device_ids):
                 
             # Match the current rollout with the closest expert episode by initial visual latent vector
             rollout_init_latent = episode_manager.extract_latent().unsqueeze(0)
-            candidate_expert_indices = episode_manager.find_matching_expert_demo(
+            candidate_expert_indices = episode_manager.find_matching_expert_demo(  # (Initialization) Frame 0 matching candidate experts
                 rollout_init_latent, 
                 all_human_latent, 
                 human_demo_indices,
@@ -341,9 +342,9 @@ def main(rank, eval_cfg, device_ids):
                     action_seq = np_action_dict['action']
 
                     # Convert to absolute actions
-                    predicted_abs_actions = np.zeros_like(action_seq[:, :, :8])
+                    predicted_abs_actions = np.zeros_like(action_seq[:, :, :8])  # Reinitialize for each step
                     
-                    for step in range(Ta):
+                    for step in range(Ta):  # Execute Ta steps of action for each inference step
                         if step > 0:
                             start_time = time.time()
                         # Get robot state
@@ -354,11 +355,11 @@ def main(rank, eval_cfg, device_ids):
                         
                         # Get absolute action for this step
                         deployed_action, gripper_action, curr_p, curr_r, curr_p_action, curr_r_action = \
-                            episode_manager.get_absolute_action_for_step(action_seq, step)
+                            episode_manager.get_absolute_action_for_step(action_seq, step)  #get one-step action
                         predicted_abs_actions[:, step] = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), gripper_action[:, np.newaxis]), -1)
                         
                         # Execute action on robot
-                        robot_env.deploy_action(deployed_action, gripper_action[0])
+                        robot_env.deploy_action(deployed_action, gripper_action[0])  #deploy one-step action
                         
                         # Save to episode buffers
                         wrist_cam.append(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
@@ -380,8 +381,8 @@ def main(rank, eval_cfg, device_ids):
                         j += 1
 
                     # Submit action inconsistency task asynchronously
-                    idx = j // Ta - 1
-                    if enable_action_inconsistency:
+                    idx = j // Ta - 1                                   # TODO: Originally async was here
+                    if enable_action_inconsistency:                    # Task to check action smoothness
                         failure_detector.submit_action_inconsistency_task(
                             action_seq=action_seq,
                             predicted_abs_actions=predicted_abs_actions,
@@ -395,7 +396,7 @@ def main(rank, eval_cfg, device_ids):
                     
                     # Submit OT matching task asynchronously (always enabled)
                     candidate_expert_latents = [all_human_latent[i] for i in candidate_expert_indices]
-                    failure_detector.submit_ot_matching_task(
+                    failure_detector.submit_ot_matching_task(           # Task to check optimal transport cost
                         rollout_latent=rollout_latent.clone(),
                         idx=idx, 
                         candidate_expert_latents=candidate_expert_latents,
@@ -414,7 +415,7 @@ def main(rank, eval_cfg, device_ids):
                     failure_type = None
                     
                     # Get results from the failure detector
-                    results = failure_detector.get_results()
+                    results = failure_detector.get_results()          # Read results from result queue
                     for result in results:
                         if result["task_type"] == "ot_matching" and result["idx"] <= idx:
                             # Update with the latest OT results

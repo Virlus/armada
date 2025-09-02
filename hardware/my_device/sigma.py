@@ -8,13 +8,26 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../sigma_sdk"))
 import sigma7
 
 class Sigma7:
-    def __init__(self, pos_scale=5, width_scale=1000) -> None:
+    def __init__(self, pos_scale=5, width_scale=1000,num_robot=1) -> None:
         self.pos_scale = pos_scale
         self.width_scale = width_scale
         self.start_sigma()
         init_p, init_r, _ = self.read_state()
-        self.init_p = init_p
-        self.init_r = init_r
+        self.num_robot = num_robot
+        print("=============num_robot", num_robot)
+        if num_robot == 1:
+            self.init_p = init_p
+            self.init_r = init_r
+        else:
+            self.init_p = []
+            self.init_r = []
+            self._prev_p = []
+            self._prev_r = []
+            for i in range(num_robot):
+                self.init_p.append(init_p)
+                self.init_r.append(init_r)
+                self._prev_p.append(init_p)
+                self._prev_r.append(init_r)
 
     def start_sigma(self):
         sigma7.drdOpen()
@@ -32,34 +45,84 @@ class Sigma7:
         rot = np.array([-oa, ob, -og])
         return pos, rot, pg
     
-    def get_control(self):
+    def get_control(self,rbt_id=0):
+        """
+        get the difference between cur_p and init_p,cur_r and init_r ,and finally return them
+        """
+        rbt_id=int(rbt_id)
         curr_p, curr_r, pg = self.read_state()
-        diff_p = curr_p - self.init_p
-        diff_r = curr_r - self.init_r
-        diff_p = diff_p * self.pos_scale
-        width = pg / -0.027 * self.width_scale
-        diff_r = R.from_euler('xyz', diff_r,degrees=False)
+        if self.num_robot == 1:
+            diff_p = curr_p - self.init_p
+            diff_r = curr_r - self.init_r
+            diff_p = diff_p * self.pos_scale
+            width = pg / -0.027 * self.width_scale
+            diff_r = R.from_euler('xyz', diff_r,degrees=False)
+            # print("------------get_control-------------")
+        else:
+            diff_p = curr_p - self.init_p[rbt_id]
+            diff_r = curr_r - self.init_r[rbt_id]
+            diff_p = diff_p * self.pos_scale
+            width = pg / -0.027 * self.width_scale
+            diff_r = R.from_euler('xyz', diff_r, degrees=False)
+            # print("------------get_control from {}-------------".format(rbt_id))
         return diff_p, diff_r, width
     
-    def detach(self):
+    def detach(self,rbt_id=0):
+        rbt_id = int(rbt_id)
+        # raise RuntimeError("not implemented")
         prev_p, prev_r, _ = self.read_state()
-        self._prev_p = prev_p
-        self._prev_r = prev_r
+        if self.num_robot == 1:
+            self._prev_p = prev_p
+            self._prev_r = prev_r
+            print("------------detach-------------")
+        else:
+            self._prev_p[rbt_id] = prev_p
+            self._prev_r[rbt_id] = prev_r
+            # print("------------detach from {},init_p = {} ,init_r = {}-------------".format(rbt_id, self._prev_p[rbt_id],self._prev_p[rbt_id]))
 
-    def resume(self):
+    def resume(self,rbt_id=0):
+        rbt_id = int(rbt_id)
+        # raise RuntimeError("not implemented")
         curr_p, curr_r, _ = self.read_state()
-        self.init_p = self.init_p + curr_p - self._prev_p
-        self.init_r = self.init_r + curr_r - self._prev_r
+        if self.num_robot == 1:
+            self.init_p = self.init_p + curr_p - self._prev_p  #renew init_p by adding bias during detachment, which is curr_p - self._prev_p
+            self.init_r = self.init_r + curr_r - self._prev_r
+            print("------------resume-------------")
+        else:
+            self.init_p[rbt_id] = self.init_p[rbt_id] + curr_p - self._prev_p[rbt_id]  # renew init_p by adding bias during detachment, which is curr_p - self._prev_p
+            self.init_r[rbt_id] = self.init_r[rbt_id] + curr_r - self._prev_r[rbt_id]
+            # print("------------resume from {},init_p = {} ,init_r = {}-------------".format(rbt_id,self.init_p[rbt_id], self.init_r[rbt_id]))
 
-    def reset(self):
-        self.init_p, self.init_r, _ = self.read_state()
+    def reset(self,rbt_id = 0):
+        rbt_id = int(rbt_id)
+        # raise RuntimeError("not implemented")
+        """
+        read current state of sigma and save as init_p and init_r
+        """
+        if self.num_robot == 1:
+            self.init_p, self.init_r, _ = self.read_state()
+            print("------------reset -------------")
+        else:
+            self.init_p[rbt_id], self.init_r[rbt_id], _ = self.read_state()
+            # print("------------reset from {},init_p = {} ,init_r = {} -------------".format(rbt_id, self.init_p[rbt_id], self.init_r[rbt_id]))
 
-    def transform_from_robot(self, translate, rotation):
-        self.init_p -= translate / self.pos_scale
-        self.init_r -= rotation.as_euler('xyz', degrees=False)
+    def transform_from_robot(self, translate, rotation,rbt_id=0):
+        rbt_id = int(rbt_id)
+        """
+        update init_p and init_r with dp and dr,which correspond to initial pose of robot
+        """
+        if self.num_robot == 1:
+            self.init_p -= translate / self.pos_scale
+            self.init_r -= rotation.as_euler('xyz', degrees=False)
+            print("------------transform ------------")
+        else:
+            self.init_p[rbt_id] -= translate / self.pos_scale
+            self.init_r[rbt_id] -= rotation.as_euler('xyz', degrees=False)
+            # print("------------transform from {},init_p = {} ,init_r = {}-------------".format(rbt_id, self.init_p[rbt_id], self.init_r[rbt_id]))
     
 if __name__ == "__main__":
-    sigma = Sigma7()
+    num_robot = 1
+    sigma = Sigma7(num_robot=num_robot)
     while True:
         time.sleep(1)
         diff_p, diff_r, width = sigma.get_control()

@@ -3,7 +3,7 @@ from pynput.keyboard import Key, Listener
 
 class Keyboard:
 
-    def __init__(self, ):
+    def __init__(self, is_multi_robot_env=False):
 
         self._display_controls()
         self.start = False
@@ -18,11 +18,21 @@ class Keyboard:
         self.bad = False
         self.help = False
         self.infer = False
+        self.listener = None
         # make a thread to listen to keyboard and register our callback functions
+        if not is_multi_robot_env:
+            self.create_listener()
+       
+    def create_listener(self):
         self.listener = Listener(
             on_press=self.on_press, on_release=self.on_release)
         # start listening
         self.listener.start()
+
+    def kill_listener(self):
+        if self.listener:
+            self.listener.stop()  # Stop the listener first
+            self.listener = None
 
     @staticmethod
     def _display_controls():

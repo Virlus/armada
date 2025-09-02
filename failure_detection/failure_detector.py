@@ -59,11 +59,12 @@ class FailureDetector:
         """Stop the asynchronous processing thread"""
         if self.async_thread is not None:
             self.async_thread_stop.set()
-            self.async_thread.join(timeout=1.0)
+            self.async_thread.join(timeout=1.0) # Wait for async thread to finish, max 1 second
             self.async_thread = None
     
     def _async_processing_thread(self):
         """Thread function for asynchronous processing"""
+        # ot_matching and action_inconsistency are basic computation tasks, failure_detection is decision task
         while not self.async_thread_stop.is_set():
             try:
                 # Get data with a timeout to allow checking the stop flag
@@ -78,7 +79,7 @@ class FailureDetector:
                     rollout_latent = data["rollout_latent"]
                     
                     # Rematch an expert demonstration for better alignment
-                    candidate_expert_indices = rematch_expert_episode(
+                    candidate_expert_indices = rematch_expert_episode(     # OT algorithm to get candidate experts
                         data["candidate_expert_latents"], 
                         data["candidate_expert_indices"], 
                         rollout_latent[:idx+1]
@@ -95,9 +96,9 @@ class FailureDetector:
                     max_episode_length = data["max_episode_length"]
                     
                     partial_dist_mat = torch.cat((
-                        cosine_distance(human_latent, rollout_latent[:idx+1]).to(data["device"]).detach(), 
+                        cosine_distance(human_latent, rollout_latent[:idx+1]).to(data["device"]).detach(),  # (n_x, dim), (n_y, dim) -> (n_x,n_y)
                         torch.full((demo_len // Ta, max_episode_length // Ta - idx - 1), 0, device=data["device"])
-                    ), 1)
+                    ), 1)  # Construct a "partial" cost matrix, only compute cosine distance between current generated trajectory (rollout_latent[:idx+1]) and expert trajectory, ungenerated part filled with 0
 
                     partial_ot_plan = optimal_transport_plan(
                         human_latent, 
@@ -106,10 +107,10 @@ class FailureDetector:
                             torch.zeros((max_episode_length // Ta - idx - 1, rollout_latent.shape[1]), device=data["device"])
                         ), 0), 
                         partial_dist_mat
-                    )
+                    )  # Partial optimal transport plan partial_ot_plan
                     
-                    expert_weight = torch.ones((demo_len // Ta,), device=data["device"]) / float(demo_len // Ta) - torch.sum(partial_ot_plan[:, :idx+1], dim=1)
-                    expert_indices = torch.nonzero(expert_weight)[:, 0]
+                    expert_weight = torch.ones((demo_len // Ta,), device=data["device"]) / float(demo_len // Ta) - torch.sum(partial_ot_plan[:, :idx+1], dim=1)  # Initial expert weight is uniform distribution 1/(demo_len//Ta), minus transport mass already assigned to current trajectory sum(partial_ot_plan[:, :idx+1], dim=1)
+                    expert_indices = torch.nonzero(expert_weight)[:, 0]  # Remaining weight expert_weight represents unmatched parts of expert samples, non-zero indices expert_indices are insufficiently matched expert samples
                     
                     greedy_ot_plan = torch.cat((
                         partial_ot_plan[:, :idx+1], 
@@ -121,7 +122,7 @@ class FailureDetector:
                         torch.zeros((max_episode_length // Ta - idx - 1,), device=data["device"])
                     ), 0)
 
-                elif task_type == "action_inconsistency":
+                elif task_type == "action_inconsistency": # Calculate difference between actions separated by Ta steps
                     action_seq = data["action_seq"]
                     predicted_abs_actions = data["predicted_abs_actions"]
                     idx = data["idx"]
@@ -133,7 +134,7 @@ class FailureDetector:
                     # Calculate action inconsistency
                     tmp_last_p = last_p
                     tmp_last_r = last_r
-                    for step in range(Ta, action_seq.shape[1]):
+                    for step in range(Ta, action_seq.shape[1]): # Ignore first Ta steps of initialization actions
                         curr_p_action = action_seq[:, step, :3]
                         curr_p = tmp_last_p + curr_p_action
                         curr_r_action = action_rot_transformer.inverse(action_seq[:, step, 3:action_dim-1])
@@ -155,9 +156,11 @@ class FailureDetector:
                     continue
                     
                 elif task_type == "failure_detection":
+                    # Check if action discontinuity is too large, or OT cost exceeds limit, then store results
                     # Failure detection task
                     action_inconsistency_buffer = data["action_inconsistency_buffer"]
                     expert_action_threshold = data["expert_action_threshold"]
+                    enable_OT = data["enable_OT"]
                     greedy_ot_cost = data["greedy_ot_cost"]
                     greedy_ot_plan = data["greedy_ot_plan"]
                     idx = data["idx"]
@@ -174,7 +177,7 @@ class FailureDetector:
                     if enable_OT and expert_ot_threshold is not None:
                         ot_flag = torch.sum(greedy_ot_cost[:idx+1]) > expert_ot_threshold
                     
-                    failure_flag = inconsistency_violation or ot_flag
+                    failure_flag = inconsistency_violation or ot_flag # True indicates problem detected
                     failure_reason = "action inconsistency" if inconsistency_violation else "OT violation" if ot_flag else None
                     
                     result = {

@@ -409,7 +409,7 @@ class RealRobotRunner:
             policy_obs = self.episode_manager.get_policy_observation()
             with torch.no_grad():
                 if hasattr(self.policy, 'predict_action'):
-                    if self.failure_detection_module and hasattr(self.failure_detection_module, 'needs_latent') and self.failure_detection_module.needs_latent:
+                    if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding') and self.failure_detection_module.enable_OT:
                         curr_action, curr_latent = self.policy.predict_action(policy_obs, return_latent=True)
                     else:
                         curr_action = self.policy.predict_action(policy_obs)
@@ -468,7 +468,7 @@ class RealRobotRunner:
             # Store predicted absolute actions for rewinding
             self._last_predicted_abs_actions = predicted_abs_actions
             
-            # Process failure detection
+            # ================Detect failure===============
             if self.failure_detection_module:
                 step_data = {
                     'step_type': 'policy_step',
@@ -481,13 +481,16 @@ class RealRobotRunner:
                     'robot_state': robot_state
                 }
                 
-                failure_step_data = self.failure_detection_module.process_step(step_data)
+                failure_step_data = self.failure_detection_module.process_step(step_data)  # For current step, submit machine check requests for step ot_matching and action_inconsistency, i.e., add both situations to _async_queue
                 
-                failure_flag, failure_reason = self.failure_detection_module.detect_failure(
+                failure_flag, failure_reason = self.failure_detection_module.detect_failure(  # Blocking call, get all results from FailureDetector.async_result_queue, where if result["task_type"] == "ot_matching" then call failure_detector.submit_failure_detection_task,
+                # which will push "failure_detection" request to _async_queue; if "action_inconsistency" it will be added to action_inconsistency_buffer; if "failure_detection", it will log.
                     timestep=j,
                     max_episode_length=self.max_episode_length,
                     failure_step_data=failure_step_data
                 )
+                # Another thread FailureDetector._async_processing_thread will loop to pop from _async_queue, then read task_type, if "ot_matching"/"action_inconsistency" then compute statistical metrics (ot_cost/action inconsistency), if "failure_detection" then determine if ot/action has problems based on previously computed statistical metrics,
+                # finally all three types of results are put into async_result_queue
                 
                 if failure_flag or j >= self.max_episode_length - self.Ta:
                     if failure_flag:
@@ -513,6 +516,8 @@ class RealRobotRunner:
                         self.robot_env.keyboard.ctn = False
                         self.robot_env.keyboard.help = True
                         break
+            # ================Detect failure===============
+
             
             # Check for maximum episode length without failure detection
             elif j >= self.max_episode_length - self.Ta:

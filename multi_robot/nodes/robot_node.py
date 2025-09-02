@@ -295,7 +295,7 @@ class RobotNode(RealRobotRunner):
                     self.call_human_for_help("timeout")
                     self.robot_state = "idle"
                 else:
-                    self.stop_event = "cancel"
+                    self.stop_event = "timeout"
                     self.call_timeout_demo()
                     self.finish_episode = True
 
@@ -318,7 +318,7 @@ class RobotNode(RealRobotRunner):
                 break
 
         # Finalize episode and return data
-        if self.finish_episode and (self.stop_event == "accept" or self.stop_event == "quit"):
+        if self.finish_episode and (self.stop_event == "accept" or self.stop_event == "quit" or self.stop_event == "timeout"):
             episode_data = self._finalize_episode(self.episode_buffers, self.episode_id)
             return episode_data
         else:
@@ -432,15 +432,16 @@ class RobotNode(RealRobotRunner):
                         print("Maximum episode length reached")
 
                      # Send human check request
-                    if self.j >= self.max_episode_length - self.Ta:
+                    if failure_flag:
+                        self.call_human_for_help("failure")
+                    else:
                         if not self.is_demo:
                             self.call_human_for_help("timeout") #send message to teleop
                         else:
-                            self.stop_event = "cancel"
+                            self.stop_event = "timeout"
                             self.call_timeout_demo()
                             self.finish_episode = True
-                    else:
-                        self.call_human_for_help("failure")
+
                     return  
             # ================Detect failure===============
             
@@ -451,7 +452,7 @@ class RobotNode(RealRobotRunner):
                 if not self.is_demo:
                     self.call_human_for_help("timeout")
                 else:
-                    self.stop_event = "cancel"
+                    self.stop_event = "timeout"
                     self.call_timeout_demo()
                     self.finish_episode = True
                 return  

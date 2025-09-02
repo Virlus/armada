@@ -135,15 +135,16 @@ class RobotNode(RealRobotRunner):
         """Define message routing table for different message types and their handlers.
         Maps incoming messages to appropriate handler methods."""
         handlers = {
-            "READY": self.get_ready_takeover,
+            "READY": self._get_ready_takeover,
             "TELEOP_TAKEOVER_RESULT": self._handle_teleop_takeover_result,
-            "CONTINUE_POLICY": self.handle_ctn,
-            "TELEOP_CTRL_START": self.start_being_teleoped,
-            "COMMAND": self.process_teleop_command,
-            "TELEOP_CTRL_STOP": self.ready_to_stop,
-            "THROTTLE_SHIFT": self.process_throttle_info,
+            "CONTINUE_POLICY": self._handle_ctn,
+            "TELEOP_CTRL_START": self._start_being_teleoped,
+            "COMMAND": self._process_teleop_command,
+            "TELEOP_CTRL_STOP": self._ready_to_stop,
+            "THROTTLE_SHIFT": self._process_throttle_info,
             "REWIND_ROBOT": self._handle_rewind_robot,
-            "SCENE_ALIGNMENT_COMPLETED": self.handle_scene_alignment_completed,
+            "SCENE_ALIGNMENT_COMPLETED": self._handle_scene_alignment_completed,
+            "QUIT": self._handle_quit,
         }
         for msg_type, handler in handlers.items():
             self.message_handler.register_handler(msg_type, handler)
@@ -171,8 +172,13 @@ class RobotNode(RealRobotRunner):
         Logs unrecognized messages for debugging."""
         print(f"Unknown command: {message}")
     
-        
-
+    def _handle_quit(self, message: str):
+        """Handle quit command from teleop.
+        Instructs robot to quit."""
+        self.stop_event = "quit"
+        self.running = False
+        with self.lock:
+            self.finish_episode = True
     
     def _initialize_robot_env(self):
         """Initialize robot environment"""
@@ -190,7 +196,8 @@ class RobotNode(RealRobotRunner):
     def _run_rollout(self):
         """Main rollout loop"""
         try:
-            while True: 
+            while self.running: 
+                
                 print(f"Rollout episode: {self.episode_idx}")
                 
                 # Run single episode
@@ -281,7 +288,7 @@ class RobotNode(RealRobotRunner):
         # Policy inference loop
         self.j = 0  # Episode timestep     
 
-        while True:
+        while self.running:
             if self.j >= self.max_episode_length - self.Ta and self.robot_state == "agent_controlled":
                 if not self.is_demo:
                     print("Maximum episode length reached, turning to human for help.")
@@ -311,7 +318,7 @@ class RobotNode(RealRobotRunner):
                 break
 
         # Finalize episode and return data
-        if self.finish_episode and self.stop_event == "accept":
+        if self.finish_episode and (self.stop_event == "accept" or self.stop_event == "quit"):
             episode_data = self._finalize_episode(self.episode_buffers, self.episode_id)
             return episode_data
         else:
@@ -457,7 +464,7 @@ class RobotNode(RealRobotRunner):
     def call_timeout_demo(self):
         self.socket.send(f"TIMEOUT_of_{self.robot_id}") 
     
-    def handle_ctn(self,message =None):
+    def _handle_ctn(self,message =None):
         """Handle continue policy command from teleop.
         Resumes autonomous policy execution after human check."""
         self.robot_state = "agent_controlled"
@@ -484,7 +491,7 @@ class RobotNode(RealRobotRunner):
                 self.failure_detection_module.failure_indices.pop()
                     
     
-    def get_ready_takeover(self, message):
+    def _get_ready_takeover(self, message):
         """Prepare for human takeover.
         Extracts teleop ID and prepares for teleoperation."""
         """Prepare for takeover"""
@@ -492,7 +499,7 @@ class RobotNode(RealRobotRunner):
         teleop_id = parse_message_regex(message, templ)[0]
         self.teleop_id = teleop_id
 
-    def process_throttle_info(self, msg):
+    def _process_throttle_info(self, msg):
         """Process throttle shift information from teleop.
         Parses position and rotation deltas for teleoperation."""
         pattern = r"THROTTLE_SHIFT_POSE_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\]"
@@ -567,7 +574,7 @@ class RobotNode(RealRobotRunner):
         
         print("Scene alignment completed")
     
-    def handle_scene_alignment_completed(self, message):
+    def _handle_scene_alignment_completed(self, message):
         """Handle scene alignment completion notification.
         Updates scene alignment state when teleop confirms completion."""
         """Handle scene alignment completion notification"""
@@ -644,7 +651,7 @@ class RobotNode(RealRobotRunner):
         print("Scene alignment display with reference completed")
           
     
-    def start_being_teleoped(self,message:str):
+    def _start_being_teleoped(self,message:str):
         """Start being teleoperated"""
         print("Start being teleoperated, state switched to 'TELEOP_CONTROLLED'")
         # Get current pose for human teleop
@@ -666,7 +673,7 @@ class RobotNode(RealRobotRunner):
         self.teleop_thread.start()
         
     
-    def ready_to_stop(self,message):
+    def _ready_to_stop(self,message):
         """Process ready-to-stop signal from teleop.
         Sets stop event type based on teleop message."""
         self.ready_to_stop_flag = True
@@ -698,9 +705,9 @@ class RobotNode(RealRobotRunner):
                 self.finish_episode = True   #finish_episode has greater priority over robot_state
         else:
             self.robot_state = "agent_controlled"
-            self.handle_ctn()
+            self._handle_ctn()
     
-    def process_teleop_command(self, message):
+    def _process_teleop_command(self, message):
         """Process teleoperation command from teleop node.
         Parses and executes teleop commands on the robot.""" 
         if "sigma" in message and not self.stop_teleop_key :

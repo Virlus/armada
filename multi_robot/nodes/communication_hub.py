@@ -47,7 +47,8 @@ class CommunicationHub:
             "REWIND_COMPLETED": self.report_rewind_completed,
             "SCENE_ALIGNMENT_WITH_REF_REQUEST": self.report_scene_alignment_with_ref_request,
             "SCENE_ALIGNMENT_COMPLETED": self.report_scene_alignment_completed,
-            "TIMEOUT":self.handle_demo_timeout
+            "TIMEOUT":self.handle_demo_timeout,
+            "QUIT":self.handle_quit 
         }
         
         
@@ -168,6 +169,12 @@ class CommunicationHub:
         """Forward continue policy command from teleop to robot.
         Instructs robot to continue with autonomous policy execution."""
         self.socket.send(self.teleop_dict["0"], message)
+    
+    def handle_quit(self, message, addr):
+        """Forward quit command from teleop to robot.
+        Instructs robot to quit."""
+        for itm in self.robot_dict.keys():
+            self.socket.send(self.robot_dict[itm], message)
 
     def report_teleop_ctrl_start(self, message, addr):
         """Forward teleop control start command from teleop to robot.

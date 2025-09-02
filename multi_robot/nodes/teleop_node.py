@@ -13,17 +13,14 @@ from multi_robot.utils.keyboard_listener import KeyboardListener
 from hardware.my_device.sigma import Sigma7
 from hardware.my_device.logitechG29_wheel import Controller
 
-#TODO:
-#1.increase the ctrl freq
-#2.move c(ctn),f(finish),d(waste),h(rewind&teleop) to teleop   ok
-#3.rewind ok
-#4.throttle
 
 def parse_args():
     parser = argparse.ArgumentParser(description='teleop node parameters')
     parser.add_argument('--teleop_id', type=int, required=False, default=0)
 
     return parser.parse_args()
+
+
 class TeleopNode:
     """Teleoperation node that handles human operator input and intervention.
     Manages teleoperation devices, user interface, and communication with robot nodes."""
@@ -440,15 +437,15 @@ if __name__ == "__main__":
     inform_freq = 2
     listen_freq = 30
     teleop_device = "sigma"
-    num_robot = 2
+    num_robot = 1
 
     assert teleop_device in ["sigma", "keyboard"]
     args = parse_args()
     args.teleop_id = 0 
     # for 2 rbts:
-    teleop_node = TeleopNode(args.teleop_id,"192.168.1.2", 12345,listen_freq,teleop_device,num_robot,Ta=8)
+    # teleop_node = TeleopNode(args.teleop_id,"192.168.1.2", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     # for 1 rbt:
-    # teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
+    teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     try:
         teleop_state_thread = threading.Thread(    #inform teleop state by a freq
             target=teleop_node.inform_teleop_state,
@@ -458,6 +455,11 @@ if __name__ == "__main__":
         teleop_state_thread.start()
 
         while True:
+            if teleop_node.keyboard_listener.quit:
+                completion_msg = f"QUIT".encode()
+                teleop_node.socket.send(completion_msg)
+                time.sleep(0.5)
+                break
             pass
 
     finally:

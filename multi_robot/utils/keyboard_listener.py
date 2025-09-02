@@ -16,6 +16,7 @@ class KeyboardListener:
         self.accept = False
         self.cancel = False
         self._continue = False
+        self.quit = False
         self.listener = None
         
     def start_keyboard_listener(self):
@@ -57,6 +58,9 @@ class KeyboardListener:
             elif key_char == 'n':
                 print("DEBUG: Continue key pressed")
                 self._on_continue()
+            elif key_char == 'q':
+                print("DEBUG: Quit key pressed")
+                self._on_quit()
             else:
                 print(f"DEBUG: Unhandled character: {key_char}")
         except AttributeError:
@@ -76,6 +80,9 @@ class KeyboardListener:
     
     def _on_continue(self):
         self._continue = True
+    
+    def _on_quit(self):
+        self.quit = True
     
     def reset(self):
         self.accept = False

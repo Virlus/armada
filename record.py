@@ -77,7 +77,7 @@ def main(args):
         record(replay_buffer, robot_env)
         if not robot_env.keyboard.quit:
             print("reset the environment...")
-            time.sleep(15)
+            time.sleep(10)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

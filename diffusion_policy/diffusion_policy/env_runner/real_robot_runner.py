@@ -347,7 +347,8 @@ class RealRobotRunner:
             self.failure_detection_module.process_step({
                 'step_type': 'episode_start',
                 'episode_manager': self.episode_manager,
-                'robot_state': robot_state
+                'robot_state': robot_state,
+                'episode_idx': self.episode_idx
             })
         
         # Detach teleop device
@@ -476,7 +477,8 @@ class RealRobotRunner:
                     'policy_obs': policy_obs,
                     'curr_latent': curr_latent,
                     'timestep': j,
-                    'episode_manager': self.episode_manager
+                    'episode_manager': self.episode_manager,
+                    'robot_state': robot_state
                 }
                 
                 failure_step_data = self.failure_detection_module.process_step(step_data)  #对当前step，提交机器检查stepot_matching和action_inconsistency的申请，即对这两种情形都加入_async_queue
@@ -597,7 +599,7 @@ class RealRobotRunner:
         curr_rot = R.from_quat(curr_tcp[3:], scalar_first=True)
         
         # Let failure detection module determine rewinding behavior
-        if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding'):
+        if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding') and self.failure_detection_module.enable_OT:
             rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_with_failure_detection(episode_buffers, curr_timestep, curr_pos, curr_rot)
         else:
             rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_simple(episode_buffers, curr_timestep, curr_pos, curr_rot)
@@ -649,6 +651,12 @@ class RealRobotRunner:
                 if i // self.Ta >= 3:
                     print("Stop rewinding (reached 3 Ta-step limit).")
                     break
+
+                # Rewind the failure logs as well if it's an action inconsistency module
+                if self.failure_detection_module and hasattr(self.failure_detection_module, '_rewind_ot_plan'):
+                    self.failure_detection_module._rewind_ot_plan(j)
+                elif self.failure_detection_module and hasattr(self.failure_detection_module, '_rewind_failure_logs'):
+                    self.failure_detection_module._rewind_failure_logs(j)
             
             # Rewind one step
             curr_pos, curr_rot, prev_side_cam, prev_wrist_cam = self._rewind_single_step(episode_buffers, curr_pos, curr_rot)

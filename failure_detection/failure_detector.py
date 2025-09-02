@@ -166,7 +166,7 @@ class FailureDetector:
                     idx = data["idx"]
                     expert_ot_threshold = data["expert_ot_threshold"]
                     enable_action_inconsistency = data["enable_action_inconsistency"]
-                    
+                    enable_OT = data["enable_OT"]
                     # Perform failure detection based on enabled detection types
                     inconsistency_violation = False
                     if enable_action_inconsistency and expert_action_threshold is not None:
@@ -321,7 +321,7 @@ class FailureDetector:
                 np.array(self.success_action_inconsistencies), 
                 self.action_inconsistency_percentile
             )
-
+            
         if greedy_ot_cost is not None and timesteps is not None and self.enable_OT:
             self.success_ot_values = np.concatenate((
                 self.success_ot_values, 
@@ -373,11 +373,10 @@ class FailureDetector:
             self.action_inconsistency_percentile = success_stats['action_inconsistency_percentile'] if 'action_inconsistency_percentile' in success_stats else self.action_inconsistency_percentile
             if len(self.success_action_inconsistencies) > 0:
                 self.expert_action_threshold = np.percentile(self.success_action_inconsistencies, self.action_inconsistency_percentile)
-
+        
         if self.enable_OT:
             self.success_ot_values = success_stats['ot_values']
-            self.ot_percentile = success_stats[
-                'ot_percentile'] if 'ot_percentile' in success_stats else self.ot_percentile
+            self.ot_percentile = success_stats['ot_percentile'] if 'ot_percentile' in success_stats else self.ot_percentile
             if len(self.success_ot_values) > 0:
                 self.expert_ot_threshold = np.percentile(self.success_ot_values, self.ot_percentile)
         

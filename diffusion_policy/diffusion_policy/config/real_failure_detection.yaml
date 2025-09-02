@@ -1,25 +1,27 @@
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/fold_towel/0729_15.06.55_train_diffusion_transformer_hybrid_dino_multi_gpu_0728_fold_towel_initial/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/fold_towel/0728_fold_towel
-save_buffer_path: /mnt/workspace/DP/fold_towel/0728_fold_towel_ours_dagger_round1
-output_dir: diffusion_policy/outputs/visual/0728_fold_towel_rollout_round1
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/demo/0816_02.09.55_train_diffusion_transformer_hybrid_dino_multi_gpu_0815_final_fold_towel_three_robots_demo_round2_only_human_intv/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/demo/0815_final_fold_towel_three_robots_number_1_round1_disable_action_inconsistency
+save_buffer_path: /mnt/workspace/DP/demo/0820_single_robot_ot_visual_demo_round1
+output_dir: diffusion_policy/outputs/visual/0818_fold_towel_rollout_first_robot
 
 Ta: 8
 random_init: True
-seed: 0
+seed: 31
 
 # Failure detection configuration
 failure_detection_module: action_inconsistency_ot
 
 # Failure detection hyperparameters
-enable_action_inconsistency: True
+enable_action_inconsistency: False
 enable_OT: True
+enable_visualization: True  # Enable real-time OT visualization
 inconsistency_metric: expert
 num_samples: 4
 num_expert_candidates: 50
 action_inconsistency_percentile: 90
 ot_percentile: 95
 soft_ot_ratio: 0.2
+update_stats: True
 
 # Sirius-related hyperparameters
 post_process_action_mode: False

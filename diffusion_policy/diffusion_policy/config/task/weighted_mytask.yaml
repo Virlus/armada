@@ -44,4 +44,5 @@ dataset:
   shape_meta: ${shape_meta}
   max_n_episodes: 150
   random_crop: True
+  color_jitter: True
   image_shape: ${task.image_shape}

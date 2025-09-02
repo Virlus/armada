@@ -69,3 +69,4 @@ dependencies:
     - transforms3d==0.4.2
     - pyrealsense2==2.55.1.6486
     - open3d==0.19.0
+    - kornia==0.8.1

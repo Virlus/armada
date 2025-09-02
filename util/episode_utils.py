@@ -39,10 +39,6 @@ class EpisodeManager:
         # Initialize observation history buffers
         self.reset_observation_history()
         
-        # Initialize action tracking
-        self.last_predicted_abs_actions = None
-        self.curr_predicted_abs_actions = None
-        
         # Current pose tracking
         self.last_p = None
         self.last_r = None

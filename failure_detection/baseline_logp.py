@@ -104,6 +104,17 @@ class BaselineLogpModule(FailureDetectionModule):
             return {'curr_logp': curr_logp.item(), 'upper_bound': upper_bound}
         
         return {}
+
+    def _rewind_failure_logs(self, j: int):
+        """Adjust failure logs"""
+        # Adjust failure indices if needed
+        if len(self.failure_indices) > 0:
+            latest_failure_timestep = self.failure_indices.pop()
+            if latest_failure_timestep == j // self.Ta - 1:
+                self.failure_indices = [i for i in self.failure_indices if i < latest_failure_timestep - 1]
+                self.failure_indices.append(latest_failure_timestep-1)
+            else:
+                self.failure_indices.append(latest_failure_timestep)
     
     def finalize_episode(self, episode_data: Dict[str, Any]) -> Dict[str, Any]:
         """Finalize episode processing and return failure indices"""

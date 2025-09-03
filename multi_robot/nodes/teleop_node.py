@@ -122,6 +122,7 @@ class TeleopNode:
     
     def handle_sigma_resume(self, message):
         """Handle sigma resume command"""
+        self.resume_state = "idle"
         if "DURING_TELEOP" in message:
             templ = "SIGMA_of_{}_RESUME_from_{}_DURING_TELEOP"
             teleop_id, rbt_id = parse_message_regex(message, templ)
@@ -284,8 +285,10 @@ class TeleopNode:
         almost_stop_t = -1
         interval = 1.0 / self.listen_freq
         self.stop_event = None
+        self.resume_state = "idle" #idle/waiting
         while True:
             start_time = time.time()
+            last_throttle = False if not "throttle" in locals() else (throttle < -0.9)
 
             if almost_stop_t != -1 and time.time() - almost_stop_t >= 1.0:  #give robot node one more second to act
                 print ("Stop sending command.")
@@ -319,8 +322,15 @@ class TeleopNode:
                         self.keyboard.quit = True
                 
                 throttle = self.controller.get_throttle()
-                # if not throttle < -0.9:
-                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
+                if throttle >= -0.9:
+                    if last_throttle:
+                        self.resume_state = "waiting"
+                        self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
+                    if self.resume_state != "waiting":
+                        self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
+                elif throttle < -0.9 and not last_throttle:
+                    self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
+                
                 elapsed = time.time() - start_time
                 time.sleep(max(0, interval - elapsed))
 
@@ -437,15 +447,15 @@ if __name__ == "__main__":
     inform_freq = 2
     listen_freq = 30
     teleop_device = "sigma"
-    num_robot = 1
+    num_robot = 3
 
     assert teleop_device in ["sigma", "keyboard"]
     args = parse_args()
     args.teleop_id = 0 
     # for 2 rbts:
-    # teleop_node = TeleopNode(args.teleop_id,"192.168.1.2", 12345,listen_freq,teleop_device,num_robot,Ta=8)
+    teleop_node = TeleopNode(args.teleop_id,"192.168.1.3", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     # for 1 rbt:
-    teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
+    # teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     try:
         teleop_state_thread = threading.Thread(    #inform teleop state by a freq
             target=teleop_node.inform_teleop_state,

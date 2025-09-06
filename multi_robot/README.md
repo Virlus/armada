@@ -9,8 +9,9 @@
 2. check the wired network interface
 
 ```
-ip a -------------> 2: ABC
+ip a
 ```
+The name of the second interface should overwrite the ABC values below.
 
 3. configure static IP addresses
 
@@ -28,7 +29,7 @@ network:
   version: 2
   renderer: networkd
   ethernets:
-    ABC:  
+    ABC (Use your own interface name):  
       addresses: [192.168.1.1/24] for A and [192.168.1.2/24] for B
       dhcp4: no
       dhcp6: no

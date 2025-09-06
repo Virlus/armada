@@ -762,7 +762,7 @@ class RobotNode(RealRobotRunner):
             return
     
         self.abs_p = self.robot_env.robot.init_pose[:3] + self.diff_p_arr
-        self.abs_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True).inv() * R.from_quat(self.diff_r_arr, scalar_first=True)
+        self.abs_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True) * R.from_quat(self.diff_r_arr, scalar_first=True)
         self.curr_p_action = self.abs_p - self.last_p
         self.curr_r_action = self.last_r.inv() * self.abs_r
         self.last_p = self.abs_p    
@@ -778,13 +778,16 @@ class RobotNode(RealRobotRunner):
         if self.last_throttle:
             self.last_throttle = False
             self.send_resume_sigma(during_teleop=True)  # "during_teleop" is to make sure the action recorded is right after the detach
-            if self.delta_p_arr is None or self.delta_r_arr is None: 
-                self.robot_state = "idle"
-            else:
+            while True:
+                if self.delta_p_arr is None or self.delta_r_arr is None: 
+                    self.robot_state = "idle"
+                    time.sleep(0.02)
+                    continue
                 self.last_p = self.delta_p_arr + self.robot_env.robot.init_pose[:3]
                 self.last_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True) * R.from_quat(self.delta_r_arr, scalar_first=True)
                 self.delta_p_arr = None
                 self.delta_r_arr = None
+                break
             return
 
         # Execute a single teleop action step

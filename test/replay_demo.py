@@ -22,8 +22,61 @@ def main(args):
     # Initialize robot environment
     img_shape = [3, 224, 224]
     fps = 10
-    # robot_env = RobotEnv(camera_serial=CAM_SERIAL, img_shape=img_shape, fps=fps)
+    robot_env = RobotEnv(camera_serial=CAM_SERIAL, img_shape=img_shape, fps=fps)
     replay_buffer = ReplayBuffer.copy_from_path(args.demo_path, keys=None)
+
+    ## ============================================== Replay on real robot while saving image observations ===================================================== ###
+
+    image_save_path = os.path.join(args.output, 'images')
+    os.makedirs(image_save_path, exist_ok=True)
+
+    for i in range(args.start_index, replay_buffer.n_episodes):
+        curr_init_pose = replay_buffer['tcp_pose'][replay_buffer.episode_ends[i-1]] if i > 0 else replay_buffer['tcp_pose'][0]
+        robot_env.deploy_action(curr_init_pose[:7], robot_env.gripper.max_width)
+        time.sleep(4)
+        
+        # if refer:
+        #     robot_env.align_scene_with_file(reference_path, i - args.start_index)
+
+        last_p = curr_init_pose[:3]
+        last_r = R.from_quat(curr_init_pose[3:7], scalar_first=True)
+        for j in range(0 if i == 0 else replay_buffer.episode_ends[i-1], replay_buffer.episode_ends[i]):
+            start_time = time.time()
+            curr_p_action = replay_buffer['action'][j, :3]
+            curr_r_action = R.from_quat(replay_buffer['action'][j, 3:7], scalar_first=True)
+            curr_p = last_p + curr_p_action
+            curr_r = last_r * curr_r_action
+            last_p = curr_p
+            last_r = curr_r
+            robot_env.deploy_action(np.concatenate((curr_p, curr_r.as_quat(scalar_first=True)), 0), replay_buffer['action'][j, 7])
+            time.sleep(max(1 / 10 - (time.time() - start_time), 0))
+
+        for j in range(0 if i == 0 else replay_buffer.episode_ends[i-1], replay_buffer.episode_ends[i]):
+            episode_path = os.path.join(image_save_path, f'episode_{i}')
+            os.makedirs(episode_path, exist_ok=True)
+            side_img = replay_buffer['side_cam'][j]
+            wrist_img = replay_buffer['wrist_cam'][j]
+            Image.fromarray(side_img).save(os.path.join(episode_path, f'side_img_{j}.png'))
+            Image.fromarray(wrist_img).save(os.path.join(episode_path, f'wrist_img_{j}.png'))
+
+        while True:
+            key = input('Press "s" to save to filtered data, "c" to continue, or "q" to quit: ')
+            if key == 'q':
+                exit(0)
+            elif key == 'c':
+                break
+            elif key == 's':
+                # save_buffer.add_episode(replay_buffer.get_episode(i, copy=True), compressors='disk')
+                break
+            else:
+                continue
+
+        robot_env.reset_robot()
+        robot_env.keyboard.ctn = False
+        robot_env.keyboard.start = False
+        robot_env.keyboard.quit = False
+
+    ## ============================================================================================================================================================ ###
 
     # If there exists visual reference for initial state, load it before rollout
     reference_path = args.reference

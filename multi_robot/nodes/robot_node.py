@@ -780,7 +780,7 @@ class RobotNode(RealRobotRunner):
             self.send_resume_sigma(during_teleop=True)  # "during_teleop" is to make sure the action recorded is right after the detach
             while True:
                 if self.delta_p_arr is None or self.delta_r_arr is None: 
-                    self.robot_state = "idle"
+                    # self.robot_state = "idle" # TODO: verify whether this fixes the observation discontinuity issue
                     time.sleep(0.02)
                     continue
                 self.last_p = self.delta_p_arr + self.robot_env.robot.init_pose[:3]

@@ -787,18 +787,18 @@ class RobotNode(RealRobotRunner):
                 self.last_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True) * R.from_quat(self.delta_r_arr, scalar_first=True)
                 self.delta_p_arr = None
                 self.delta_r_arr = None
+                self.send_resume_complete_to_sigma()
                 break
             return
 
         # Execute a single teleop action step
         if self.robot_state == "teleop_controlled": 
             # Deploy action to robot
+            gripper_action = self.robot_env.gripper.max_width * self.width / 1000
             self.robot_env.deploy_action(
                 np.concatenate((self.abs_p, self.abs_r.as_quat(scalar_first=True))),
-                self.width
+                gripper_action
             )
-            self.robot_env.gripper.move_from_sigma(self.width)
-            gripper_action = self.robot_env.gripper.max_width * self.width / 1000
             
             # Save demo data for return
             teleop_data = {
@@ -877,6 +877,11 @@ class RobotNode(RealRobotRunner):
             msg = f"SIGMA_of_{self.teleop_id}_RESUME_from_{self.robot_id}_DURING_TELEOP".encode()
         else:
             msg = f"SIGMA_of_{self.teleop_id}_RESUME_from_{self.robot_id}".encode()
+        self.socket.send(msg)
+
+    def send_resume_complete_to_sigma(self):
+        """Send resume complete message to sigma device"""
+        msg = f"SIGMA_of_{self.teleop_id}_RESUME_COMPLETED_from_{self.robot_id}".encode()
         self.socket.send(msg)
     
     def _rewind_robot(self, episode_buffers: Dict[str, List], j) -> Tuple[int, np.ndarray, R]:

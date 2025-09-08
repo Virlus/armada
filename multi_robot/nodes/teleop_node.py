@@ -94,6 +94,7 @@ class TeleopNode:
         
         sigma_handlers = {
             "DETACH": self.handle_sigma_detach,
+            "RESUME_COMPLETED": self.handle_sigma_resume_completed,
             "RESUME": self.handle_sigma_resume,
             "RESET": self.handle_sigma_reset,
             "TRANSFORM": self.handle_tcp_transform_robot,
@@ -120,9 +121,15 @@ class TeleopNode:
         teleop_id, rbt_id = parse_message_regex(message, templ)
         self.sigma.reset(rbt_id)
     
+    def handle_sigma_resume_completed(self, message):
+        """Handle sigma resume completed command"""
+        templ = "SIGMA_of_{}_RESUME_COMPLETED_from_{}"
+        teleop_id, rbt_id = parse_message_regex(message, templ)
+        self.resume_state = "idle"
+    
     def handle_sigma_resume(self, message):
         """Handle sigma resume command"""
-        self.resume_state = "idle"
+        # self.resume_state = "idle" # [TODO] check whether this causes the Bad File Descriptor issue
         if "DURING_TELEOP" in message:
             templ = "SIGMA_of_{}_RESUME_from_{}_DURING_TELEOP"
             teleop_id, rbt_id = parse_message_regex(message, templ)

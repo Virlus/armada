@@ -68,6 +68,7 @@ class CommunicationHub:
         Processes different sigma command types (DETACH, RESUME, RESET, TRANSFORM)."""
         sigma_handlers = {
             "DETACH": self.report_sigma_detach,
+            "RESUME_COMPLETED": self.report_sigma_resume_completed,
             "RESUME": self.report_sigma_resume,
             "RESET": self.report_sigma_reset,
             "TRANSFORM": self.report_sigma_transform,
@@ -220,6 +221,14 @@ class CommunicationHub:
             templ = "SIGMA_of_{}_RESUME_from_{}_DURING_TELEOP"
         else:
             templ = "SIGMA_of_{}_RESUME_from_{}"
+        teleop_id, rbt_id = parse_message_regex(message, templ)
+        send_msg = message
+        self.socket.send(self.teleop_dict[teleop_id], send_msg)
+
+    def report_sigma_resume_completed(self, message, addr):
+        """Forward sigma resume completed command from robot to teleop.
+        Instructs teleop to start sending real-time commands to robot."""
+        templ = "SIGMA_of_{}_RESUME_COMPLETED_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
         send_msg = message
         self.socket.send(self.teleop_dict[teleop_id], send_msg)

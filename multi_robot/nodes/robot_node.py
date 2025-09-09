@@ -121,8 +121,8 @@ class RobotNode(RealRobotRunner):
         self.diff_r_arr = None
         self.width = None
         self.throttle = None
-        self.delta_p_arr = None
-        self.delta_r_arr = None
+        # self.delta_p_arr = None
+        # self.delta_r_arr = None
         self.rewind_key = False
         self.rewind_pos = None
         self.rewind_rot = None
@@ -515,8 +515,8 @@ class RobotNode(RealRobotRunner):
         diff_r_str = match.group(4)
         
         # Parse arrays
-        self.delta_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")])
-        self.delta_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")])
+        # self.delta_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")])
+        # self.delta_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")])
         self.robot_state = "teleop_controlled"
     
     def reset_teleop_cmd(self):
@@ -529,8 +529,8 @@ class RobotNode(RealRobotRunner):
         self.diff_r_arr = None
         self.width = None
         self.throttle = None
-        self.delta_p_arr = None
-        self.delta_r_arr = None
+        # self.delta_p_arr = None
+        # self.delta_r_arr = None
         self.abs_p = None
         self.abs_r =None
         self.curr_p_action = None
@@ -772,24 +772,27 @@ class RobotNode(RealRobotRunner):
         # Handle throttle detach
         if self.throttle < -0.9:
             if not self.last_throttle:
-                self.detach()
+                # self.detach()
+                self.record_detach_tcp()
                 self.last_throttle = True
             return
 
         if self.last_throttle:
             self.last_throttle = False
-            self.send_resume_sigma(during_teleop=True)  # "during_teleop" is to make sure the action recorded is right after the detach
-            while True:
-                if self.delta_p_arr is None or self.delta_r_arr is None: 
-                    self.robot_state = "idle" # TODO: verify whether this fixes the observation discontinuity issue
-                    time.sleep(0.1)
-                    continue
-                self.last_p = self.delta_p_arr + self.robot_env.robot.init_pose[:3]
-                self.last_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True) * R.from_quat(self.delta_r_arr, scalar_first=True)
-                self.delta_p_arr = None
-                self.delta_r_arr = None
-                self.send_resume_complete_to_sigma()
-                break
+            # self.send_resume_sigma(during_teleop=True)  # "during_teleop" is to make sure the action recorded is right after the detach
+            # while True:
+            #     if self.delta_p_arr is None or self.delta_r_arr is None: 
+            #         self.robot_state = "idle" # TODO: verify whether this fixes the observation discontinuity issue
+            #         time.sleep(0.1)
+            #         continue
+            #     self.last_p = self.delta_p_arr + self.robot_env.robot.init_pose[:3]
+            #     self.last_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True) * R.from_quat(self.delta_r_arr, scalar_first=True)
+            #     # self.delta_p_arr = None
+            #     # self.delta_r_arr = None
+            #     # self.send_resume_complete_to_sigma()
+            #     break
+            self.last_p = state_data['tcp_pose'][:3]
+            self.last_r = R.from_quat(state_data['tcp_pose'][3:], scalar_first=True)
             return
 
         # Execute a single teleop action step
@@ -851,9 +854,14 @@ class RobotNode(RealRobotRunner):
     def detach(self):
         """Detach sigma device from robot control.
         Records current TCP position and sends detach command."""
-        self.detach_tcp = np.concatenate((self.last_p, self.last_r.as_quat(scalar_first=True)), 0)
+        self.detach_tcp = self.robot_env.robot.get_tcp_pose()
         print(f"Detaching sigma at TCP position: {self.detach_tcp}")
         self.send_detach_sigma()
+    
+    def record_detach_tcp(self):
+        """Record current TCP position"""
+        self.detach_tcp = self.robot_env.robot.get_tcp_pose()
+        print(f"Detaching sigma at TCP position: {self.detach_tcp}")
     
     def send_transform_sigma(self, translate, rotation):
         """Send transform message to sigma device.

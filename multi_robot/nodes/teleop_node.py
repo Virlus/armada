@@ -331,11 +331,10 @@ class TeleopNode:
                 throttle = self.controller.get_throttle()
                 if throttle >= -0.9:
                     if last_throttle:
-                        self.resume_state = "waiting"
-                        self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
-                    if self.resume_state != "waiting":
-                        self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
+                        self.sigma.resume(rbt_id)
+                    self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
                 elif throttle < -0.9 and not last_throttle:
+                    self.sigma.detach(rbt_id)
                     self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
                 
                 elapsed = time.time() - start_time

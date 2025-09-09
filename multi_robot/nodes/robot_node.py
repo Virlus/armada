@@ -727,10 +727,11 @@ class RobotNode(RealRobotRunner):
             
             try:
                 # Parse arrays with better error handling
-                self.diff_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")]) 
-                self.diff_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")]) 
-                self.width = float(width) 
-                self.throttle = float(throttle) 
+                self.throttle = float(throttle)
+                if self.throttle >= -0.9:
+                    self.diff_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")]) 
+                    self.diff_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")]) 
+                    self.width = float(width)  
             except ValueError as e:
                 raise ValueError(f"Failed to parse numeric values from command: {e}")
                         
@@ -850,7 +851,7 @@ class RobotNode(RealRobotRunner):
     def detach(self):
         """Detach sigma device from robot control.
         Records current TCP position and sends detach command."""
-        self.detach_tcp = self.robot_env.robot.get_tcp_pose()
+        self.detach_tcp = np.concatenate((self.last_p, self.last_r.as_quat(scalar_first=True)), 0)
         print(f"Detaching sigma at TCP position: {self.detach_tcp}")
         self.send_detach_sigma()
     

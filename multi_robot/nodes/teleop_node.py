@@ -332,6 +332,7 @@ class TeleopNode:
                 if throttle >= -0.9:
                     if last_throttle:
                         self.sigma.resume(rbt_id)
+                        continue
                     self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
                 elif throttle < -0.9 and not last_throttle:
                     self.sigma.detach(rbt_id)

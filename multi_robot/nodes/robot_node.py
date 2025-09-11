@@ -97,8 +97,8 @@ class RobotNode(RealRobotRunner):
         # Robot state management
         self.robot_state = "idle"  # idle / teleop_controlled / agent_controlled / error
         self.teleop_id = 0
-        self.last_query_robot = time.time() - 1
-        self.inform_freq = 5  # Hz
+        self.last_query_robot = time.time() - 1e6
+        self.inform_freq = 0.0001  # Hz
         self.teleop_ctrl_freq = 10  # Hz
         
         # Running state
@@ -121,6 +121,7 @@ class RobotNode(RealRobotRunner):
         self.diff_r_arr = None
         self.width = None
         self.throttle = None
+        self.latest_command_time = None
         # self.delta_p_arr = None
         # self.delta_r_arr = None
         self.rewind_key = False
@@ -529,6 +530,7 @@ class RobotNode(RealRobotRunner):
         self.diff_r_arr = None
         self.width = None
         self.throttle = None
+        self.latest_command_time = None
         # self.delta_p_arr = None
         # self.delta_r_arr = None
         self.abs_p = None
@@ -712,7 +714,7 @@ class RobotNode(RealRobotRunner):
         """Process teleoperation command from teleop node.
         Parses and executes teleop commands on the robot.""" 
         if "sigma" in message and not self.stop_teleop_key :
-            pattern = r"COMMAND_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\],([^,]+),([^,]+)"
+            pattern = r"COMMAND_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\],([^,]+),([^,]+),([^,]+)"
             match = re.match(pattern, message)
             
             if not match:
@@ -724,7 +726,7 @@ class RobotNode(RealRobotRunner):
             diff_r_str = match.group(4)
             width = match.group(5)
             throttle = match.group(6)
-            
+            curr_time = match.group(7)            
             try:
                 # Parse arrays with better error handling
                 self.throttle = float(throttle)
@@ -732,6 +734,7 @@ class RobotNode(RealRobotRunner):
                     self.diff_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")]) 
                     self.diff_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")]) 
                     self.width = float(width)  
+                    self.latest_command_time = float(curr_time)
             except ValueError as e:
                 raise ValueError(f"Failed to parse numeric values from command: {e}")
                         
@@ -759,7 +762,8 @@ class RobotNode(RealRobotRunner):
         joint_pos = state_data['joint_pos']
 
         # Get teleop controls
-        if self.diff_p_arr is None or self.diff_r_arr is None:
+        if self.diff_p_arr is None or self.diff_r_arr is None or time.time() - self.latest_command_time > 0.1:
+            time.sleep(1 / self.teleop_ctrl_freq - (time.time() - start_time))
             return
     
         self.abs_p = self.robot_env.robot.init_pose[:3] + self.diff_p_arr
@@ -768,6 +772,7 @@ class RobotNode(RealRobotRunner):
         self.curr_r_action = self.last_r.inv() * self.abs_r
         self.last_p = self.abs_p    
         self.last_r = self.abs_r  
+        # print(f"=====Teleop command latency: {time.time() - self.latest_command_time} seconds=====")
 
         # Handle throttle detach
         if self.throttle < -0.9:

@@ -334,9 +334,9 @@ class FailureDetector:
     
     def update_percentile_fp(self, ot_fp=False, action_fp=False):
         if ot_fp and self.enable_OT:
-            self.ot_percentile = min(self.ot_percentile + 2.5, 100)
+            self.ot_percentile = min(self.ot_percentile + 10, 100)
         if action_fp and self.enable_action_inconsistency:
-            self.action_inconsistency_percentile = min(self.action_inconsistency_percentile + 2.5, 100)
+            self.action_inconsistency_percentile = min(self.action_inconsistency_percentile + 10, 100)
         
         if self.enable_action_inconsistency and len(self.success_action_inconsistencies) > 0:
             self.expert_action_threshold = np.percentile(
@@ -351,9 +351,9 @@ class FailureDetector:
     
     def update_percentile_fn(self):
         if self.enable_OT:
-            self.ot_percentile = max(self.ot_percentile - 2.5, 0)
+            self.ot_percentile = max(self.ot_percentile - 10, 0)
         if self.enable_action_inconsistency:
-            self.action_inconsistency_percentile = max(self.action_inconsistency_percentile - 2.5, 0)
+            self.action_inconsistency_percentile = max(self.action_inconsistency_percentile - 10, 0)
         
         if self.enable_action_inconsistency and len(self.success_action_inconsistencies) > 0:
             self.expert_action_threshold = np.percentile(

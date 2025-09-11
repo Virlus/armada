@@ -321,6 +321,7 @@ class TeleopNode:
                 self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:{self.keyboard_listener.current_cmd}")  #cmd send from here
 
             elif self.teleop_device == "sigma":
+                curr_time = time.time()
                 diff_p, diff_r, width = self.sigma.get_control(rbt_id)  ##TODO:can already add robot_id
                 diff_r = diff_r.as_quat(scalar_first = True)
                 # Check throttle pedal state (for teleop pausing)
@@ -332,10 +333,10 @@ class TeleopNode:
                 if throttle >= -0.9:
                     if last_throttle:
                         self.sigma.resume(rbt_id)
-                    self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
+                    self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle},{curr_time}") # Send realtime data regardless of who is controlling robot
                 elif throttle < -0.9 and not last_throttle:
                     self.sigma.detach(rbt_id)
-                    self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle}") # Send realtime data regardless of who is controlling robot
+                    self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle},{curr_time}") # Send realtime data regardless of who is controlling robot
                 
                 elapsed = time.time() - start_time
                 time.sleep(max(0, interval - elapsed))
@@ -451,7 +452,7 @@ class TeleopNode:
 
 if __name__ == "__main__":
     inform_freq = 2
-    listen_freq = 30
+    listen_freq = 200
     teleop_device = "sigma"
     num_robot = 3
 

@@ -418,11 +418,37 @@ class RobotNode(RealRobotRunner):
                 
                 failure_step_data = self.failure_detection_module.process_step(step_data)
                 
-                failure_flag, self.failure_reason = self.failure_detection_module.detect_failure( 
+                failure_flag, self.failure_reason, _ = self.failure_detection_module.detect_failure( 
                     timestep=self.j,
                     max_episode_length=self.max_episode_length,
                     failure_step_data=failure_step_data
                 )
+
+                if self.j >= self.max_episode_length - self.Ta: # Making sure that every failure detection result is processed, raising recall
+                    while not self.failure_detection_module.failure_detector.async_queue.empty():
+                        self.failure_detection_module.detect_failure(
+                            timestep=self.j,
+                            max_episode_length=self.max_episode_length,
+                            failure_step_data=failure_step_data
+                        )
+
+                    result_idx = -1
+
+                    while result_idx < self.j // self.Ta - 1: 
+                        while not self.failure_detection_module.failure_detector.async_result_queue.empty():
+                            failure_flag, failure_reason, curr_result_idx = self.failure_detection_module.detect_failure(
+                                timestep=self.j,
+                                max_episode_length=self.max_episode_length,
+                                failure_step_data=failure_step_data
+                            )
+                            result_idx = max(result_idx, curr_result_idx)
+                            print(f"=========== Received failure detection result for timestep: {result_idx} =============")
+                            if failure_flag:
+                                break
+                        if failure_flag:
+                            break
+
+                print(f"=========== Global timestep: {self.j // self.Ta - 1} =============")
 
                 if failure_flag or self.j >= self.max_episode_length - self.Ta:
                     self.robot_state = "idle"         #temporarily set to idle for human judgement

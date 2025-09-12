@@ -176,6 +176,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         results = self.failure_detector.get_results()
         failure_flag = False
         failure_reason = None
+        result_idx = -1
         
         for result in results:
             idx = timestep // self.Ta - 1
@@ -247,6 +248,8 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
             elif result["task_type"] == "failure_detection" and result["idx"] <= idx:
                 failure_flag = result["failure_flag"]
                 failure_reason = result["failure_reason"]
+                result_idx = max(result["idx"], result_idx)
+                print(f"=========== Received failure detection result for timestep: {result_idx} =============")
                 
                 if failure_flag:
                     if failure_reason == "action inconsistency":
@@ -261,7 +264,7 @@ class ActionInconsistencyOTModule(FailureDetectionModule):
         if not failure_flag and timestep >= max_episode_length - self.Ta:
             failure_reason = "maximum episode length reached"
         
-        return failure_flag, failure_reason
+        return failure_flag, failure_reason, result_idx
     
     def process_step(self, step_data: Dict[str, Any]) -> Dict[str, Any]:
         """Process a single step and return any additional data"""

@@ -483,7 +483,7 @@ class RealRobotRunner:
                 
                 failure_step_data = self.failure_detection_module.process_step(step_data)  # For current step, submit machine check requests for step ot_matching and action_inconsistency, i.e., add both situations to _async_queue
                 
-                failure_flag, failure_reason = self.failure_detection_module.detect_failure(  # Blocking call, get all results from FailureDetector.async_result_queue, where if result["task_type"] == "ot_matching" then call failure_detector.submit_failure_detection_task,
+                failure_flag, failure_reason, _ = self.failure_detection_module.detect_failure(  # Blocking call, get all results from FailureDetector.async_result_queue, where if result["task_type"] == "ot_matching" then call failure_detector.submit_failure_detection_task,
                 # which will push "failure_detection" request to _async_queue; if "action_inconsistency" it will be added to action_inconsistency_buffer; if "failure_detection", it will log.
                     timestep=j,
                     max_episode_length=self.max_episode_length,
@@ -491,6 +491,32 @@ class RealRobotRunner:
                 )
                 # Another thread FailureDetector._async_processing_thread will loop to pop from _async_queue, then read task_type, if "ot_matching"/"action_inconsistency" then compute statistical metrics (ot_cost/action inconsistency), if "failure_detection" then determine if ot/action has problems based on previously computed statistical metrics,
                 # finally all three types of results are put into async_result_queue
+
+                if j >= self.max_episode_length - self.Ta: # Making sure that every failure detection result is processed, raising recall
+                    while not self.failure_detection_module.failure_detector.async_queue.empty():
+                        self.failure_detection_module.detect_failure(
+                            timestep=j,
+                            max_episode_length=self.max_episode_length,
+                            failure_step_data=failure_step_data
+                        )
+
+                    result_idx = -1
+
+                    while result_idx < j // self.Ta - 1: 
+                        while not self.failure_detection_module.failure_detector.async_result_queue.empty():
+                            failure_flag, failure_reason, curr_result_idx = self.failure_detection_module.detect_failure(
+                                timestep=j,
+                                max_episode_length=self.max_episode_length,
+                                failure_step_data=failure_step_data
+                            )
+                            result_idx = max(result_idx, curr_result_idx)
+                            print(f"=========== Received failure detection result for timestep: {result_idx} =============")
+                            if failure_flag:
+                                break
+                        if failure_flag:
+                            break
+
+                print(f"=========== Global timestep: {j // self.Ta - 1} =============")
                 
                 if failure_flag or j >= self.max_episode_length - self.Ta:
                     if failure_flag:

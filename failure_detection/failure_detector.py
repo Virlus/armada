@@ -290,8 +290,8 @@ class FailureDetector:
             try:
                 while not self.async_result_queue.empty():
                     result = self.async_result_queue.get_nowait()
-                    if result["task_type"] == "ot_matching" or result["task_type"] == "action_inconsistency":
-                        results.append(result)
+                    # if result["task_type"] == "ot_matching" or result["task_type"] == "action_inconsistency":
+                    results.append(result)
             except queue.Empty:
                 time.sleep(0.01)
                 continue
@@ -334,9 +334,9 @@ class FailureDetector:
     
     def update_percentile_fp(self, ot_fp=False, action_fp=False):
         if ot_fp and self.enable_OT:
-            self.ot_percentile = min(self.ot_percentile + 10, 100)
+            self.ot_percentile = min(self.ot_percentile + 5, 100)
         if action_fp and self.enable_action_inconsistency:
-            self.action_inconsistency_percentile = min(self.action_inconsistency_percentile + 10, 100)
+            self.action_inconsistency_percentile = min(self.action_inconsistency_percentile + 5, 100)
         
         if self.enable_action_inconsistency and len(self.success_action_inconsistencies) > 0:
             self.expert_action_threshold = np.percentile(
@@ -351,9 +351,9 @@ class FailureDetector:
     
     def update_percentile_fn(self):
         if self.enable_OT:
-            self.ot_percentile = max(self.ot_percentile - 10, 0)
+            self.ot_percentile = max(self.ot_percentile - 5, 0)
         if self.enable_action_inconsistency:
-            self.action_inconsistency_percentile = max(self.action_inconsistency_percentile - 10, 0)
+            self.action_inconsistency_percentile = max(self.action_inconsistency_percentile - 5, 0)
         
         if self.enable_action_inconsistency and len(self.success_action_inconsistencies) > 0:
             self.expert_action_threshold = np.percentile(

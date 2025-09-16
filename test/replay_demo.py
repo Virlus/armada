@@ -3,7 +3,7 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from hardware.my_device.robot import FlexivRobot, FlexivGripper
-from robot_env import RobotEnv
+from hardware.robot_env import RobotEnv
 from hardware.my_device.macros import CAM_SERIAL
 from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 

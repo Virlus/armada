@@ -19,7 +19,7 @@ from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
-from robot_env import RobotEnv, HUMAN, ROBOT, PRE_INTV, INTV, postprocess_action_mode
+from hardware.robot_env import RobotEnv, HUMAN, ROBOT, PRE_INTV, INTV, postprocess_action_mode
 from hardware.my_device.macros import CAM_SERIAL
 from util.episode_utils import EpisodeManager
 

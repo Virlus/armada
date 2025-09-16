@@ -9,7 +9,7 @@ import cv2
 
 from diffusion_policy.diffusion_policy.env_runner.real_robot_runner import FailureDetectionModule
 from failure_detection.failure_detector import FailureDetector
-from robot_env import INTV, HUMAN
+from hardware.robot_env import INTV, HUMAN
 from util.image_utils import create_failure_visualization
 from util.online_ot_visualizer import OTVisualizationModule
 

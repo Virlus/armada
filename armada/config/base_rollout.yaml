@@ -1,0 +1,35 @@
+defaults:
+  - _self_
+  - training: train_diffusion_transformer_real_hybrid_dino_multi_gpu_workspace
+
+device_ids: '0'
+checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/demo/0816_02.09.55_train_diffusion_transformer_hybrid_dino_multi_gpu_0815_final_fold_towel_three_robots_demo_round2_only_human_intv/latest.ckpt
+train_dataset_path: /mnt/workspace/DP/demo/0815_final_fold_towel_three_robots_number_1_round1_disable_action_inconsistency
+save_buffer_path: /mnt/workspace/DP/demo/0820_single_robot_ot_visual_demo_round1
+output_dir: diffusion_policy/outputs/visual/0818_fold_towel_rollout_first_robot
+
+Ta: 8
+random_init: True
+seed: 31
+
+# Failure detection configuration
+failure_detection:
+  _target_: float.float.FLOAT
+  max_queue_size: 3
+  num_samples: 1
+  num_expert_candidates: 50
+  ot_percentile: 95
+  soft_ot_ratio: 0.2
+  update_stats: False
+  Ta: ${Ta}
+  train_dataset_path: ${train_dataset_path}
+  save_buffer_path: ${save_buffer_path}
+  output_dir: ${output_dir}
+  enable_visualization: True
+
+# Sirius-related hyperparameters
+post_process_action_mode: False
+sirius_termination: False
+
+policy:
+  num_inference_steps: 8

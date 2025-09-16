@@ -19,7 +19,7 @@ from diffusion_policy.diffusion_policy.workspace.base_workspace import BaseWorks
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
-from robot_env import RobotEnv
+from hardware.robot_env import RobotEnv
 from hardware.my_device.macros import CAM_SERIAL
 from util.episode_utils import EpisodeManager
 

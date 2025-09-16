@@ -1,1 +1,7 @@
 CAM_SERIAL = ["135122075425", "135122070361"]
+# Sirius-specific macros
+HUMAN = 0
+ROBOT = 1
+PRE_INTV = 2
+INTV = 3
+INTV_STEPS = 15

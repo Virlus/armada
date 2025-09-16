@@ -4,7 +4,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.transforms import BlendedGenericTransform
 from PIL import Image
 import torch
-from robot_env import INTV
+from hardware.robot_env import INTV
 
 def process_image(array, size, highlight=False, color = [255, 0, 0]):
     """Process image for visualization with optional highlighting border"""

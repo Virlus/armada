@@ -1,16 +1,16 @@
 name: debug
 
-image_shape: &image_shape [3, 224, 224]
+image_shape: [3, 224, 224]
 dataset_path: /home/yuwenye/project/human-in-the-loop/diffusion_policy/data/multi_robot_exp/0912_final_three_robots_fold_towel_only_human_round3
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
   obs:
     wrist_img:
-      shape: *image_shape
+      shape: ${....image_shape}
       type: rgb
     side_img:
-      shape: *image_shape
+      shape: ${....image_shape}
       type: rgb
     ee_pose:
       shape: [9]
@@ -37,4 +37,4 @@ dataset:
   shape_meta: ${shape_meta}
   random_crop: True
   color_jitter: True
-  image_shape: *image_shape
+  image_shape: ${..image_shape}

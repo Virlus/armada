@@ -1,6 +1,6 @@
 defaults:
-  - _self_
   - training: train_diffusion_transformer_real_hybrid_dino_multi_gpu_workspace
+  - _self_
 
 device_ids: '0'
 checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/demo/0816_02.09.55_train_diffusion_transformer_hybrid_dino_multi_gpu_0815_final_fold_towel_three_robots_demo_round2_only_human_intv/latest.ckpt

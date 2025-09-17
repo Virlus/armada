@@ -28,6 +28,9 @@ class FLOAT(AsyncFailureDetectionModule):
                  save_buffer_path: str = None,
                  output_dir: str = None,
                  enable_visualization: bool = False,
+                 To: int = 2,
+                 ee_pose_dim: List = None,
+                 image_shape: List = None
                  ) -> None:
         super().__init__(max_queue_size=max_queue_size)
 
@@ -37,9 +40,6 @@ class FLOAT(AsyncFailureDetectionModule):
         self.episode_manager: Optional[Any] = None
 
         # Core policy params, initialized in runtime_initialize
-        self.To: Optional[int] = None
-        self.ee_pose_dim: Optional[int] = None
-        self.img_shape: Optional[Tuple[int, int, int]] = None
         self.obs_feature_dim: Optional[int] = None
         self.max_episode_length: Optional[int] = None
 
@@ -52,6 +52,9 @@ class FLOAT(AsyncFailureDetectionModule):
         self.Ta: int = Ta
         self.train_dataset_path: str = train_dataset_path
         self.save_buffer_path: str = save_buffer_path
+        self.To: int = To
+        self.ee_pose_dim: int = ee_pose_dim[0]
+        self.img_shape: Tuple[int, int, int] = image_shape
 
         # Async working state, initialized in runtime_initialize
         self.all_human_latent: List[torch.Tensor] = []
@@ -195,9 +198,6 @@ class FLOAT(AsyncFailureDetectionModule):
         self.policy = policy
         self.replay_buffer = replay_buffer
         self.episode_manager = episode_manager
-        self.To = policy.n_obs_steps
-        self.ee_pose_dim = training_cfg.shape_meta['obs']['qpos']['shape'][0]
-        self.img_shape = training_cfg.task['shape_meta']['obs']['wrist_img']['shape']
         self.obs_feature_dim = policy.obs_feature_dim
         self.max_episode_length = max_episode_length
 

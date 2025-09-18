@@ -11,10 +11,10 @@ from scipy.spatial.transform import Rotation as R
 from omegaconf import DictConfig
 import hydra
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
-from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
-from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+from armada.diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
+from armada.diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
+from armada.diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
 from hardware.robot_env import RobotEnv
 from hardware.my_device.macros import CAM_SERIAL, HUMAN, ROBOT, INTV

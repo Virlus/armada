@@ -1,15 +1,18 @@
+import sys
+import os
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 import torch
 import numpy as np
 from typing import Dict, Any, Tuple, Optional, List
 from collections import OrderedDict
 import tqdm
-from omegaconf import DictConfig
 
 from .async_failure_detector import AsyncFailureDetectionModule
 from float.util import find_matching_expert_demo, cosine_distance, optimal_transport_plan, rematch_expert_episode, OTVisualizationModule
-
 from armada.utils.episode_manager import EpisodeManager
-from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
+from armada.diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from hardware.robot_env import INTV, HUMAN
 
 

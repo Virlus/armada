@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import time
 import numpy as np
@@ -8,35 +9,34 @@ import threading
 from typing import Dict, List, Any, Optional, Tuple
 from scipy.spatial.transform import Rotation as R
 import cv2
-from diffusion_policy.diffusion_policy.workspace.base_workspace import BaseWorkspace
-from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
-from diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
+from omegaconf import DictConfig
+import hydra
 
-from hardware.robot_env import RobotEnv, HUMAN, ROBOT, PRE_INTV, INTV, postprocess_action_mode
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+
+from hardware.robot_env import RobotEnv, ROBOT, INTV
 from hardware.my_device.macros import CAM_SERIAL
-from util.episode_utils import EpisodeManager
-from multi_robot.communication.socket_client import SocketClient
-from multi_robot.utils.message_distillation import parse_message_regex, split_combined_messages, MessageHandler
-from diffusion_policy.diffusion_policy.env_runner.real_robot_runner import RealRobotRunner
+from armada.communication.socket_client import SocketClient
+from armada.utils.message_distillation import parse_message_regex
+from armada.env_runner.real_env_runner import RealEnvRunner
 
 
-class RobotNode(RealRobotRunner):
-    """Robot node that manages policy execution, teleoperation, and human intervention.
-    Handles autonomous control, human takeover, and communication with teleop nodes."""
-    def __init__(self, config, rank: int, device_ids: List[int]):
-        self.is_demo = True
-        # Configuration and device setup for multi-robot
-        self._setup_robot_config(config, rank, device_ids)
+class RobotNode(RealEnvRunner):
+    """Robot node for paralleled autonomous policy rollout, based on single-robot env runner"""
+    def __init__(self, 
+                 cfg: DictConfig, 
+                 rank: int, 
+                 device_ids: List[int]):
+        super().__init__(cfg, rank, device_ids)
+
+        # Configuration and device setup for multi-robot setting
+        self._setup_robot_config(cfg)
         
         # Initialize MessageHandler as a component first
         from multi_robot.utils.message_distillation import MessageHandler
         self.message_handler = MessageHandler()
         self._setup_message_routes()
-        
-        # Initialize base RealRobotRunner with adapted config
-        eval_cfg = self._adapt_config_for_base(config)
-        super().__init__(eval_cfg, rank, device_ids)
         
         # Initialize communication
         self._setup_communication()
@@ -44,39 +44,10 @@ class RobotNode(RealRobotRunner):
         # Initialize robot-specific state management
         self._initialize_robot_state()
 
-    def _setup_robot_config(self, config, rank: int, device_ids: List[int]):
-        """Setup robot-specific configuration and device parameters."""
-        self.config = config
-        # Robot-specific configuration
-        self.robot_id = config.robot_info.robot_id
-        self.is_multi_robot_env = config.robot_info.num_robots > 1
-        self.robot_info_dict = config.robot_info.robot_info_dict
-    
-    def _adapt_config_for_base(self, config):
-        """Adapt robot config to work with RealRobotRunner base class."""
-        # # Create a compatible eval_cfg for the base class
-        # eval_cfg = type('EvalConfig', (), {})()
-        
-        # # Copy essential attributes
-        # eval_cfg.checkpoint_path = config.checkpoint_path
-        # eval_cfg.policy = config.policy if hasattr(config, 'policy') else type('Policy', (), {'num_inference_steps': 1})()
-        # eval_cfg.output_dir = config.output_dir
-        # eval_cfg.train_dataset_path = config.train_dataset_path
-        # eval_cfg.save_buffer_path = config.save_buffer_path
-        # eval_cfg.seed = config.seed
-        # eval_cfg.failure_detection_module = getattr(config, 'failure_detection_module', None)
-        # eval_cfg.random_init = getattr(config, 'random_init', False)
-        # eval_cfg.post_process_action_mode = getattr(config, 'post_process_action_mode', False)
-        # eval_cfg.sirius_termination = getattr(config, 'sirius_termination', False)
-        # eval_cfg.num_samples = getattr(config, 'num_samples', 1)
-        # eval_cfg.Ta = getattr(config, 'Ta', None)
-        
-        return config
-
     def _setup_communication(self):
         """Setup communication with hub."""
-        socket_ip = self.config.robot_info.socket_ip
-        socket_port = self.config.robot_info.socket_port
+        socket_ip = self.cfg.robot_info.socket_ip
+        socket_port = self.cfg.robot_info.socket_port
         self.socket = SocketClient(socket_ip, socket_port, message_handler=self.message_handler.handle_message)
         self.socket.start_connection()
         self.lock = threading.Lock()
@@ -84,15 +55,15 @@ class RobotNode(RealRobotRunner):
     def _initialize_robot_env(self):
         """Override to support multi-robot environment initialization."""
         self.robot_env = RobotEnv(
-            camera_serial=CAM_SERIAL if not self.is_multi_robot_env else self.config.camera.serial, 
+            camera_serial=self.cfg.camera.serial, 
             img_shape=self.img_shape, 
             fps=self.fps,
             is_multi_robot_env=True,
-            robot_id=self.robot_id,
-            robot_info_dict=self.robot_info_dict
+            robot_id=self.cfg.robot_info.robot_id,
+            robot_info_dict=self.cfg.robot_info.robot_info_dict
         )
 
-    def _initialize_robot_state(self):
+    def _initialize_robot_state(self): #TODO: start refining here at Sep 19
         """Initialize robot-specific state variables."""
         # Robot state management
         self.robot_state = "idle"  # idle / teleop_controlled / agent_controlled / error
@@ -291,14 +262,9 @@ class RobotNode(RealRobotRunner):
 
         while self.running:
             if self.j >= self.max_episode_length - self.Ta and self.robot_state == "agent_controlled":
-                if not self.is_demo:
-                    print("Maximum episode length reached, turning to human for help.")
-                    self.call_human_for_help("timeout")
-                    self.robot_state = "idle"
-                else:
-                    self.stop_event = "timeout"
-                    self.call_timeout_demo()
-                    self.finish_episode = True
+                self.stop_event = "timeout"
+                self.call_timeout_demo()
+                self.finish_episode = True
 
             # Handle robot state actions
             if self.robot_state == "agent_controlled":
@@ -462,12 +428,9 @@ class RobotNode(RealRobotRunner):
                     if failure_flag:
                         self.call_human_for_help("failure")
                     else:
-                        if not self.is_demo:
-                            self.call_human_for_help("timeout") #send message to teleop
-                        else:
-                            self.stop_event = "timeout"
-                            self.call_timeout_demo()
-                            self.finish_episode = True
+                        self.stop_event = "timeout"
+                        self.call_timeout_demo()
+                        self.finish_episode = True
 
                     return  
             # ================Detect failure===============
@@ -476,12 +439,9 @@ class RobotNode(RealRobotRunner):
             elif self.j >= self.max_episode_length - self.Ta:
                 self.robot_state = "idle"
                 print("Maximum episode length reached")
-                if not self.is_demo:
-                    self.call_human_for_help("timeout")
-                else:
-                    self.stop_event = "timeout"
-                    self.call_timeout_demo()
-                    self.finish_episode = True
+                self.stop_event = "timeout"
+                self.call_timeout_demo()
+                self.finish_episode = True
                 return  
             
     def call_human_for_help(self,reason):
@@ -498,13 +458,9 @@ class RobotNode(RealRobotRunner):
         self.robot_state = "agent_controlled"
         if self.j >= self.max_episode_length - self.Ta: # after human decide
             print("Maximum episode length reached, turning to human for help.")
-            if not self.is_demo:
-                self.call_human_for_help("timeout")
-                self.robot_state = "idle"
-            else:
-                self.stop_event = "cancel"
-                self.call_timeout_demo()
-                self.finish_episode = True
+            self.stop_event = "cancel"
+            self.call_timeout_demo()
+            self.finish_episode = True
 
         print("False Positive failure! Continue policy rollout.")
     

@@ -2,21 +2,24 @@ defaults:
   - training: train_diffusion_transformer_real_hybrid_dino_multi_gpu_workspace
   - _self_
 
+_target_: env_runner.real_env_runner.RealEnvRunner
+fps: 10
+
 device_ids: '0'
 checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/demo/0816_02.09.55_train_diffusion_transformer_hybrid_dino_multi_gpu_0815_final_fold_towel_three_robots_demo_round2_only_human_intv/latest.ckpt
 train_dataset_path: /mnt/workspace/DP/demo/0815_final_fold_towel_three_robots_number_1_round1_disable_action_inconsistency
-save_buffer_path: /mnt/workspace/DP/multi_robot_exp/0903_fold_towel_three_robots_first_robot_round1
-output_dir: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/outputs/visual/0903_fold_towel_single_robot_round1
+save_buffer_path: /mnt/workspace/DP/demo/0820_single_robot_ot_visual_demo_round1
+output_dir: diffusion_policy/outputs/visual/0818_fold_towel_rollout_first_robot
 
 Ta: 8
 random_init: True
-seed: 15
+seed: 31
 
 # Failure detection configuration
 failure_detection:
   _target_: float.float.FLOAT
   max_queue_size: 3
-  num_samples: 4
+  num_samples: 1
   num_expert_candidates: 50
   ot_percentile: 95
   soft_ot_ratio: 0.2
@@ -30,12 +33,13 @@ failure_detection:
   ee_pose_dim: ${training.shape_meta.obs.ee_pose}
   img_shape: ${training.task.image_shape}
 
-# Sirius-related hyperparameters
-post_process_action_mode: False
-sirius_termination: False
-
 policy:
   num_inference_steps: 8
+  obs_encoder:
+    pretrained_path: null
+  
+training:
+  output_dir: ${output_dir}
 
 # Robot configuration
 robot_info:

@@ -5,17 +5,17 @@ from scipy.spatial.transform import Rotation as R
 
 class EpisodeManager:
     def __init__(self, 
-                 obs_rot_transformer, 
-                 action_rot_transformer, 
-                 obs_feature_dim, 
-                 img_shape, 
-                 state_type, 
-                 state_shape, 
-                 action_dim,
-                 To, 
-                 Ta, 
-                 device, 
-                 num_samples=10):
+                 obs_rot_transformer=None, 
+                 action_rot_transformer=None, 
+                 obs_feature_dim: int = None, 
+                 img_shape: Tuple[int, int, int] = None, 
+                 state_type: str = None, 
+                 state_shape: Tuple[int, ...] = None, 
+                 action_dim: int = None,
+                 To: int = None, 
+                 Ta: int = None, 
+                 device: torch.device = None, 
+                 num_samples: int = None):
         """
         Initialize episode manager
         """
@@ -34,7 +34,7 @@ class EpisodeManager:
         # Initialize observation history buffers
         self.reset_observation_history()
         
-        # Current pose tracking
+        # Target pose tracking
         self.last_p = None
         self.last_r = None
         
@@ -44,16 +44,14 @@ class EpisodeManager:
         self.policy_img_1_history = torch.zeros((self.To, *self.img_shape), device=self.device)
         self.policy_state_history = torch.zeros((self.To, *self.state_shape), device=self.device)
         
-    def initialize_pose(self, p, r, num_samples=None):
-        """Initialize pose tracking"""
-        if num_samples is None:
-            num_samples = self.num_samples
+    def initialize_pose(self, p, r):
+        """Initialize target pose tracking"""
             
-        self.last_p = p[np.newaxis, :].repeat(num_samples, axis=0)
-        self.last_r = R.from_quat(r[np.newaxis, :].repeat(num_samples, axis=0), scalar_first=True)
+        self.last_p = p[np.newaxis, :].repeat(self.num_samples, axis=0)
+        self.last_r = R.from_quat(r[np.newaxis, :].repeat(self.num_samples, axis=0), scalar_first=True)
         
-    def preprocess_robot_state(self, state, state_type):
-        """Preprocess robot state based on type"""
+    def _preprocess_robot_state(self, state):
+        """Preprocess robot state based on proprioceptive type"""
         state = np.array(state)
         
         if self.obs_rot_transformer is not None:
@@ -68,7 +66,7 @@ class EpisodeManager:
         """Update observation history with new images and state"""
         # Process state if needed
         if not isinstance(state, torch.Tensor):
-            state = self.preprocess_robot_state(state, self.state_type)
+            state = self._preprocess_robot_state(state)
         # Update observation history
         self.policy_img_0_history = torch.cat([self.policy_img_0_history[1:], side_img.to(self.device).unsqueeze(0)], dim=0)
         self.policy_img_1_history = torch.cat([self.policy_img_1_history[1:], wrist_img.to(self.device).unsqueeze(0)], dim=0)
@@ -83,7 +81,7 @@ class EpisodeManager:
         }
     
     def get_absolute_action_for_step(self, action_seq, step):
-        """Get absolute action for a specific step in the action chunk"""
+        """Get absolute action for a specific step in the action chunk, used for deployment"""
         curr_p_action = action_seq[:, step, :3]
         curr_p = self.last_p + curr_p_action
         
@@ -96,7 +94,8 @@ class EpisodeManager:
         self.last_p = curr_p
         self.last_r = curr_r
 
-        if step == self.Ta - 1:
+        if step == self.Ta - 1: # At the end of the chunk, the target pose of the first sample should override all the others
+                                # because the first sample is the one that is actually executed
             self.last_r = R.from_quat(R.as_quat(self.last_r, scalar_first=True)[0:1, :].repeat(self.num_samples, axis=0), scalar_first=True)
             self.last_p = self.last_p[0:1, :].repeat(self.num_samples, axis=0)
         

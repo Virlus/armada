@@ -97,7 +97,6 @@ class FLOAT(AsyncFailureDetectionModule):
                 human_demo_indices: List[int] = task["human_demo_indices"]
                 all_human_latent: List[torch.Tensor] = task["all_human_latent"]
                 human_eps_len: List[int] = task["human_eps_len"]
-                replay_buffer = task["replay_buffer"]
                 device: torch.device = task["device"]
                 Ta: int = task["Ta"]
                 max_episode_length: int = task["max_episode_length"]
@@ -187,7 +186,6 @@ class FLOAT(AsyncFailureDetectionModule):
 
     # ===================== Public API (FailureDetectionModule) =====================
     def runtime_initialize(self, 
-                           training_cfg: DictConfig,
                            device: torch.device, 
                            policy: torch.nn.Module,
                            replay_buffer: ReplayBuffer,
@@ -303,8 +301,6 @@ class FLOAT(AsyncFailureDetectionModule):
             self.greedy_ot_cost = torch.zeros((self.max_episode_length // self.Ta,), device=self.device)
             self.rollout_latent = torch.zeros((self.max_episode_length // self.Ta, int(self.To * self.obs_feature_dim)), device=self.device)
 
-            return {'matched_human_idx': self.matched_human_idx}
-
         elif step_type == 'policy_step':
             curr_latent = step_data['curr_latent']
             timestep = step_data['timestep']
@@ -327,31 +323,32 @@ class FLOAT(AsyncFailureDetectionModule):
                     "human_demo_indices": self.human_demo_indices,
                     "all_human_latent": self.all_human_latent,
                     "human_eps_len": self.human_eps_len,
-                    "replay_buffer": self.replay_buffer,
                     "device": self.device,
                     "Ta": self.Ta,
                     "max_episode_length": self.max_episode_length
                 })
 
-        return {}
+    def wait_for_final_results(self, j: int) -> Tuple[bool, str, int]:
+        while not self.async_queue.empty():
+            self.detect_failure(timestep=j, max_episode_length=self.max_episode_length)
+        failure_flag = False
+        failure_reason = None
+        result_idx = -1
+        while result_idx < j // self.Ta - 1:
+            while not self.async_result_queue.empty():
+                failure_flag, failure_reason, curr_result_idx = self.detect_failure(timestep=j, 
+                                                                               max_episode_length=self.max_episode_length)
+                result_idx = max(result_idx, curr_result_idx)
+                print(f"=========== Received failure detection result for timestep: {result_idx} =============")
+                if failure_flag:
+                    break
+            if failure_flag:
+                break
+        return failure_flag, failure_reason, result_idx
 
-    def finalize_episode(self, episode_data: Dict[str, Any]) -> Dict[str, Any]:
-        episode = episode_data['episode']
-
-        self.empty_queue()
-        results = self.wait_for_final_results()
-
-        for result in results:
-            if result["task_type"] == "ot_matching":
-                self.matched_human_idx = result["matched_human_idx"]
-                self.human_latent = result["human_latent"]
-                self.demo_len = result["demo_len"]
-                self.expert_weight = result["expert_weight"]
-                self.expert_indices = result["expert_indices"]
-                self.greedy_ot_plan = result["greedy_ot_plan"]
-                self.greedy_ot_cost = result["greedy_ot_cost"]
-
-        self.empty_result_queue()
+    def finalize_episode(self, episode: Dict[str, Any]) -> Dict[str, Any]:
+        j = episode['action_mode'].shape[0] # episode length
+        self.wait_for_final_results(j)
 
         failure_signal = np.zeros((episode['action_mode'].shape[0] // self.Ta,), dtype=np.bool_)
         if len(self.failure_logs) > 0:
@@ -390,6 +387,14 @@ class FLOAT(AsyncFailureDetectionModule):
             self.ot_visualizer.end_episode(success=success_flag, failure_reason=failure_reason)
 
         return {'failure_indices': failure_indices}
+
+    def rewind_step(self, j: int, episode_buffers: Dict[str, List], curr_timestep: int):
+        total_greedy_ot_cost = torch.sum(self.greedy_ot_cost[:curr_timestep // self.Ta])
+        if j % self.Ta == 0 and j > 0 and self.should_stop_rewinding(j, episode_buffers, total_greedy_ot_cost):
+            print("Failure detection module says to stop rewinding.")
+            return False
+        self._rewind_ot_plan(j)
+        return True
 
     def should_stop_rewinding(self, j: int, episode_buffers: Dict[str, List], total_greedy_ot_cost: torch.Tensor) -> bool:
         if hasattr(self, 'soft_ot_ratio') and hasattr(self, 'greedy_ot_cost') and self.greedy_ot_cost is not None:

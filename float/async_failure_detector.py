@@ -105,19 +105,9 @@ class AsyncFailureDetectionModule(FailureDetectionModule, ABC):
             pass
         return results
 
-    def wait_for_final_results(self, timeout: float = 0.5) -> List[Dict[str, Any]]:
-        """Wait up to `timeout` seconds for results to arrive, then return any collected results."""
-        start_wait = time.time()
-        results: List[Dict[str, Any]] = []
-        while time.time() - start_wait < timeout:
-            try:
-                while not self.async_result_queue.empty():
-                    results.append(self.async_result_queue.get_nowait())
-            except queue.Empty:
-                time.sleep(0.01)
-                continue
-            break
-        return results
+    def wait_for_final_results(self, **kwargs) -> Tuple[bool, str, int]:
+        """Wait for all results to be processed"""
+        raise NotImplementedError
 
     def empty_queue(self) -> None:
         """Empty the task queue."""

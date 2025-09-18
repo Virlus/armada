@@ -283,13 +283,3 @@ if __name__ == "__main__": # Test the robustness of Sigma teleoperation
         # Break condition for demo
         if robot_env.keyboard.quit:
             break
-
-
-def postprocess_action_mode(action_mode: np.ndarray):
-    """Postprocessing for action mode identification"""
-    for i in range(1, len(action_mode)):
-        if action_mode[i] == INTV and action_mode[i-1] == ROBOT:
-            pre_intv_indices = np.arange(max(0, i-INTV_STEPS), i)
-            pre_intv_indices = pre_intv_indices[np.where(action_mode[pre_intv_indices] == INTV, False, True)]
-            action_mode[pre_intv_indices] = PRE_INTV
-    return action_mode 

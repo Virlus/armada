@@ -129,7 +129,6 @@ class TeleopNode:
     
     def handle_sigma_resume(self, message):
         """Handle sigma resume command"""
-        # self.resume_state = "idle" # [TODO] check whether this causes the Bad File Descriptor issue
         if "DURING_TELEOP" in message:
             templ = "SIGMA_of_{}_RESUME_from_{}_DURING_TELEOP"
             teleop_id, rbt_id = parse_message_regex(message, templ)
@@ -196,7 +195,6 @@ class TeleopNode:
             'C': self.handle_continue_policy,
             'N': self.handle_need_teleop,
         }
-        #TODO:REMEMBER TO CANCEL
         if request_type=="timeout":
             print("Timeout,directly enter next episode....")
             key_actions['F'](rbt_id, request_type)
@@ -228,33 +226,23 @@ class TeleopNode:
         else:
             raise ValueError(f"Unknown request_type: {request_type}")
 
-    def handle_success(self,rbt_id,request_type):
+    def handle_success(self,rbt_id):
         """Handle success decision from human operator.
         Processes successful task completion and environment reset."""
         print("Success!")
-        # Note: keyboard_listener already stopped in main_human_decide
-        #TODO:REMEMBER TO CANCEL
-        # print("Start manually resetting environment , press 'F' when finished: ", end='', flush=True)
-        # key = input().strip().upper()   # jammed manner,waiting human reset
-        # if key == 'F':
         msg = f"TELEOP_TAKEOVER_RESULT_SUCCESS_from_robot{rbt_id}".encode()
         self.socket.send(msg)
         self.teleop_state = "idle"
 
-    def handle_failure(self,rbt_id,request_type):
+    def handle_failure(self,rbt_id):
         """Handle failure decision from human operator.
         Processes task failure and environment reset."""
         print("Failure!")
-        # Note: keyboard_listener already stopped in main_human_decide
-        #TODO:REMEMBER TO CANCEL
-        # print("Start manually resetting environment , press 'F' when finished: ", end='', flush=True)
-        # key = input().strip().upper()  # jammed manner,waiting human reset
-        # if key == 'F':
         msg = f"TELEOP_TAKEOVER_RESULT_FAILURE_from_robot{rbt_id}".encode()
         self.socket.send(msg)
         self.teleop_state = "idle"
 
-    def handle_continue_policy(self,rbt_id,request_type):
+    def handle_continue_policy(self,rbt_id):
         """Handle continue policy decision from human operator.
         Instructs robot to continue autonomous policy execution."""
         print("Continue Agent Policy!")
@@ -284,7 +272,7 @@ class TeleopNode:
             print("Press 'C' or 'c' to CANCEL, 'T' or 't' to ACCEPT, 'N' or 'n' to CONTINUE CURRENT POLICY :", end='', flush=True)
             self.teleop_ctrl_start(rbt_id)  # This will start keyboard_listener for teleop
 
-    def run_listen_loop(self,rbt_id):
+    def run_listen_loop(self,rbt_id): # TODO
         """Run listening loop for teleoperation commands.
         Continuously sends commands and monitors for stop conditions."""
         ready_to_end_flag = False
@@ -322,7 +310,7 @@ class TeleopNode:
 
             elif self.teleop_device == "sigma":
                 curr_time = time.time()
-                diff_p, diff_r, width = self.sigma.get_control(rbt_id)  ##TODO:can already add robot_id
+                diff_p, diff_r, width = self.sigma.get_control(rbt_id)
                 diff_r = diff_r.as_quat(scalar_first = True)
                 # Check throttle pedal state (for teleop pausing)
                 for event in pygame.event.get():

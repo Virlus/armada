@@ -4,19 +4,16 @@ import re
 import time
 import numpy as np
 import torch
-import dill
 import threading
 from typing import Dict, List, Any, Optional, Tuple
 from scipy.spatial.transform import Rotation as R
 import cv2
 from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from omegaconf import DictConfig
-import hydra
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from hardware.robot_env import RobotEnv, ROBOT, INTV
-from hardware.my_device.macros import CAM_SERIAL
 from armada.communication.socket_client import SocketClient
 from armada.utils.message_distillation import parse_message_regex
 from armada.env_runner.real_env_runner import RealEnvRunner
@@ -29,10 +26,9 @@ class RobotNode(RealEnvRunner):
                  rank: int, 
                  device_ids: List[int]):
         super().__init__(cfg, rank, device_ids)
-
-        # Configuration and device setup for multi-robot setting
-        self._setup_robot_config(cfg)
         
+        self.robot_id = self.cfg.robot_info.robot_id
+
         # Initialize MessageHandler as a component first
         from multi_robot.utils.message_distillation import MessageHandler
         self.message_handler = MessageHandler()
@@ -63,13 +59,11 @@ class RobotNode(RealEnvRunner):
             robot_info_dict=self.cfg.robot_info.robot_info_dict
         )
 
-    def _initialize_robot_state(self): #TODO: start refining here at Sep 19
+    def _initialize_robot_state(self):
         """Initialize robot-specific state variables."""
         # Robot state management
         self.robot_state = "idle"  # idle / teleop_controlled / agent_controlled / error
         self.teleop_id = 0
-        self.last_query_robot = time.time() - 1e6
-        self.inform_freq = 0.0001  # Hz
         self.teleop_ctrl_freq = 10  # Hz
         
         # Running state
@@ -93,15 +87,11 @@ class RobotNode(RealEnvRunner):
         self.width = None
         self.throttle = None
         self.latest_command_time = None
-        # self.delta_p_arr = None
-        # self.delta_r_arr = None
         self.rewind_key = False
         self.rewind_pos = None
         self.rewind_rot = None
         self.ready_to_stop_flag = True
         self.stop_event = None
-        self.stop_teleop_key = False
-        self._last_predicted_abs_actions = None
 
     def _setup_message_routes(self):
         """Define message routing table for different message types and their handlers.
@@ -111,7 +101,7 @@ class RobotNode(RealEnvRunner):
             "TELEOP_TAKEOVER_RESULT": self._handle_teleop_takeover_result,
             "CONTINUE_POLICY": self._handle_ctn,
             "TELEOP_CTRL_START": self._start_being_teleoped,
-            "COMMAND": self._process_teleop_command,
+            "COMMAND": self._process_teleop_command, # TODO
             "TELEOP_CTRL_STOP": self._ready_to_stop,
             "THROTTLE_SHIFT": self._process_throttle_info,
             "REWIND_ROBOT": self._handle_rewind_robot,
@@ -127,8 +117,6 @@ class RobotNode(RealEnvRunner):
         self.detach()
         if "SUCCESS" in message:
             self.stop_event = "accept"
-            if self.failure_reason is not None and self.failure_reason != "maximum episode length reached":
-                self.handle_redundant_failure()
         else:
             self.stop_event = "cancel"
         with self.lock:
@@ -151,21 +139,8 @@ class RobotNode(RealEnvRunner):
         self.running = False
         with self.lock:
             self.finish_episode = True
-    
-    def _initialize_robot_env(self):
-        """Initialize robot environment"""
-        self.robot_env = RobotEnv(
-            camera_serial=CAM_SERIAL if not self.is_multi_robot_env else self.config.camera.serial, 
-            img_shape=self.img_shape, 
-            fps=self.fps,
-            is_multi_robot_env=True,
-            robot_id=self.robot_id,
-            robot_info_dict=self.robot_info_dict
-        )
-    
 
-
-    def _run_rollout(self):
+    def run_rollout(self):
         """Main rollout loop"""
         try:
             while self.running: 
@@ -178,18 +153,13 @@ class RobotNode(RealEnvRunner):
                 if episode_data is not None:
                     # Save episode to replay buffer
                     self.replay_buffer.add_episode(episode_data, compressors='disk')
-                    self.episode_id = self.replay_buffer.n_episodes - 1
-                    print(f'Saved episode {self.episode_id}')
+                    self.saved_episode_idx = self.replay_buffer.n_episodes - 1
+                    print(f'Saved episode {self.saved_episode_idx}')
                 
                 # Reset robot between episodes
                 self.reset()  
-                self.failure_detection_module.failure_detector.last_predicted_abs_actions = None
                 
                 self.episode_idx += 1
-                
-                # Check termination conditions
-                if self._should_terminate():
-                    break
                 
                 # For scene configuration reset
                 time.sleep(5)
@@ -197,7 +167,7 @@ class RobotNode(RealEnvRunner):
         finally:
             self._cleanup()
 
-    def _run_single_episode(self):
+    def _run_single_episode(self) -> Optional[Dict[str, Any]]:
         """Run a single episode of policy execution or teleoperation.
         Handles initialization, execution, and data collection for one episode."""
         time.sleep(1)
@@ -219,10 +189,10 @@ class RobotNode(RealEnvRunner):
         }
          # Reset robot
         random_init_pose = None
-        if getattr(self.config, 'random_init', False):
+        if getattr(self.cfg, 'random_init', False):
             random_init_pose = self.robot_env.robot.init_pose + np.random.uniform(-0.1, 0.1, size=7)
         
-        robot_state = self.reset(getattr(self.config, 'random_init', False), random_init_pose) #1_reset
+        robot_state = self.reset(getattr(self.cfg, 'random_init', False), random_init_pose)
          # Detach teleop device
         self.detach()
 
@@ -238,7 +208,7 @@ class RobotNode(RealEnvRunner):
             )
         
         # Initialize pose tracking
-        if getattr(self.config, 'random_init', False) and random_init_pose is not None:
+        if getattr(self.cfg, 'random_init', False) and random_init_pose is not None:
             self.episode_manager.initialize_pose(random_init_pose[:3], random_init_pose[3:])
         else:
             self.episode_manager.initialize_pose(self.robot_env.robot.init_pose[:3], self.robot_env.robot.init_pose[3:])
@@ -251,31 +221,35 @@ class RobotNode(RealEnvRunner):
         
         # Initialize failure detection module step data
         if self.failure_detection_module:
+            init_policy_obs = self.episode_manager.get_policy_observation()[0:1] # Keep dim but only require the first sample
+            with torch.no_grad():
+                init_latent = self.policy.extract_latent(init_policy_obs)
+                init_latent = init_latent.reshape(-1)
             self.failure_detection_module.process_step({
                 'step_type': 'episode_start',
-                'episode_manager': self.episode_manager,
-                'robot_state': robot_state
+                'episode_idx': self.episode_idx,
+                'rollout_init_latent': init_latent.unsqueeze(0) # For determining expert candidates
             })
 
         # Policy inference loop
         self.j = 0  # Episode timestep     
 
         while self.running:
-            if self.j >= self.max_episode_length - self.Ta and self.robot_state == "agent_controlled":
+            if self.j >= self.max_episode_length and self.robot_state == "agent_controlled":
                 self.stop_event = "timeout"
                 self.call_timeout_demo()
                 self.finish_episode = True
 
             # Handle robot state actions
             if self.robot_state == "agent_controlled":
-                self.run_policy() 
+                self._run_policy_inference_loop() 
                 
             elif self.robot_state == "teleop_controlled":
                 time.sleep(0.1)  # Prevent high CPU usage
             elif self.robot_state == "idle":
                 time.sleep(0.1)
                 if self.rewind_key:
-                    self.handle_prerewind_robot()
+                    self._rewind_robot()
                     self.rewind_key = False
 
             with self.lock:
@@ -286,13 +260,13 @@ class RobotNode(RealEnvRunner):
 
         # Finalize episode and return data
         if self.finish_episode and (self.stop_event == "accept" or self.stop_event == "quit" or self.stop_event == "timeout"):
-            episode_data = self._finalize_episode(self.episode_buffers, self.episode_id)
+            episode_data = self._finalize_episode()
             return episode_data
         else:
             return None
             
     
-    def run_policy(self):
+    def _run_policy_inference_loop(self):
         """Run policy inference loop"""
         while self.j < self.max_episode_length and self.robot_state == "agent_controlled" : 
             start_time = time.time()
@@ -310,22 +284,15 @@ class RobotNode(RealEnvRunner):
             # Get action sequence for execution
             policy_obs = self.episode_manager.get_policy_observation()
             with torch.no_grad():
-                if hasattr(self.policy, 'predict_action'):
-                    if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding') and self.failure_detection_module.enable_OT:
-                        curr_action, curr_latent = self.policy.predict_action(policy_obs, return_latent=True)
-                    else:
-                        curr_action = self.policy.predict_action(policy_obs)
-                        curr_latent = None
+                if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding'):
+                    curr_action, curr_latent = self.policy.predict_action(policy_obs, return_latent=True)
                 else:
-                    curr_action = self.policy(policy_obs)
+                    curr_action = self.policy.predict_action(policy_obs)
                     curr_latent = None
             
             # Get first Ta actions and execute on robot
             np_action_dict = dict_apply(curr_action, lambda x: x.detach().to('cpu').numpy())
             action_seq = np_action_dict['action']
-
-            # Convert to absolute actions and store for rewinding
-            predicted_abs_actions = np.zeros_like(action_seq[:, :, :8])
             
             # Execute action sequence
             for step in range(self.Ta):
@@ -333,17 +300,11 @@ class RobotNode(RealEnvRunner):
                     start_time = time.time()
                 
                 # Get robot state
-                if step == 0:
-                    state_data = robot_state
-                else:
-                    state_data = self.robot_env.get_robot_state()
+                state_data = robot_state if step == 0 else self.robot_env.get_robot_state()
                 
                 # Get absolute action for this step
                 deployed_action, gripper_action, curr_p, curr_r, curr_p_action, curr_r_action = \
                     self.episode_manager.get_absolute_action_for_step(action_seq, step)
-                
-                # Store predicted absolute actions for rewinding
-                predicted_abs_actions[:, step] = np.concatenate((curr_p, curr_r.as_quat(scalar_first=True), gripper_action[:, np.newaxis]), -1)
                 
                 # Execute action on robot
                 self.robot_env.deploy_action(deployed_action, gripper_action[0])
@@ -367,60 +328,32 @@ class RobotNode(RealEnvRunner):
                 time.sleep(max(1 / self.fps - (time.time() - start_time), 0))
                 self.j += 1
             
-            # Store predicted absolute actions for rewinding
-            self._last_predicted_abs_actions = predicted_abs_actions
-            
             # ================Detect failure===============
             if self.failure_detection_module:
                 step_data = {
                     'step_type': 'policy_step',
-                    'action_seq': action_seq,
-                    'predicted_abs_actions': predicted_abs_actions,
-                    'policy_obs': policy_obs,
                     'curr_latent': curr_latent,
                     'timestep': self.j,
-                    'episode_manager': self.episode_manager
+                    'robot_state': robot_state
                 }
                 
-                failure_step_data = self.failure_detection_module.process_step(step_data)
+                self.failure_detection_module.process_step(step_data)
                 
-                failure_flag, self.failure_reason, _ = self.failure_detection_module.detect_failure( 
+                failure_flag, failure_reason, _ = self.failure_detection_module.detect_failure(
                     timestep=self.j,
-                    max_episode_length=self.max_episode_length,
-                    failure_step_data=failure_step_data
+                    max_episode_length=self.max_episode_length
                 )
 
-                if self.j >= self.max_episode_length - self.Ta: # Making sure that every failure detection result is processed, raising recall
-                    while not self.failure_detection_module.failure_detector.async_queue.empty():
-                        self.failure_detection_module.detect_failure(
-                            timestep=self.j,
-                            max_episode_length=self.max_episode_length,
-                            failure_step_data=failure_step_data
-                        )
-
-                    result_idx = -1
-
-                    while result_idx < self.j // self.Ta - 1: 
-                        while not self.failure_detection_module.failure_detector.async_result_queue.empty():
-                            failure_flag, failure_reason, curr_result_idx = self.failure_detection_module.detect_failure(
-                                timestep=self.j,
-                                max_episode_length=self.max_episode_length,
-                                failure_step_data=failure_step_data
-                            )
-                            result_idx = max(result_idx, curr_result_idx)
-                            print(f"=========== Received failure detection result for timestep: {result_idx} =============")
-                            if failure_flag:
-                                break
-                        if failure_flag:
-                            break
+                if self.j >= self.max_episode_length: # Making sure that every failure detection result is processed, raising recall
+                    failure_flag, failure_reason, _ = self.failure_detection_module.wait_for_final_results(self.j)
 
                 print(f"=========== Global timestep: {self.j // self.Ta - 1} =============")
 
-                if failure_flag or self.j >= self.max_episode_length - self.Ta:
+                if failure_flag or self.j >= self.max_episode_length:
                     self.robot_state = "idle"         #temporarily set to idle for human judgement
 
                     if failure_flag:
-                        print(f"Failure detected! Due to {self.failure_reason}")
+                        print(f"Failure detected! Due to {failure_reason}")
                     else:
                         print("Maximum episode length reached")
 
@@ -433,10 +366,10 @@ class RobotNode(RealEnvRunner):
                         self.finish_episode = True
 
                     return  
-            # ================Detect failure===============
+            # ================Detect failure end===============
             
             # Check for maximum episode length without failure detection
-            elif self.j >= self.max_episode_length - self.Ta:
+            elif self.j >= self.max_episode_length:
                 self.robot_state = "idle"
                 print("Maximum episode length reached")
                 self.stop_event = "timeout"
@@ -452,28 +385,17 @@ class RobotNode(RealEnvRunner):
     def call_timeout_demo(self):
         self.socket.send(f"TIMEOUT_of_{self.robot_id}") 
     
-    def _handle_ctn(self,message =None):
+    def _handle_ctn(self):
         """Handle continue policy command from teleop.
         Resumes autonomous policy execution after human check."""
         self.robot_state = "agent_controlled"
-        if self.j >= self.max_episode_length - self.Ta: # after human decide
+        if self.j >= self.max_episode_length: # after human decide
             print("Maximum episode length reached, turning to human for help.")
             self.stop_event = "cancel"
             self.call_timeout_demo()
             self.finish_episode = True
 
         print("False Positive failure! Continue policy rollout.")
-    
-    def handle_redundant_failure(self):
-        """Handle redundant failure detection.
-        Removes redundant failure logs when human intervention succeeds.""" 
-        if hasattr(self.failure_detection_module, 'failure_logs'):
-            if self.failure_detection_module.failure_logs:  # Check if dictionary is not empty
-                self.failure_detection_module.failure_logs.popitem()
-        elif hasattr(self.failure_detection_module, 'failure_indices'):
-            if self.failure_detection_module.failure_indices:  # Check if list is not empty
-                self.failure_detection_module.failure_indices.pop()
-                    
     
     def _get_ready_takeover(self, message):
         """Prepare for human takeover.
@@ -491,15 +413,7 @@ class RobotNode(RealEnvRunner):
         
         if not match:
             raise ValueError(f"Invalid command format: {msg}")
-            
-        teleop_id = match.group(1)
-        rbt_id = match.group(2)
-        diff_p_str = match.group(3)
-        diff_r_str = match.group(4)
-        
-        # Parse arrays
-        # self.delta_p_arr = np.array([float(x.strip()) for x in diff_p_str.split(",")])
-        # self.delta_r_arr = np.array([float(x.strip()) for x in diff_r_str.split(",")])
+
         self.robot_state = "teleop_controlled"
     
     def reset_teleop_cmd(self):
@@ -513,30 +427,34 @@ class RobotNode(RealEnvRunner):
         self.width = None
         self.throttle = None
         self.latest_command_time = None
-        # self.delta_p_arr = None
-        # self.delta_r_arr = None
-        self.abs_p = None
-        self.abs_r =None
-        self.curr_p_action = None
-        self.curr_r_action =None
     
-    def handle_prerewind_robot(self):
+    def _rewind_robot(self):
         """Handle pre-rewind robot state.
         Performs rewinding process and notifies teleop of completion."""
         # Perform rewinding if needed
-        print("Starting rewind process...")
-        if self.failure_detection_module and hasattr(self, 'episode_buffers') and hasattr(self, 'j'):
-            try:
-                self.j, self.rewind_pos, self.rewind_rot = self._rewind_robot(self.episode_buffers, self.j)  #TODO: remember to restore rewind
-                print(f"Rewind completed. New timestep: {self.j}")
-            except Exception as e:
-                print(f"Error during rewind: {e}")
-                print("Continuing without rewind...")
-        else:
-            print("No failure detection module or missing episode data, skipping rewind")
+        print("Starting rewinding process...")
+        try:
+            # Use the last target action for rewinding
+            curr_pos = self.episode_manager.last_p[0]
+            curr_rot = self.episode_manager.last_r[0]
+            
+            # Let failure detection module determine rewinding behavior
+            if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding'):
+                prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_with_failure_detection(curr_pos, curr_rot)
+            else:
+                prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_simple(curr_pos, curr_rot)
+            
+            if "prev_side_cam" in locals():
+                print("Please reset the scene and press 'c' in teleop node to go on to human intervention")
+                self.request_scene_alignment_with_reference(prev_side_cam, prev_wrist_cam)
+            
+            self.rewind_pos, self.rewind_rot = curr_pos, curr_rot
+            print(f"Rewind completed. New timestep: {self.j}")
+        except Exception as e:
+            print(f"Error during rewind: {e}")
+            print("Continuing without rewind...")
         
         # Send rewind completion message
-        print("Rewind process completed")
         rewind_complete_msg = f"REWIND_COMPLETED_{self.robot_id}"
         self.socket.send(rewind_complete_msg)
     
@@ -636,7 +554,7 @@ class RobotNode(RealEnvRunner):
         print("Scene alignment display with reference completed")
           
     
-    def _start_being_teleoped(self,message:str):
+    def _start_being_teleoped(self):
         """Start being teleoperated"""
         print("Start being teleoperated, state switched to 'TELEOP_CONTROLLED'")
         # Get current pose for human teleop
@@ -652,8 +570,6 @@ class RobotNode(RealEnvRunner):
         self.send_transform_sigma(translate, rotation)
         self.robot_state = "teleop_controlled"
         self.ready_to_stop_flag = False
-        self.stop_teleop_key = False
-        self.teleop_thread_running = True
         self.teleop_thread = threading.Thread(target=self.teleop_thread_loop, daemon=True)
         self.teleop_thread.start()
         
@@ -672,8 +588,6 @@ class RobotNode(RealEnvRunner):
     def stop_teleop(self):
         """Stop teleoperation mode.
         Handles transition from teleoperation back to autonomous control."""
-        # self.teleop_thread_running = False
-        # self.teleop_thread.join()
         self.teleop_thread = None
         self.robot_state = "idle"
         print("Teleoperation terminated, state switched to 'AGENT_CONTROLLED'.")
@@ -695,7 +609,7 @@ class RobotNode(RealEnvRunner):
     def _process_teleop_command(self, message):
         """Process teleoperation command from teleop node.
         Parses and executes teleop commands on the robot.""" 
-        if "sigma" in message and not self.stop_teleop_key :
+        if "sigma" in message and not self.ready_to_stop_flag:
             pattern = r"COMMAND_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\],([^,]+),([^,]+),([^,]+)"
             match = re.match(pattern, message)
             
@@ -730,8 +644,7 @@ class RobotNode(RealEnvRunner):
             time.sleep(0.01)
     
     def teleop_thread_loop(self):
-        self.stop_teleop_key = False
-        while self.teleop_thread_running and not self.stop_teleop_key:
+        while not self.ready_to_stop_flag:
             self.teleop_action_step()
     
     def teleop_action_step(self):
@@ -740,44 +653,28 @@ class RobotNode(RealEnvRunner):
 
         #Get camera data and robot state
         state_data = self.robot_env.get_robot_state()
-        tcp_pose = state_data['tcp_pose']
-        joint_pos = state_data['joint_pos']
 
         # Get teleop controls
-        if self.diff_p_arr is None or self.diff_r_arr is None or time.time() - self.latest_command_time > 0.1:
+        if self.diff_p_arr is None or self.diff_r_arr is None or time.time() - self.latest_command_time > 0.1: # Closed-loop command filtering
             time.sleep(1 / self.teleop_ctrl_freq - (time.time() - start_time))
             return
     
-        self.abs_p = self.robot_env.robot.init_pose[:3] + self.diff_p_arr
-        self.abs_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True) * R.from_quat(self.diff_r_arr, scalar_first=True)
-        self.curr_p_action = self.abs_p - self.last_p
-        self.curr_r_action = self.last_r.inv() * self.abs_r
-        self.last_p = self.abs_p    
-        self.last_r = self.abs_r  
-        # print(f"=====Teleop command latency: {time.time() - self.latest_command_time} seconds=====")
+        abs_p = self.robot_env.robot.init_pose[:3] + self.diff_p_arr
+        abs_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True) * R.from_quat(self.diff_r_arr, scalar_first=True)
+        curr_p_action = abs_p - self.last_p
+        curr_r_action = self.last_r.inv() * abs_r
+        self.last_p = abs_p
+        self.last_r = abs_r
 
         # Handle throttle detach
         if self.throttle < -0.9:
             if not self.last_throttle:
-                # self.detach()
                 self.record_detach_tcp()
                 self.last_throttle = True
             return
 
         if self.last_throttle:
             self.last_throttle = False
-            # self.send_resume_sigma(during_teleop=True)  # "during_teleop" is to make sure the action recorded is right after the detach
-            # while True:
-            #     if self.delta_p_arr is None or self.delta_r_arr is None: 
-            #         self.robot_state = "idle" # TODO: verify whether this fixes the observation discontinuity issue
-            #         time.sleep(0.1)
-            #         continue
-            #     self.last_p = self.delta_p_arr + self.robot_env.robot.init_pose[:3]
-            #     self.last_r = R.from_quat(self.robot_env.robot.init_pose[3:7], scalar_first=True) * R.from_quat(self.delta_r_arr, scalar_first=True)
-            #     # self.delta_p_arr = None
-            #     # self.delta_r_arr = None
-            #     # self.send_resume_complete_to_sigma()
-            #     break
             self.last_p = state_data['tcp_pose'][:3]
             self.last_r = R.from_quat(state_data['tcp_pose'][3:], scalar_first=True)
             return
@@ -787,34 +684,24 @@ class RobotNode(RealEnvRunner):
             # Deploy action to robot
             gripper_action = self.robot_env.gripper.max_width * self.width / 1000
             self.robot_env.deploy_action(
-                np.concatenate((self.abs_p, self.abs_r.as_quat(scalar_first=True))),
+                np.concatenate((abs_p, abs_r.as_quat(scalar_first=True))),
                 gripper_action
             )
             
             # Save demo data for return
-            teleop_data = {
-                'policy_wrist_img': state_data['policy_wrist_img'],
-                'policy_side_img': state_data['policy_side_img'],
-                'demo_wrist_img': state_data['demo_wrist_img'],
-                'demo_side_img': state_data['demo_side_img'],
-                'tcp_pose': tcp_pose,
-                'joint_pos': joint_pos,
-                'action': np.concatenate((self.curr_p_action, self.curr_r_action.as_quat(scalar_first=True), [gripper_action])),
-                'action_mode': INTV
-            }
             self.episode_manager.update_observation(
-                teleop_data['policy_side_img'] / 255.0,
-                teleop_data['policy_wrist_img'] / 255.0,
-                teleop_data['tcp_pose'] if self.state_type == 'ee_pose' else teleop_data['joint_pos']
+                state_data['policy_side_img'] / 255.0,
+                state_data['policy_wrist_img'] / 255.0,
+                state_data['tcp_pose'] if self.state_type == 'ee_pose' else state_data['joint_pos']
             )
             
             # Store demo data
-            self.episode_buffers['wrist_cam'].append(teleop_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-            self.episode_buffers['side_cam'].append(teleop_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-            self.episode_buffers['tcp_pose'].append(teleop_data['tcp_pose'])
-            self.episode_buffers['joint_pos'].append(teleop_data['joint_pos'])
-            self.episode_buffers['action'].append(teleop_data['action'])
-            self.episode_buffers['action_mode'].append(teleop_data['action_mode'])
+            self.episode_buffers['wrist_cam'].append(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+            self.episode_buffers['side_cam'].append(state_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+            self.episode_buffers['tcp_pose'].append(state_data['tcp_pose'])
+            self.episode_buffers['joint_pos'].append(state_data['joint_pos'])
+            self.episode_buffers['action'].append(np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])))
+            self.episode_buffers['action_mode'].append(INTV)
             self.j += 1
 
              # Sleep to maintain fps
@@ -822,20 +709,12 @@ class RobotNode(RealEnvRunner):
 
         # Check if ready to stop
         if self.ready_to_stop_flag and self.j % self.Ta == 0:
-            self.stop_teleop_key = True
-            self.teleop_thread_running = False
-            # self.teleop_thread.join()
             self.stop_teleop()
     
-    def reset(self,random_init=False, random_init_pose=None):
-        """Reset robot to initial state.
-        Optionally uses random initialization for exploration."""
-        state=self.robot_env.reset_robot(random_init, random_init_pose)
+    def reset(self):
+        """Reset robot to home pose."""
+        state=self.robot_env.reset_robot()
         self.send_reset_sigma()
-        tcp = state["tcp_pose"]
-        translate = tcp[0:3] - self.robot_env.home_pose[0:3]
-        rotation = (R.from_quat(self.robot_env.home_pose[3:], scalar_first=True).inv() * R.from_quat(tcp[3:],scalar_first=True)).as_quat(scalar_first=True)
-        self.send_transform_sigma(translate,rotation)
         return state
         
     def detach(self):
@@ -846,7 +725,7 @@ class RobotNode(RealEnvRunner):
         self.send_detach_sigma()
     
     def record_detach_tcp(self):
-        """Record current TCP position"""
+        """Record current TCP position without informing teleop node"""
         self.detach_tcp = self.robot_env.robot.get_tcp_pose()
         print(f"Detaching sigma at TCP position: {self.detach_tcp}")
     
@@ -874,51 +753,3 @@ class RobotNode(RealEnvRunner):
         else:
             msg = f"SIGMA_of_{self.teleop_id}_RESUME_from_{self.robot_id}".encode()
         self.socket.send(msg)
-
-    def send_resume_complete_to_sigma(self):
-        """Send resume complete message to sigma device"""
-        msg = f"SIGMA_of_{self.teleop_id}_RESUME_COMPLETED_from_{self.robot_id}".encode()
-        self.socket.send(msg)
-    
-    def _rewind_robot(self, episode_buffers: Dict[str, List], j) -> Tuple[int, np.ndarray, R]:
-        """Rewind the robot for human intervention"""
-        print("Rewinding robot...")
-        
-        # Get the last predicted absolute actions for rewinding
-        if not hasattr(self, '_last_predicted_abs_actions') or self._last_predicted_abs_actions is None:
-            print("No previous actions to rewind from, using current episode manager pose")
-            return j, self.episode_manager.last_p[0], self.episode_manager.last_r[0]
-        
-        curr_timestep = j
-        
-        # Use the last target action for rewinding instead of the current robot state
-        curr_tcp = self._last_predicted_abs_actions[0, self.Ta-1, :7]
-        curr_pos = curr_tcp[:3]
-        curr_rot = R.from_quat(curr_tcp[3:], scalar_first=True)
-        
-        # Let failure detection module determine rewinding behavior
-        if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding'):
-            rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_with_failure_detection(episode_buffers, curr_timestep, curr_pos, curr_rot)
-        else:
-            rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_simple(episode_buffers, curr_timestep, curr_pos, curr_rot)
-        
-        j -= rewind_steps
-        
-        # Prepare for human intervention by showing reference scene
-        if rewind_steps > 0:
-            print("Please reset the scene and press 'c' in teleop node to go on to human intervention")
-            self.request_scene_alignment_with_reference(prev_side_cam, prev_wrist_cam)
-        
-        return j, curr_pos, curr_rot
-    
-
-    
-    def _main_thread(self):
-        """Main execution thread.Starts state reporting thread and runs rollout loop."""
-         # Start state report thread
-        self.inform_thread = threading.Thread(target=self.inform_robot_state, daemon=True)
-        self.inform_thread.start()
-
-        self._run_rollout()
-    
-    

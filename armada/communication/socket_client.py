@@ -30,7 +30,6 @@ class SocketClient:
                     if not data:
                         break
                     decoded_data = data.decode()
-                    # print(f"Received from server: {decoded_data}")
 
                     if self.message_handler:               #process
                         self.message_handler(decoded_data)
@@ -39,20 +38,6 @@ class SocketClient:
         finally:
             self.sock.close()
             print(f"Server disconnected")
-
-    # def send(self, data, max_retries=3):
-    #     if isinstance(data, str):
-    #         data = data.encode()
-
-    #     for attempt in range(max_retries):
-    #         if not self.sock:
-    #             continue
-    #         try:
-    #             return self.sock.send(data)
-    #         except OSError as e:
-    #             print(f"Send attempt {attempt + 1} failed: {e}")
-    #             self.sock = None
-    #     raise ConnectionError(f"Failed after {max_retries} attempts")
 
     def send(self, data, max_retries=3):
         # Add message start/end delimiters

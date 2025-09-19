@@ -9,7 +9,7 @@ from omegaconf import DictConfig
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "diffusion_policy"))
 
 
-def setup_distributed_env(device_ids, port_start=29999):
+def setup_distributed_env(port_start=29999):
     """Setup distributed rollout environment"""
     os.environ["MASTER_ADDR"] = "localhost"
     
@@ -50,7 +50,7 @@ def main(cfg: DictConfig):
     device_ids = [int(x) for x in cfg.device_ids.split(",")]
     
     # Setup distributed rollout
-    setup_distributed_env(device_ids)
+    setup_distributed_env()
     
     # Run rollout
     if len(device_ids) == 1:

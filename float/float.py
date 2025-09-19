@@ -286,7 +286,7 @@ class FLOAT(AsyncFailureDetectionModule):
                 ot_threshold = self.expert_ot_threshold if hasattr(self, 'expert_ot_threshold') else None
                 self.ot_visualizer.start_episode(episode_idx=episode_idx, ot_threshold=ot_threshold)
 
-            rollout_init_latent = step_data['rollout_init_latent'] # TODO: add this input to the runner
+            rollout_init_latent = step_data['rollout_init_latent']
             self.candidate_expert_indices = find_matching_expert_demo(
                 rollout_init_latent,
                 self.all_human_latent,

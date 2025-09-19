@@ -2,7 +2,7 @@ defaults:
   - training: train_diffusion_transformer_real_hybrid_dino_multi_gpu_workspace
   - _self_
 
-_target_: env_runner.real_env_runner.RealEnvRunner
+_target_: nodes.robot_node.RobotNode
 fps: 10
 
 device_ids: '0'

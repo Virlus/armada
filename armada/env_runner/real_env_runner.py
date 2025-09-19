@@ -17,7 +17,7 @@ from armada.diffusion_policy.diffusion_policy.common.pytorch_util import dict_ap
 from armada.diffusion_policy.diffusion_policy.model.common.rotation_transformer import RotationTransformer
 
 from hardware.robot_env import RobotEnv
-from hardware.my_device.macros import CAM_SERIAL, HUMAN, ROBOT, INTV
+from hardware.my_device.macros import CAM_SERIAL, HUMAN, ROBOT
 from armada.utils.episode_manager import EpisodeManager
 from armada.env_runner.base_env_runner import BaseEnvRunner
 
@@ -203,7 +203,7 @@ class RealEnvRunner(BaseEnvRunner):
                 print(f"Rollout episode: {self.episode_idx}")
                 
                 # Run single episode
-                episode_data = self._run_single_episode(saved_episode_idx=self.saved_episode_idx+1)
+                episode_data = self._run_single_episode()
                 
                 if episode_data is not None:
                     # Save episode to replay buffer
@@ -223,7 +223,7 @@ class RealEnvRunner(BaseEnvRunner):
         finally:
             self._cleanup()
     
-    def _run_single_episode(self, saved_episode_idx: int) -> Optional[Dict[str, Any]]:
+    def _run_single_episode(self) -> Optional[Dict[str, Any]]:
         """Run a single episode and return episode data"""
         # Reset keyboard states
         self.robot_env.keyboard.finish = False
@@ -233,7 +233,7 @@ class RealEnvRunner(BaseEnvRunner):
         time.sleep(1)
         
         # Initialize episode buffers
-        episode_buffers = {
+        self.episode_buffers = {
             'tcp_pose': [],
             'joint_pos': [],
             'action': [],
@@ -287,24 +287,19 @@ class RealEnvRunner(BaseEnvRunner):
         # Detach teleop device
         detach_pos, detach_rot = self.robot_env.detach_sigma()
         
-        j = 0  # Episode timestep
+        self.j = 0  # Episode timestep
         
         while True:
-            if j >= self.max_episode_length - self.Ta:
+            if self.j >= self.max_episode_length:
                 print("Maximum episode length reached, turning to human for help.")
                 self.robot_env.keyboard.help = True
             
             # Policy inference loop
-            policy_loop_result = self._run_policy_inference_loop(episode_buffers, j)
-            j = policy_loop_result['timestep']
-            
-            if policy_loop_result['break_episode']:
-                break
+            self._run_policy_inference_loop()
             
             # Human intervention if requested
             if self.robot_env.keyboard.help:
-                intervention_result = self._run_human_intervention(episode_buffers, detach_pos, detach_rot, j)
-                j = intervention_result['timestep']
+                intervention_result = self._run_human_intervention(detach_pos, detach_rot)
                 detach_pos, detach_rot = intervention_result['detach_pos'], intervention_result['detach_rot']
             
             # Check if episode should finish
@@ -316,12 +311,12 @@ class RealEnvRunner(BaseEnvRunner):
         
         # Finalize episode
         if self.robot_env.keyboard.finish:
-            episode_data = self._finalize_episode(episode_buffers)
+            episode_data = self._finalize_episode()
             return episode_data
         
         return None
     
-    def _run_policy_inference_loop(self, episode_buffers: Dict[str, List], j: int) -> Dict[str, Any]:
+    def _run_policy_inference_loop(self) -> Dict[str, Any]:
         """Run policy inference loop"""
         print("=========== Policy inference ============")
         
@@ -367,12 +362,12 @@ class RealEnvRunner(BaseEnvRunner):
                 self.robot_env.deploy_action(deployed_action, gripper_action[0])
                 
                 # Save to episode buffers
-                episode_buffers['wrist_cam'].append(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-                episode_buffers['side_cam'].append(state_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-                episode_buffers['tcp_pose'].append(state_data['tcp_pose'])
-                episode_buffers['joint_pos'].append(state_data['joint_pos'])
-                episode_buffers['action'].append(np.concatenate((curr_p_action, curr_r_action, [gripper_action[0]])))
-                episode_buffers['action_mode'].append(ROBOT)
+                self.episode_buffers['wrist_cam'].append(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+                self.episode_buffers['side_cam'].append(state_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+                self.episode_buffers['tcp_pose'].append(state_data['tcp_pose'])
+                self.episode_buffers['joint_pos'].append(state_data['joint_pos'])
+                self.episode_buffers['action'].append(np.concatenate((curr_p_action, curr_r_action, [gripper_action[0]])))
+                self.episode_buffers['action_mode'].append(ROBOT)
                 
                 # Update policy observation for the last few steps
                 if step >= self.Ta - self.To + 1:
@@ -383,30 +378,30 @@ class RealEnvRunner(BaseEnvRunner):
                     )
                 
                 time.sleep(max(1 / self.fps - (time.time() - start_time), 0))
-                j += 1
+                self.j += 1
             
             # ================Detect failure===============
             if self.failure_detection_module:
                 step_data = {
                     'step_type': 'policy_step',
                     'curr_latent': curr_latent,
-                    'timestep': j,
+                    'timestep': self.j,
                     'robot_state': robot_state
                 }
                 
                 self.failure_detection_module.process_step(step_data)
                 
                 failure_flag, failure_reason, _ = self.failure_detection_module.detect_failure(
-                    timestep=j,
+                    timestep=self.j,
                     max_episode_length=self.max_episode_length
                 )
 
-                if j >= self.max_episode_length - self.Ta: # Making sure that every failure detection result is processed before raising timeout
-                    failure_flag, failure_reason, _ = self.failure_detection_module.wait_for_final_results(j)
+                if self.j >= self.max_episode_length: # Making sure that every failure detection result is processed before raising timeout
+                    failure_flag, failure_reason, _ = self.failure_detection_module.wait_for_final_results(self.j)
 
-                print(f"=========== Global timestep: {j // self.Ta - 1} =============")
+                print(f"=========== Global timestep: {self.j // self.Ta - 1} =============")
                 
-                if failure_flag or j >= self.max_episode_length - self.Ta:
+                if failure_flag or self.j >= self.max_episode_length:
                     if failure_flag:
                         print(f"Failure detected! Due to {failure_reason}")
                     else:
@@ -416,10 +411,10 @@ class RealEnvRunner(BaseEnvRunner):
                     while not self.robot_env.keyboard.ctn and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.help and not self.robot_env.keyboard.finish:
                         time.sleep(0.1)
                     
-                    if self.robot_env.keyboard.ctn and j < self.max_episode_length - self.Ta:
+                    if self.robot_env.keyboard.ctn and self.j < self.max_episode_length:
                         print("False Positive failure! Continue policy rollout.")
                         self.robot_env.keyboard.ctn = False
-                    elif self.robot_env.keyboard.ctn and j >= self.max_episode_length - self.Ta:
+                    elif self.robot_env.keyboard.ctn and self.j >= self.max_episode_length:
                         print("Cannot continue policy rollout, maximum episode length reached. Calling for human intervention.")
                         self.robot_env.keyboard.ctn = False
                         self.robot_env.keyboard.help = True
@@ -427,14 +422,14 @@ class RealEnvRunner(BaseEnvRunner):
             # ================Detect failure end===============
             
             # Check for maximum episode length without failure detection
-            elif j >= self.max_episode_length - self.Ta:
+            elif self.j >= self.max_episode_length:
                 print("Maximum episode length reached, turning to human for help.")
                 self.robot_env.keyboard.help = True
                 break
         
-        return {'timestep': j, 'break_episode': False}
+        return
     
-    def _run_human_intervention(self, episode_buffers: Dict[str, List], detach_pos: np.ndarray, detach_rot: R, j: int) -> Dict[str, Any]:
+    def _run_human_intervention(self, detach_pos: np.ndarray, detach_rot: R) -> Dict[str, Any]:
         """Run human intervention loop"""
         print("============ Human intervention =============")
         
@@ -443,7 +438,7 @@ class RealEnvRunner(BaseEnvRunner):
         
         # Perform rewinding if needed
         if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding'):
-            j, curr_pos, curr_rot = self._rewind_robot(episode_buffers, j)
+            curr_pos, curr_rot = self._rewind_robot()
         
         # Get current pose for human teleop
         last_p = curr_pos if 'curr_pos' in locals() else self.episode_manager.last_p[0]
@@ -456,7 +451,7 @@ class RealEnvRunner(BaseEnvRunner):
         self.robot_env.sigma.transform_from_robot(translate, rotation)
         
         # Human intervention loop
-        while (not self.robot_env.keyboard.finish and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.infer) or j % self.Ta:
+        while (not self.robot_env.keyboard.finish and not self.robot_env.keyboard.discard and not self.robot_env.keyboard.infer) or self.j % self.Ta:
             # Execute one step of human teleop
             teleop_data, last_p, last_r = self.robot_env.human_teleop_step(last_p, last_r)
             
@@ -471,14 +466,14 @@ class RealEnvRunner(BaseEnvRunner):
             )
             
             # Store demo data
-            episode_buffers['wrist_cam'].append(teleop_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-            episode_buffers['side_cam'].append(teleop_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
-            episode_buffers['tcp_pose'].append(teleop_data['tcp_pose'])
-            episode_buffers['joint_pos'].append(teleop_data['joint_pos'])
-            episode_buffers['action'].append(teleop_data['action'])
-            episode_buffers['action_mode'].append(teleop_data['action_mode'])
+            self.episode_buffers['wrist_cam'].append(teleop_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+            self.episode_buffers['side_cam'].append(teleop_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+            self.episode_buffers['tcp_pose'].append(teleop_data['tcp_pose'])
+            self.episode_buffers['joint_pos'].append(teleop_data['joint_pos'])
+            self.episode_buffers['action'].append(teleop_data['action'])
+            self.episode_buffers['action_mode'].append(teleop_data['action_mode'])
             
-            j += 1
+            self.j += 1
         
         # Reset target pose tracking after human intervention
         self.episode_manager.initialize_pose(last_p, last_r.as_quat(scalar_first=True))
@@ -487,13 +482,11 @@ class RealEnvRunner(BaseEnvRunner):
         self.robot_env.keyboard.infer = False
         new_detach_pos, new_detach_rot = self.robot_env.detach_sigma()
         
-        return {'timestep': j, 'detach_pos': new_detach_pos, 'detach_rot': new_detach_rot}
+        return {'detach_pos': new_detach_pos, 'detach_rot': new_detach_rot}
     
-    def _rewind_robot(self, episode_buffers: Dict[str, List], j: int) -> Tuple[int, np.ndarray, R]:
+    def _rewind_robot(self) -> Tuple[np.ndarray, R]:
         """Rewind the robot for human intervention"""
         print("Rewinding robot...")
-        
-        curr_timestep = j
         
         # Use the last target action for rewinding
         curr_pos = self.episode_manager.last_p[0]
@@ -501,79 +494,73 @@ class RealEnvRunner(BaseEnvRunner):
         
         # Let failure detection module determine rewinding behavior
         if self.failure_detection_module and hasattr(self.failure_detection_module, 'should_stop_rewinding'):
-            rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_with_failure_detection(episode_buffers, curr_timestep, curr_pos, curr_rot)
+            prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_with_failure_detection(curr_pos, curr_rot)
         else:
-            rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_simple(episode_buffers, curr_timestep, curr_pos, curr_rot)
-        
-        j -= rewind_steps
+            prev_side_cam, prev_wrist_cam, curr_pos, curr_rot = self._rewind_simple(curr_pos, curr_rot)
         
         # Prepare for human intervention by showing reference scene
-        if rewind_steps > 0:
+        if "prev_side_cam" in locals():
             print("Please reset the scene and press 'c' to go on to human intervention")
             ref_side_img = cv2.cvtColor(prev_side_cam, cv2.COLOR_RGB2BGR)
             ref_wrist_img = cv2.cvtColor(prev_wrist_cam, cv2.COLOR_RGB2BGR)
             self.robot_env.align_with_reference(ref_side_img, ref_wrist_img)
         
-        return j, curr_pos, curr_rot
+        return curr_pos, curr_rot
     
-    def _rewind_with_failure_detection(self, episode_buffers: Dict[str, List], curr_timestep: int, curr_pos: np.ndarray, curr_rot: R) -> Tuple[int, np.ndarray, np.ndarray, np.ndarray, R]:
+    def _rewind_with_failure_detection(self, curr_pos: np.ndarray, curr_rot: R) -> Tuple[np.ndarray, np.ndarray, np.ndarray, R]:
         """Rewind with failure detection module guidance"""
-        rewind_steps = 0
-        j = curr_timestep
+        curr_timestep = self.j
         
         for _ in range(curr_timestep):
-            if not self.failure_detection_module.rewind_step(j, episode_buffers, curr_timestep):
+            if not self.failure_detection_module.rewind_step(self.j, curr_timestep):
                 break
             # Rewind one step on robot
-            curr_pos, curr_rot, prev_side_cam, prev_wrist_cam = self._rewind_single_step(episode_buffers, curr_pos, curr_rot)
-            j -= 1
-            rewind_steps += 1
+            curr_pos, curr_rot, prev_side_cam, prev_wrist_cam = self._rewind_single_step(curr_pos, curr_rot)
+            self.j -= 1
         
-        return rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot
+        return prev_side_cam, prev_wrist_cam, curr_pos, curr_rot
     
-    def _rewind_simple(self, episode_buffers: Dict[str, List], curr_timestep: int, curr_pos: np.ndarray, curr_rot: R) -> Tuple[int, np.ndarray, np.ndarray, np.ndarray, R]:
+    def _rewind_simple(self, curr_pos: np.ndarray, curr_rot: R) -> Tuple[np.ndarray, np.ndarray, np.ndarray, R]:
         """Simple rewinding with step limit"""
-        rewind_steps = 0
-        j = curr_timestep
+        curr_timestep = self.j
         
         for i in range(curr_timestep):
             # Simple stop condition: limit to 3 Ta-step chunks
-            if j % self.Ta == 0 and j > 0:
+            if self.j % self.Ta == 0 and self.j > 0:
                 if i // self.Ta >= 3:
                     print("Stop rewinding (reached 3 Ta-step limit).")
                     break
             
             # Rewind one step
-            curr_pos, curr_rot, prev_side_cam, prev_wrist_cam = self._rewind_single_step(episode_buffers, curr_pos, curr_rot)
-            j -= 1
-            rewind_steps += 1
+            curr_pos, curr_rot, prev_side_cam, prev_wrist_cam = self._rewind_single_step(curr_pos, curr_rot)
+            self.j -= 1
         
-        return rewind_steps, prev_side_cam, prev_wrist_cam, curr_pos, curr_rot
+        return prev_side_cam, prev_wrist_cam, curr_pos, curr_rot
     
-    def _rewind_single_step(self, episode_buffers: Dict[str, List], curr_pos: np.ndarray, curr_rot: R) -> Tuple[np.ndarray, R, np.ndarray, np.ndarray]:
+    def _rewind_single_step(self, curr_pos: np.ndarray, curr_rot: R) -> Tuple[np.ndarray, R, np.ndarray, np.ndarray]:
         """Rewind a single step"""
         # Get previous action data to rewind
-        prev_wrist_cam = episode_buffers['wrist_cam'].pop()
-        prev_side_cam = episode_buffers['side_cam'].pop()
-        episode_buffers['tcp_pose'].pop()
-        episode_buffers['joint_pos'].pop()
-        prev_action = episode_buffers['action'].pop()
-        episode_buffers['action_mode'].pop()
+        prev_wrist_cam = self.episode_buffers['wrist_cam'].pop()
+        prev_side_cam = self.episode_buffers['side_cam'].pop()
+        self.episode_buffers['tcp_pose'].pop()
+        self.episode_buffers['joint_pos'].pop()
+        prev_action = self.episode_buffers['action'].pop()
+        self.episode_buffers['action_mode'].pop()
         
         # Rewind robot by applying inverse action
         curr_pos, curr_rot = self.robot_env.rewind_robot(curr_pos, curr_rot, prev_action)
         
         return curr_pos, curr_rot, prev_side_cam, prev_wrist_cam
     
-    def _finalize_episode(self, episode_buffers: Dict[str, List]) -> Dict[str, Any]:
+    def _finalize_episode(self) -> Dict[str, Any]:
         """Finalize episode and return episode data"""
         episode = dict()
-        episode['wrist_cam'] = np.stack(episode_buffers['wrist_cam'], axis=0)
-        episode['side_cam'] = np.stack(episode_buffers['side_cam'], axis=0)
-        episode['tcp_pose'] = np.stack(episode_buffers['tcp_pose'], axis=0)
-        episode['joint_pos'] = np.stack(episode_buffers['joint_pos'], axis=0)
-        episode['action'] = np.stack(episode_buffers['action'], axis=0)
-        episode['action_mode'] = np.array(episode_buffers['action_mode'])
+        episode['wrist_cam'] = np.stack(self.episode_buffers['wrist_cam'], axis=0)
+        episode['side_cam'] = np.stack(self.episode_buffers['side_cam'], axis=0)
+        episode['tcp_pose'] = np.stack(self.episode_buffers['tcp_pose'], axis=0)
+        episode['joint_pos'] = np.stack(self.episode_buffers['joint_pos'], axis=0)
+        episode['action'] = np.stack(self.episode_buffers['action'], axis=0)
+        episode['action_mode'] = np.array(self.episode_buffers['action_mode'])
         
         assert episode['action_mode'].shape[0] % self.Ta == 0, "A Ta-step chunking is required for the entire demo"
         

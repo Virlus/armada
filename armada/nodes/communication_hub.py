@@ -2,10 +2,13 @@ import numpy as np
 import queue
 import time
 import threading
-import re
-from typing import Dict, Any, Tuple
-from multi_robot.communication.socket_server import SocketServer
-from multi_robot.utils.message_distillation import parse_message_regex, split_combined_messages, MessageHandler
+import sys
+import os
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+
+from armada.communication.socket_server import SocketServer
+from armada.utils.message_distillation import parse_message_regex, MessageHandler
 
 class CommunicationHub:
     """Central communication hub that manages message routing between robot and teleop nodes.
@@ -42,9 +45,7 @@ class CommunicationHub:
             "TELEOP_CTRL_START": self.report_teleop_ctrl_start,
             "COMMAND": self.report_teleop_cmd,
             "TELEOP_CTRL_STOP": self.report_teleop_ctrl_stop,
-            "THROTTLE_SHIFT": self.report_throttle_shift_pose,
             "REWIND_ROBOT": self.report_rewind_robot,
-            "REWIND_COMPLETED": self.report_rewind_completed,
             "SCENE_ALIGNMENT_WITH_REF_REQUEST": self.report_scene_alignment_with_ref_request,
             "SCENE_ALIGNMENT_COMPLETED": self.report_scene_alignment_completed,
             "TIMEOUT":self.handle_demo_timeout,
@@ -68,7 +69,6 @@ class CommunicationHub:
         Processes different sigma command types (DETACH, RESUME, RESET, TRANSFORM)."""
         sigma_handlers = {
             "DETACH": self.report_sigma_detach,
-            "RESUME_COMPLETED": self.report_sigma_resume_completed,
             "RESUME": self.report_sigma_resume,
             "RESET": self.report_sigma_reset,
             "TRANSFORM": self.report_sigma_transform,
@@ -217,18 +217,7 @@ class CommunicationHub:
     def report_sigma_resume(self, message, addr):
         """Forward sigma resume command from robot to teleop.
         Instructs teleop to resume haptic device connection to robot."""
-        if "DURING_TELEOP" in message:
-            templ = "SIGMA_of_{}_RESUME_from_{}_DURING_TELEOP"
-        else:
-            templ = "SIGMA_of_{}_RESUME_from_{}"
-        teleop_id, rbt_id = parse_message_regex(message, templ)
-        send_msg = message
-        self.socket.send(self.teleop_dict[teleop_id], send_msg)
-
-    def report_sigma_resume_completed(self, message, addr):
-        """Forward sigma resume completed command from robot to teleop.
-        Instructs teleop to start sending real-time commands to robot."""
-        templ = "SIGMA_of_{}_RESUME_COMPLETED_from_{}"
+        templ = "SIGMA_of_{}_RESUME_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
         send_msg = message
         self.socket.send(self.teleop_dict[teleop_id], send_msg)
@@ -249,34 +238,12 @@ class CommunicationHub:
         send_msg = message
         self.socket.send(self.teleop_dict[teleop_id], send_msg)
 
-    def report_throttle_shift_pose(self, message, addr):
-        """Forward throttle shift pose information from teleop to robot.
-        Transmits pose adjustments based on throttle control input."""
-        templ = "THROTTLE_SHIFT_POSE_from_{}_to_{}:{}"
-        teleop_id, rbt_id, else_th = parse_message_regex(message, templ)
-        send_msg = message
-        try:
-            self.socket.send(self.robot_dict[rbt_id], send_msg)
-        except Exception as e:
-            print(f"ERROR sending message to robot {rbt_id}: {e}")
-
     def report_rewind_robot(self, message, addr):
         """Forward rewind message to robot"""
         templ = "REWIND_ROBOT_{}"
         rbt_id = parse_message_regex(message, templ)[0]
         send_msg = "REWIND_ROBOT"
         self.socket.send(self.robot_dict[rbt_id], send_msg)
-
-    def report_rewind_completed(self, message, addr):
-        """Forward rewind completion message to teleop"""
-        templ = "REWIND_COMPLETED_{}"
-        rbt_id = parse_message_regex(message, templ)[0]
-        
-        # Find the teleop that initiated the rewind (ideally track this)
-        teleop_id = "0"
-        if teleop_id is not None:
-            send_msg = f"REWIND_COMPLETED_{rbt_id}"
-            self.socket.send(self.teleop_dict[teleop_id], send_msg)
 
     def report_scene_alignment_request(self, message, addr):
         templ = "SCENE_ALIGNMENT_REQUEST_{}_{}"

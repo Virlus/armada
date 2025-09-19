@@ -8,7 +8,6 @@ import threading
 from typing import Dict, List, Any, Optional, Tuple
 from scipy.spatial.transform import Rotation as R
 import cv2
-from diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 from omegaconf import DictConfig
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
@@ -17,6 +16,7 @@ from hardware.robot_env import RobotEnv, ROBOT, INTV
 from armada.communication.socket_client import SocketClient
 from armada.utils.message_distillation import parse_message_regex
 from armada.env_runner.real_env_runner import RealEnvRunner
+from armada.diffusion_policy.diffusion_policy.common.pytorch_util import dict_apply
 
 
 class RobotNode(RealEnvRunner):
@@ -101,9 +101,8 @@ class RobotNode(RealEnvRunner):
             "TELEOP_TAKEOVER_RESULT": self._handle_teleop_takeover_result,
             "CONTINUE_POLICY": self._handle_ctn,
             "TELEOP_CTRL_START": self._start_being_teleoped,
-            "COMMAND": self._process_teleop_command, # TODO
+            "COMMAND": self._process_teleop_command,
             "TELEOP_CTRL_STOP": self._ready_to_stop,
-            "THROTTLE_SHIFT": self._process_throttle_info,
             "REWIND_ROBOT": self._handle_rewind_robot,
             "SCENE_ALIGNMENT_COMPLETED": self._handle_scene_alignment_completed,
             "QUIT": self._handle_quit,
@@ -142,6 +141,7 @@ class RobotNode(RealEnvRunner):
 
     def run_rollout(self):
         """Main rollout loop"""
+        self.inform_robot_state()
         try:
             while self.running: 
                 
@@ -237,7 +237,7 @@ class RobotNode(RealEnvRunner):
         while self.running:
             if self.j >= self.max_episode_length and self.robot_state == "agent_controlled":
                 self.stop_event = "timeout"
-                self.call_timeout_demo()
+                self.call_timeout()
                 self.finish_episode = True
 
             # Handle robot state actions
@@ -362,7 +362,7 @@ class RobotNode(RealEnvRunner):
                         self.call_human_for_help("failure")
                     else:
                         self.stop_event = "timeout"
-                        self.call_timeout_demo()
+                        self.call_timeout()
                         self.finish_episode = True
 
                     return  
@@ -373,7 +373,7 @@ class RobotNode(RealEnvRunner):
                 self.robot_state = "idle"
                 print("Maximum episode length reached")
                 self.stop_event = "timeout"
-                self.call_timeout_demo()
+                self.call_timeout()
                 self.finish_episode = True
                 return  
             
@@ -382,7 +382,7 @@ class RobotNode(RealEnvRunner):
         Sends message to hub requesting human check with specified reason."""
         self.socket.send(f"NEED_HUMAN_CHECK_from_robot{self.robot_id}_for_{reason}") 
     
-    def call_timeout_demo(self):
+    def call_timeout(self):
         self.socket.send(f"TIMEOUT_of_{self.robot_id}") 
     
     def _handle_ctn(self):
@@ -392,7 +392,7 @@ class RobotNode(RealEnvRunner):
         if self.j >= self.max_episode_length: # after human decide
             print("Maximum episode length reached, turning to human for help.")
             self.stop_event = "cancel"
-            self.call_timeout_demo()
+            self.call_timeout()
             self.finish_episode = True
 
         print("False Positive failure! Continue policy rollout.")
@@ -404,17 +404,6 @@ class RobotNode(RealEnvRunner):
         templ = "READY_for_state_check_by_human_with_teleop_id_{}"
         teleop_id = parse_message_regex(message, templ)[0]
         self.teleop_id = teleop_id
-
-    def _process_throttle_info(self, msg):
-        """Process throttle shift information from teleop.
-        Parses position and rotation deltas for teleoperation."""
-        pattern = r"THROTTLE_SHIFT_POSE_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\]"
-        match = re.match(pattern, msg)
-        
-        if not match:
-            raise ValueError(f"Invalid command format: {msg}")
-
-        self.robot_state = "teleop_controlled"
     
     def reset_teleop_cmd(self):
         """Reset teleop command variables.
@@ -453,10 +442,6 @@ class RobotNode(RealEnvRunner):
         except Exception as e:
             print(f"Error during rewind: {e}")
             print("Continuing without rewind...")
-        
-        # Send rewind completion message
-        rewind_complete_msg = f"REWIND_COMPLETED_{self.robot_id}"
-        self.socket.send(rewind_complete_msg)
     
     def request_scene_alignment(self, context_info):
         """Request scene alignment from teleop node.
@@ -635,13 +620,8 @@ class RobotNode(RealEnvRunner):
                 raise ValueError(f"Failed to parse numeric values from command: {e}")
                         
     def inform_robot_state(self):
-        """Periodically report robot state"""
-        while self.running:
-            current_time = time.time()
-            if current_time - self.last_query_robot >= 1.0 / self.inform_freq:
-                self.last_query_robot = current_time
-                self.socket.send(f"INFORM_ROBOT_STATE_{self.robot_id}_{self.robot_state}")
-            time.sleep(0.01)
+        """Report robot state to the communication hub"""
+        self.socket.send(f"INFORM_ROBOT_STATE_{self.robot_id}_{self.robot_state}")
     
     def teleop_thread_loop(self):
         while not self.ready_to_stop_flag:
@@ -746,10 +726,7 @@ class RobotNode(RealEnvRunner):
         msg = f"SIGMA_of_{self.teleop_id}_RESET_from_{self.robot_id}".encode()
         self.socket.send(msg)
     
-    def send_resume_sigma(self, during_teleop=False):
+    def send_resume_sigma(self):
         """Send resume message to sigma device"""
-        if during_teleop:
-            msg = f"SIGMA_of_{self.teleop_id}_RESUME_from_{self.robot_id}_DURING_TELEOP".encode()
-        else:
-            msg = f"SIGMA_of_{self.teleop_id}_RESUME_from_{self.robot_id}".encode()
+        msg = f"SIGMA_of_{self.teleop_id}_RESUME_from_{self.robot_id}".encode()
         self.socket.send(msg)

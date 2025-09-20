@@ -1,0 +1,90 @@
+## Basic Usage
+
+### Network Setup (via Ethernet)
+
+#### A.SETUP DIRECT CONNECTION
+
+1. use a Ethernet cable to connect 2 computers.
+
+2. check the wired network interface
+
+```
+ip a
+```
+The name of the second interface should overwrite the `ABC` values below.
+
+3. configure static IP addresses
+
+```
+sudo gedit /etc/netplan/01-network-manager-all.yaml
+```
+
+Put the following content into the configuration file
+
+
+```
+
+#---------content-----------
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    ABC (Use your own interface name):  
+      addresses: [192.168.1.1/24] (for instance)
+      dhcp4: no
+      dhcp6: no
+#---------content-----------
+```
+
+4. apply the changes
+
+
+```
+sudo netplan apply
+```
+
+5. verify service status
+
+```
+systemctl status systemd-networkd # Optional
+sudo systemctl restart systemd-networkd  # Necessary
+```
+
+6. test the connection 
+```
+ping 192.168.1.1 (for instance)
+```
+
+#### B. RESTORE DEFAULT CONNECTION
+
+1. reset configuration
+
+Put back to the configuration file:
+```
+#---------content-----------
+network:
+  version: 2
+  renderer: NetworkManager
+#---------content-----------
+```
+  
+2. apply the changes
+```
+sudo netplan apply
+```
+
+
+3. restart NetworkManager
+```
+systemctl status NetworkManager # Optional
+sudo systemctl restart NetworkManager  # Necessary
+```
+
+### Multi-robot commands
+
+
+```
+python nodes/communication_hub.py # Start communiction hub first
+python nodes/teleop_node.py --teleop_id 0 # Setup teleop node later
+python run_real_rollout.py --config-name multi_robot_rollout # Finally the robot node
+```

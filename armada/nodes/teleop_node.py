@@ -397,15 +397,19 @@ class TeleopNode:
         time.sleep(0.1)
         self.keyboard_listener.start_keyboard_listener()
 
-    def inform_teleop_state(self):
+    def inform_teleop_state(self, inform_freq):
         """Report teleop state to hub."""
-        msg = f"INFORM_TELEOP_STATE_{self.teleop_id}_{self.teleop_state}".encode()
-        self.socket.send(msg)
+        while self.running:
+            if time.time() - self.last_query >= 1/inform_freq:
+                self.last_query = time.time()
+                msg = f"INFORM_TELEOP_STATE_{self.teleop_id}_{self.teleop_state}".encode()
+                self.socket.send(msg)
 
 if __name__ == "__main__":
     listen_freq = 200
     teleop_device = "sigma"
     num_robot = 3
+    inform_freq = 2
 
     assert teleop_device in ["sigma", "keyboard"]
     args = parse_args()
@@ -415,7 +419,12 @@ if __name__ == "__main__":
     # for 1 rbt:
     # teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
     try:
-        teleop_node.inform_teleop_state()
+        teleop_state_thread = threading.Thread(    #inform teleop state by a freq
+            target=teleop_node.inform_teleop_state,
+            args=(inform_freq,),
+            daemon = True
+        )
+        teleop_state_thread.start()
 
         while True:
             if teleop_node.keyboard_listener.quit:

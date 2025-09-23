@@ -13,7 +13,7 @@ from hardware.my_device.camera import CameraD400
 from hardware.my_device.keyboard import Keyboard
 from hardware.my_device.sigma import Sigma7
 from hardware.my_device.logitechG29_wheel import Controller
-from hardware.my_device.macros import CAM_SERIAL, INTV, HUMAN
+from hardware.my_device.macros import CAM_SERIAL, INTV, HUMAN, ROBOT
 
 
 class RobotEnv:

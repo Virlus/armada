@@ -86,5 +86,5 @@ sudo systemctl restart NetworkManager  # Necessary
 ```
 python nodes/communication_hub.py # Start communiction hub first
 python nodes/teleop_node.py --teleop_id 0 # Setup teleop node later
-python run_real_rollout.py --config-name multi_robot_rollout # Finally the robot node
+python run_rollout.py --config-name multi_robot_rollout # Finally the robot node
 ```

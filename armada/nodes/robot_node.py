@@ -387,7 +387,7 @@ class RobotNode(RealEnvRunner):
     def call_timeout(self):
         self.socket.send(f"TIMEOUT_of_{self.robot_id}") 
     
-    def _handle_ctn(self):
+    def _handle_ctn(self, message=None):
         """Handle continue policy command from teleop.
         Resumes autonomous policy execution after human check."""
         self.robot_state = "agent_controlled"
@@ -541,7 +541,7 @@ class RobotNode(RealEnvRunner):
         print("Scene alignment display with reference completed")
           
     
-    def _start_being_teleoped(self):
+    def _start_being_teleoped(self, message):
         """Start being teleoperated"""
         print("Start being teleoperated, state switched to 'TELEOP_CONTROLLED'")
         # Get current pose for human teleop
@@ -596,7 +596,7 @@ class RobotNode(RealEnvRunner):
     def _process_teleop_command(self, message):
         """Process teleoperation command from teleop node.
         Parses and executes teleop commands on the robot.""" 
-        if "sigma" in message and not self.ready_to_stop_flag:
+        if "sigma" in message:
             pattern = r"COMMAND_from_(\d+)_to_(\d+):sigma:\[([^\]]+)\],\[([^\]]+)\],([^,]+),([^,]+),([^,]+)"
             match = re.match(pattern, message)
             
@@ -626,7 +626,7 @@ class RobotNode(RealEnvRunner):
         self.socket.send(f"INFORM_ROBOT_STATE_{self.robot_id}_{self.robot_state}")
     
     def teleop_thread_loop(self):
-        while not self.ready_to_stop_flag:
+        while not self.ready_to_stop_flag or self.robot_state == 'teleop_controlled':
             self.teleop_action_step()
     
     def teleop_action_step(self):
@@ -690,13 +690,29 @@ class RobotNode(RealEnvRunner):
             time.sleep(max(1 / self.teleop_ctrl_freq - (time.time() - start_time), 0))
 
         # Check if ready to stop
-        if self.ready_to_stop_flag and self.j % self.Ta == 0:
+        if self.ready_to_stop_flag:
+            while self.j % self.Ta != 0: # Fill with dummy actions (do nothing after the task is finished)
+                curr_p_action = abs_p - self.last_p
+                curr_r_action = self.last_r.inv() * abs_r
+                self.episode_buffers['wrist_cam'].append(state_data['demo_wrist_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+                self.episode_buffers['side_cam'].append(state_data['demo_side_img'].permute(1, 2, 0).cpu().numpy().astype(np.uint8))
+                self.episode_buffers['tcp_pose'].append(state_data['tcp_pose'])
+                self.episode_buffers['joint_pos'].append(state_data['joint_pos'])
+                self.episode_buffers['action'].append(np.concatenate((curr_p_action, curr_r_action.as_quat(scalar_first=True), [gripper_action])))
+                self.episode_buffers['action_mode'].append(INTV)
+                self.j += 1
             self.stop_teleop()
+            
     
-    def reset(self):
-        """Reset robot to home pose."""
-        state=self.robot_env.reset_robot()
+    def reset(self,random_init=False, random_init_pose=None):
+        """Reset robot to initial state.
+        Optionally uses random initialization for exploration."""
+        state=self.robot_env.reset_robot(random_init, random_init_pose)
         self.send_reset_sigma()
+        tcp = state["tcp_pose"]
+        translate = tcp[0:3] - self.robot_env.home_pose[0:3]
+        rotation = (R.from_quat(self.robot_env.home_pose[3:], scalar_first=True).inv() * R.from_quat(tcp[3:],scalar_first=True)).as_quat(scalar_first=True)
+        self.send_transform_sigma(translate,rotation)
         return state
         
     def detach(self):

@@ -274,7 +274,9 @@ class RealEnvRunner(BaseEnvRunner):
         
         # Initialize failure detection module step data
         if self.failure_detection_module:
-            init_policy_obs = self.episode_manager.get_policy_observation()[0:1] # Keep dim but only require the first sample
+            init_policy_obs = self.episode_manager.get_policy_observation() # Keep dim but only require the first sample
+            for key, value in init_policy_obs.items():
+                init_policy_obs[key] = value[0:1]
             with torch.no_grad():
                 init_latent = self.policy.extract_latent(init_policy_obs)
                 init_latent = init_latent.reshape(-1)
@@ -512,7 +514,7 @@ class RealEnvRunner(BaseEnvRunner):
         curr_timestep = self.j
         
         for _ in range(curr_timestep):
-            if not self.failure_detection_module.rewind_step(self.j, curr_timestep):
+            if not self.failure_detection_module.rewind_step(self.j, self.episode_buffers, curr_timestep):
                 break
             # Rewind one step on robot
             curr_pos, curr_rot, prev_side_cam, prev_wrist_cam = self._rewind_single_step(curr_pos, curr_rot)

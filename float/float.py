@@ -13,7 +13,7 @@ from .async_failure_detector import AsyncFailureDetectionModule
 from float.util import find_matching_expert_demo, cosine_distance, optimal_transport_plan, rematch_expert_episode, OTVisualizationModule
 from armada.utils.episode_manager import EpisodeManager
 from armada.diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
-from hardware.robot_env import INTV, HUMAN
+from hardware.my_device.macros import INTV, HUMAN
 
 
 class FLOAT(AsyncFailureDetectionModule):
@@ -32,8 +32,8 @@ class FLOAT(AsyncFailureDetectionModule):
                  output_dir: str = None,
                  enable_visualization: bool = False,
                  To: int = 2,
-                 ee_pose_dim: List = None,
-                 image_shape: List = None
+                 ee_pose_dim: List[int] = None,
+                 image_shape: List[int] = None
                  ) -> None:
         super().__init__(max_queue_size=max_queue_size)
 
@@ -73,6 +73,7 @@ class FLOAT(AsyncFailureDetectionModule):
         self.greedy_ot_cost: Optional[torch.Tensor] = None
         self.rollout_latent: Optional[torch.Tensor] = None
         self.failure_logs: "OrderedDict[int, str]" = OrderedDict()
+        self.latest_result_idx: int = 0
 
         # Visualization
         if enable_visualization and output_dir is not None:
@@ -218,7 +219,6 @@ class FLOAT(AsyncFailureDetectionModule):
         results = self.get_results()
         failure_flag = False
         failure_reason: Optional[str] = None
-        result_idx = -1
 
         for result in results:
             idx = timestep // self.Ta - 1
@@ -262,8 +262,8 @@ class FLOAT(AsyncFailureDetectionModule):
             elif result["task_type"] == "failure_detection" and result["idx"] <= idx:
                 failure_flag = result["failure_flag"]
                 failure_reason = result["failure_reason"]
-                result_idx = max(result["idx"], result_idx)
-                print(f"=========== Received failure detection result for timestep: {result_idx} =============")
+                self.latest_result_idx = max(result["idx"], self.latest_result_idx)
+                print(f"=========== Received failure detection result for timestep: {self.latest_result_idx} =============")
 
                 if failure_flag:
                     failure_type = "OT"
@@ -273,7 +273,7 @@ class FLOAT(AsyncFailureDetectionModule):
         if not failure_flag and timestep >= max_episode_length - self.Ta:
             failure_reason = "maximum episode length reached"
 
-        return failure_flag, failure_reason, result_idx
+        return failure_flag, failure_reason, self.latest_result_idx
 
     def process_step(self, step_data: Dict[str, Any]) -> Dict[str, Any]:
         step_type = step_data['step_type']
@@ -303,6 +303,7 @@ class FLOAT(AsyncFailureDetectionModule):
             self.greedy_ot_plan = torch.zeros((self.demo_len // self.Ta, self.max_episode_length // self.Ta), device=self.device)
             self.greedy_ot_cost = torch.zeros((self.max_episode_length // self.Ta,), device=self.device)
             self.rollout_latent = torch.zeros((self.max_episode_length // self.Ta, int(self.To * self.obs_feature_dim)), device=self.device)
+            self.latest_result_idx = 0
 
         elif step_type == 'policy_step':
             curr_latent = step_data['curr_latent']
@@ -336,22 +337,24 @@ class FLOAT(AsyncFailureDetectionModule):
             self.detect_failure(timestep=j, max_episode_length=self.max_episode_length)
         failure_flag = False
         failure_reason = None
-        result_idx = -1
-        while result_idx < j // self.Ta - 1:
+        while self.latest_result_idx < j // self.Ta - 1:
             while not self.async_result_queue.empty():
                 failure_flag, failure_reason, curr_result_idx = self.detect_failure(timestep=j, 
                                                                                max_episode_length=self.max_episode_length)
-                result_idx = max(result_idx, curr_result_idx)
-                print(f"=========== Received failure detection result for timestep: {result_idx} =============")
+                self.latest_result_idx = max(self.latest_result_idx, curr_result_idx)
+                print(f"=========== Received failure detection result for timestep: {self.latest_result_idx} =============")
                 if failure_flag:
                     break
             if failure_flag:
                 break
-        return failure_flag, failure_reason, result_idx
+        return failure_flag, failure_reason, self.latest_result_idx
 
     def finalize_episode(self, episode: Dict[str, Any]) -> Dict[str, Any]:
         j = episode['action_mode'].shape[0] # episode length
-        self.wait_for_final_results(j)
+        success = INTV not in episode['action_mode']
+
+        if success:
+            self.wait_for_final_results(j)
 
         failure_signal = np.zeros((episode['action_mode'].shape[0] // self.Ta,), dtype=np.bool_)
         if len(self.failure_logs) > 0:
@@ -361,7 +364,6 @@ class FLOAT(AsyncFailureDetectionModule):
         if not self.update_stats:
             return {'failure_indices': failure_indices}
 
-        success = INTV not in episode['action_mode']
         if success:
             self.update_thresholds(
                 greedy_ot_cost=self.greedy_ot_cost,

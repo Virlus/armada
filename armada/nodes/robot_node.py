@@ -221,7 +221,9 @@ class RobotNode(RealEnvRunner):
         
         # Initialize failure detection module step data
         if self.failure_detection_module:
-            init_policy_obs = self.episode_manager.get_policy_observation()[0:1] # Keep dim but only require the first sample
+            init_policy_obs = self.episode_manager.get_policy_observation() # Keep dim but only require the first sample
+            for key, value in init_policy_obs.items():
+                init_policy_obs[key] = value[0:1]
             with torch.no_grad():
                 init_latent = self.policy.extract_latent(init_policy_obs)
                 init_latent = init_latent.reshape(-1)

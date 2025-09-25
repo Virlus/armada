@@ -44,7 +44,7 @@ policy:
   n_obs_steps: ${n_obs_steps}
   num_inference_steps: 100
 
-  crop_shape: [216, 288]
+  crop_shape: [224, 224]
   obs_encoder_group_norm: True
   eval_fixed_crop: True
 
@@ -91,15 +91,15 @@ val_dataloader:
 optimizer:
   transformer_weight_decay: 1.0e-3
   obs_encoder_weight_decay: 1.0e-6
-  learning_rate: 3.0e-5
+  learning_rate: 1.0e-4
   betas: [0.9, 0.95]
 
 training:
   device: "cuda:0"
   seed: 42
   debug: False
-  resume: True
-  resume_path: outputs/0305_14.10.45_train_diffusion_transformer_hybrid_multi_gpu_pouring
+  resume: False
+  resume_path: outputs/mytest
   # optimization
   lr_scheduler: cosine
   # Transformer needs LR warmup

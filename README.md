@@ -65,7 +65,7 @@ python record.py --output /path/to/your/output/path --resolution 224 224 --fps 1
 
 ## 🤖 Policy Training
 
-The main training code can be found in [aramda/diffusion_policy](./armada/diffusion_policy), and the corresponding configuration files are placed under [armada/config/training](./armada/config/training).
+The main training code can be found in [armada/diffusion_policy](./armada/diffusion_policy), and the corresponding configuration files are placed under [armada/config/training](./armada/config/training).
 
 An example usage of our training recipe is in [armada/train.sh](./armada/train.sh).
 

@@ -75,6 +75,22 @@ sudo netplan apply
 sudo systemctl restart NetworkManager
 ```
 
+## 🚨 FLOAT failure detection
+
+The hyperparameters of FLOAT failure detector is included in [our rollout configuration files](./config/).
+We detail some key parameters as follows:
+```
+.
+├── failure_detection:
+|   ├── max_queue_size: ${the maximum number of requests for failure detection in the asynchronous queue.}
+|   └── num_samples: ${number of inferred action chunk samples, default to 1}
+|   └── num_expert_candidates: ${number of candidates in expert demonstrations for OT matching}
+|   └── ot_percentile: ${the initial percentile of OT values used for threshold computation}
+|   └── soft_ot_ratio: ${used for adaptive rewinding}
+|   └── update_stats: ${whether to update FLOAT threshold during rollout. Muse be set to True in your first rollout to activate the failure detector!}
+|   └── enable_visualization: ${whether to save FLOAT visualizations to output directory}
+```
+
 ## ▶️ Running multi-robot experiments
 
 We select one of the hosts to be the communication hub of the entire multi-robot system.

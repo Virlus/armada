@@ -13,7 +13,4 @@ baseline_data
 third_party/multi_gpu_dp
 outputs/
 
-*.png
-*.jpg
-
 ot_reweight.sh

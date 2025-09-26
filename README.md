@@ -25,7 +25,7 @@
 ## 🔥 Highlights
 
 <p align="center">
-<img src="assets/method.pdf" alt="highlights" style="width:90%;" />
+<img src="assets/method.png" alt="highlights" style="width:90%;" />
 </p>
 
 - Our failure detector, FLOAT, achieves **nearly 95% accuracy** in four real-world tasks, improving the SOTA online failure detection approaches by over 20%.

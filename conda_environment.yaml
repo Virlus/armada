@@ -1,4 +1,4 @@
-name: human_dp
+name: armada
 channels:
   - pytorch
   - pytorch3d
@@ -46,23 +46,17 @@ dependencies:
   - diffusers=0.11.1
   - av=10.0.0
   - cmake=3.24.3
-  # trick to avoid cpu affinity issue described in https://github.com/pytorch/pytorch/issues/99625
   - llvm-openmp=14
-  # trick to force reinstall imagecodecs via pip
   - imagecodecs==2022.8.8
   - pip:
     - ray==2.2.0
-    # requires mujoco py dependencies libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
     - free-mujoco-py==2.1.6
     - pygame==2.1.2
     - pybullet-svl==3.1.6.4
-    # - robosuite @ https://github.com/cheng-chi/robosuite/archive/277ab9588ad7a4f4b55cf75508b44aa67ec171f0.tar.gz
     - robosuite==1.5.1
     - robomimic==0.2.0
     - pytorchvideo==0.1.5
-    # pip package required for jpeg-xl
     - imagecodecs==2022.9.26
-    # - r3m @ https://github.com/facebookresearch/r3m/archive/b2334e726887fa0206962d7984c69c5fb09cceab.tar.gz
     - dm-control==1.0.9
     - POT==0.9.5
     - huggingface-hub==0.25.0

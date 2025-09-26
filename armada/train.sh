@@ -1,7 +1,7 @@
 #!/bin/bash
 {
-    source "/path/to/miniconda3/etc/profile.d/conda.sh"; conda activate human_dp
-    export WANDB_API_KEY=${wandb_api_key}
+    source "/path/to/miniconda3/etc/profile.d/conda.sh"; conda activate armada
+    export WANDB_API_KEY=${your_wandb_api_key}
     export HYDRA_FULL_ERROR=1
     export CUDA_VISIBLE_DEVICES=0
 

@@ -27,7 +27,6 @@ class MyDataset(BaseImageDataset):
             seed=42,
             val_ratio=0.0,
             max_train_episodes=None,
-            rel_ee_pose=False,
             n_obs_steps=1,
             shape_meta=None,
             random_crop=False,
@@ -58,7 +57,6 @@ class MyDataset(BaseImageDataset):
         self.horizon = horizon
         self.pad_before = pad_before
         self.pad_after = pad_after
-        self.rel_ee_pose = rel_ee_pose
         self.n_obs_steps = n_obs_steps
         self.shape_meta = shape_meta
         self.action_dim = self.shape_meta['action']['shape'][0]
@@ -111,67 +109,30 @@ class MyDataset(BaseImageDataset):
         return val_set
 
     def get_normalizer(self, mode='limits', **kwargs):
-        if self.rel_ee_pose:
-            rel_action_buffer = []
-            ee_obs_buffer = []
-            for episode_id in range(self.replay_buffer.n_episodes):
-                episode_start = 0 if episode_id == 0 else self.replay_buffer.episode_ends[episode_id-1]
-                episode_end = self.replay_buffer.episode_ends[episode_id]
-                base_idx = np.concatenate((np.array([episode_start]), np.arange(episode_start, episode_end - 1)), 0)
-                curr_idx = np.arange(episode_start, episode_end)
-                
-                # Relative action space
-                base_translate = self.replay_buffer['action'][base_idx, :3]
-                curr_translate = self.replay_buffer['action'][curr_idx, :3]
-                rel_pos = curr_translate - base_translate
-                base_rot = R.from_quat(self.replay_buffer['action'][base_idx, 3:7], scalar_first=True)
-                curr_rot = R.from_quat(self.replay_buffer['action'][curr_idx, 3:7], scalar_first=True)
-                rel_rot = (base_rot.inv() * curr_rot).as_quat(scalar_first=True)
-                if self.action_rot_transformer is not None:
-                    rel_rot = self.action_rot_transformer.forward(rel_rot)
-                gripper_action = self.replay_buffer['action'][curr_idx, -1:]
-                episode_rel_action = np.concatenate((rel_pos, rel_rot, gripper_action), -1)
-                rel_action_buffer.append(episode_rel_action)
-
-                # ee pose obs
-                obs_ee_pos = self.replay_buffer['tcp_pose'][curr_idx, :3]
-                obs_ee_rot = self.replay_buffer['tcp_pose'][curr_idx, 3:]
-                if self.obs_rot_transformer is not None:
-                    obs_ee_rot = self.obs_rot_transformer.forward(obs_ee_rot)
-                ee_pose_obs = np.concatenate((obs_ee_pos, obs_ee_rot), -1)
-                ee_obs_buffer.append(ee_pose_obs)
-            rel_action_dataset = np.concatenate(rel_action_buffer, axis=0)
-            ee_obs_dataset = np.concatenate(ee_obs_buffer, axis=0)
-            data = {
-                'action': rel_action_dataset,
-                # 'qpos': self.replay_buffer['joint_pos'][...,:7]
-                'ee_pose': ee_obs_dataset,
-            }
+        action_sample = self.replay_buffer['action']
+        action_processed = np.zeros((action_sample.shape[0], self.action_dim))
+        action_processed[:, :3] = action_sample[:, :3]
+        action_rotation = action_sample[:, 3:7]
+        if self.action_rot_transformer is not None:
+            action_processed[:, 3:self.action_dim-1] = self.action_rot_transformer.forward(action_rotation)
         else:
-            action_sample = self.replay_buffer['action']
-            action_processed = np.zeros((action_sample.shape[0], self.action_dim))
-            action_processed[:, :3] = action_sample[:, :3]
-            action_rotation = action_sample[:, 3:7]
-            if self.action_rot_transformer is not None:
-                action_processed[:, 3:self.action_dim-1] = self.action_rot_transformer.forward(action_rotation)
-            else:
-                action_processed[:, 3:7] = action_rotation
-            action_processed[:, -1] = action_sample[:, 7]
+            action_processed[:, 3:7] = action_rotation
+        action_processed[:, -1] = action_sample[:, 7]
 
-            if 'ee_pose' in self.shape_meta['obs']:
-                tcp_pose_sample = self.replay_buffer['tcp_pose']
-                ee_pose = np.zeros((tcp_pose_sample.shape[0], self.ee_pose_dim))
-                ee_pose[:, :3] = tcp_pose_sample[:, :3]
-                ee_rot = tcp_pose_sample[:, 3:7]
-                if self.obs_rot_transformer is not None:
-                    ee_pose[:, 3:self.ee_pose_dim] = self.obs_rot_transformer.forward(ee_rot)
-                else:
-                    ee_pose[:, 3:7] = ee_rot
-            
-            data = {
-                'action': action_processed,
-                'ee_pose': ee_pose
-            }
+        if 'ee_pose' in self.shape_meta['obs']:
+            tcp_pose_sample = self.replay_buffer['tcp_pose']
+            ee_pose = np.zeros((tcp_pose_sample.shape[0], self.ee_pose_dim))
+            ee_pose[:, :3] = tcp_pose_sample[:, :3]
+            ee_rot = tcp_pose_sample[:, 3:7]
+            if self.obs_rot_transformer is not None:
+                ee_pose[:, 3:self.ee_pose_dim] = self.obs_rot_transformer.forward(ee_rot)
+            else:
+                ee_pose[:, 3:7] = ee_rot
+        
+        data = {
+            'action': action_processed,
+            'ee_pose': ee_pose
+        }
         normalizer = LinearNormalizer()
         normalizer.fit(data=data, last_n_dims=1, mode=mode, **kwargs)
         normalizer['wrist_img'] = get_image_range_normalizer()
@@ -186,68 +147,35 @@ class MyDataset(BaseImageDataset):
         wrist_img = np.moveaxis(sample['wrist_cam'],-1,1)/255
         side_img = np.moveaxis(sample['side_cam'],-1,1)/255
 
-        if self.rel_ee_pose:
-            action_sample = sample['action'].copy()
-            ee_pose_sample = sample['tcp_pose'].copy()
-            
-            # Compute the relative action between consecutive frames
-            rel_action = np.zeros((self.horizon, self.action_dim))
-            prev_idx = np.concatenate((np.array([0]), np.arange(self.horizon-1)), 0)
-            rel_action[:, :3] = action_sample[:, :3] - action_sample[prev_idx, :3]
-            prev_rot = R.from_quat(action_sample[prev_idx, 3:7], scalar_first=True)
-            curr_rot = R.from_quat(action_sample[:, 3:7], scalar_first=True)
-            rel_action_rot = (prev_rot.inv() * curr_rot).as_quat(scalar_first=True)
-            if self.action_rot_transformer is not None:
-                rel_action_rot = self.action_rot_transformer.forward(rel_action_rot)
-            rel_action[:, 3:self.action_dim-1] = rel_action_rot
-            rel_action[:, -1] = action_sample[:, -1]
-            action_sample = rel_action
-            
-            # Compute ee pose as observations
-            obs_ee_pos = ee_pose_sample[:, :3]
-            obs_ee_rot = ee_pose_sample[:, 3:]
-            if self.obs_rot_transformer is not None:
-                obs_ee_rot = self.obs_rot_transformer.forward(obs_ee_rot)
-            ee_pose_obs = np.concatenate((obs_ee_pos, obs_ee_rot), -1)
-            data = {
-                'obs': {
-                    'wrist_img': wrist_img, # T, 3, 480, 640
-                    'side_img': side_img, # T, 3, 480, 640
-                    # 'qpos': qpos, # T, 7
-                    'ee_pose': ee_pose_obs,  # T, 9
-                },
-                'action': action_sample.astype(np.float32) # T, self.action_dim
-            }
+        action_sample = sample['action'].copy()
+        action_processed = np.zeros((action_sample.shape[0], self.action_dim))
+        action_processed[:, :3] = action_sample[:, :3]
+        action_rotation = action_sample[:, 3:7]
+        if self.action_rot_transformer is not None:
+            action_processed[:, 3:self.action_dim-1] = self.action_rot_transformer.forward(action_rotation)
         else:
-            action_sample = sample['action'].copy()
-            action_processed = np.zeros((action_sample.shape[0], self.action_dim))
-            action_processed[:, :3] = action_sample[:, :3]
-            action_rotation = action_sample[:, 3:7]
-            if self.action_rot_transformer is not None:
-                action_processed[:, 3:self.action_dim-1] = self.action_rot_transformer.forward(action_rotation)
-            else:
-                action_processed[:, 3:7] = action_rotation
-            action_processed[:, -1] = action_sample[:, 7]
+            action_processed[:, 3:7] = action_rotation
+        action_processed[:, -1] = action_sample[:, 7]
 
-            if 'ee_pose' in self.shape_meta['obs']:
-                tcp_pose_sample = sample['tcp_pose'].copy()
-                ee_pose = np.zeros((tcp_pose_sample.shape[0], self.ee_pose_dim))
-                ee_pose[:, :3] = tcp_pose_sample[:, :3]
-                rel_ee_rot = tcp_pose_sample[:, 3:7]
-                if self.obs_rot_transformer is not None:
-                    ee_pose[:, 3:self.ee_pose_dim] = self.obs_rot_transformer.forward(rel_ee_rot)
-                else:
-                    ee_pose[:, 3:7] = rel_ee_rot
-            
-            data = {
-                'obs': {
-                    'wrist_img': wrist_img, # T, 3, 480, 640
-                    'side_img': side_img, # T, 3, 480, 640
-                    'ee_pose': ee_pose, # T, self.ee_pose_dim
-                },
-                # 'action': action_sample.astype(np.float32) # T, 8
-                'action': action_processed.astype(np.float32), # T, self.action_dim
-            }
+        if 'ee_pose' in self.shape_meta['obs']:
+            tcp_pose_sample = sample['tcp_pose'].copy()
+            ee_pose = np.zeros((tcp_pose_sample.shape[0], self.ee_pose_dim))
+            ee_pose[:, :3] = tcp_pose_sample[:, :3]
+            rel_ee_rot = tcp_pose_sample[:, 3:7]
+            if self.obs_rot_transformer is not None:
+                ee_pose[:, 3:self.ee_pose_dim] = self.obs_rot_transformer.forward(rel_ee_rot)
+            else:
+                ee_pose[:, 3:7] = rel_ee_rot
+        
+        data = {
+            'obs': {
+                'wrist_img': wrist_img, # T, 3, 480, 640
+                'side_img': side_img, # T, 3, 480, 640
+                'ee_pose': ee_pose, # T, self.ee_pose_dim
+            },
+            # 'action': action_sample.astype(np.float32) # T, 8
+            'action': action_processed.astype(np.float32), # T, self.action_dim
+        }
 
         return data
     
@@ -308,7 +236,7 @@ def test():
             'rotation_rep': 'rotation_6d'
         }
     }
-    dataset = MyDataset(zarr_path, horizon=16, rel_ee_pose=True, n_obs_steps=2, shape_meta=shape_meta, random_crop=True, image_shape=(3,224,224))
+    dataset = MyDataset(zarr_path, horizon=16, n_obs_steps=2, shape_meta=shape_meta, random_crop=True, image_shape=(3,224,224))
     dataset.get_normalizer()
     import pdb; pdb.set_trace()
     # print(dataset[100])

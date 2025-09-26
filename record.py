@@ -6,7 +6,7 @@ from scipy.spatial.transform import Rotation as R
 
 from hardware.robot_env import RobotEnv
 from hardware.my_device.macros import CAM_SERIAL
-from diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
+from armada.diffusion_policy.diffusion_policy.common.replay_buffer import ReplayBuffer
 
 def record(replay_buffer:ReplayBuffer, robot_env:RobotEnv):
     tcp_pose = []

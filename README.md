@@ -21,6 +21,7 @@
 - [📷 Data Collection](#-data-collection)
 - [🤖 Policy Training](#-policy-training)
 - [🌐 Multi-Robot Deployment](#-multi-robot-deployment)
+- [📝 TODO](#-todo)
 - [🙏 Acknowledgement](#-acknowledgement)
 
 ## 🔥 Highlights
@@ -71,6 +72,11 @@ An example usage of our training recipe is in [armada/train.sh](./armada/train.s
 ## 🌐 Multi-Robot Deployment
 
 Please refer to [Multi-robot deployment guide](./armada/README.md) for more information.
+
+## 📝 TODO
+
+- [x] Release the training code and one-to-multiple shared control codebase.
+- [ ] Release the code for multiple-to-multiple control.
 
 ## 🙏 Acknowledgement
 

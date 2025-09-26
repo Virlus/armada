@@ -69,3 +69,4 @@ An example usage of our training recipe is in [armada/train.sh](./armada/train.s
 
 ## 🌐 Multi-robot deployment
 
+Please refer to [Multi-robot deployment guide](./armada/README.md) for more information.

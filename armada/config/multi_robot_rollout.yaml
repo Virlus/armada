@@ -62,5 +62,5 @@ camera:
   serial: 
     - "135122075425"
     - "135122070361"
-  fps: 10
-  img_shape: [3, 224, 224]
+  fps: ${fps}
+  img_shape: ${training.task.image_shape}

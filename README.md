@@ -17,10 +17,10 @@
 ## Table of Contents
 
 - [🔥 Highlights](#-highlights)
-- [🛠️ Installation](#️-installation)
-- [📷 Data Collection](#️-data-collection)
+- [🛠️ Installation](#-installation)
+- [📷 Data Collection](#-data-collection)
 - [🤖 Policy Training](#-policy-training)
-- [🌐 Multi-Robot Deployment](#️-multi-robot-deployment)
+- [🌐 Multi-Robot Deployment](#-multi-robot-deployment)
 - [🙏 Acknowledgement](#-acknowledgement)
 
 ## 🔥 Highlights

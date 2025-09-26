@@ -20,7 +20,7 @@
 - [🛠️ Installation](#️-installation)
 - [📷 Data Collection](#️-data-collection)
 - [🤖 Policy Training](#-policy-training)
-- [🌐 Multi robot deployment](#️-multi-robot-deployment)
+- [🌐 Multi-Robot Deployment](#️-multi-robot-deployment)
 - [🙏 Acknowledgement](#-acknowledgement)
 
 ## 🔥 Highlights
@@ -68,7 +68,7 @@ The main training code can be found in [aramda/diffusion_policy](./armada/diffus
 
 An example usage of our training recipe is in [armada/train.sh](./armada/train.sh).
 
-## 🌐 Multi robot deployment
+## 🌐 Multi-Robot Deployment
 
 Please refer to [Multi-robot deployment guide](./armada/README.md) for more information.
 

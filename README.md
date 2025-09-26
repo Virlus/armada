@@ -20,12 +20,13 @@
 - [🛠️ Installation](#️-installation)
 - [📷 Data Collection](#️-data-collection)
 - [🤖 Policy Training](#-policy-training)
-- [🌐 Multi-robot deployment](#️-multi-robot-deployment)
+- [🌐 Multi robot deployment](#️-multi-robot-deployment)
+- [🙏 Acknowledgement](#-acknowledgement)
 
 ## 🔥 Highlights
 
 <p align="center">
-<img src="assets/method.png" alt="highlights" style="width:90%;" />
+<img src="assets/method.png" alt="highlights" style="width:98%;" />
 </p>
 
 - Our failure detector, FLOAT, achieves **nearly 95% accuracy** in four real-world tasks, improving the SOTA online failure detection approaches by over 20%.
@@ -67,6 +68,10 @@ The main training code can be found in [aramda/diffusion_policy](./armada/diffus
 
 An example usage of our training recipe is in [armada/train.sh](./armada/train.sh).
 
-## 🌐 Multi-robot deployment
+## 🌐 Multi robot deployment
 
 Please refer to [Multi-robot deployment guide](./armada/README.md) for more information.
+
+## 🙏 Acknowledgement
+
+Our code is build upon [Diffusion Policy](https://github.com/real-stanford/diffusion_policy). Thanks for their open-source effort!

@@ -30,7 +30,7 @@ class RobotNode(RealEnvRunner):
         self.robot_id = self.cfg.robot_info.robot_id
 
         # Initialize MessageHandler as a component first
-        from multi_robot.utils.message_distillation import MessageHandler
+        from armada.utils.message_distillation import MessageHandler
         self.message_handler = MessageHandler()
         self._setup_message_routes()
         

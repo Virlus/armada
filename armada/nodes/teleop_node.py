@@ -28,9 +28,9 @@ class TeleopNode:
     """Teleoperation node that handles human operator input and intervention.
     Manages teleoperation devices, user interface, and communication with robot nodes."""
     
-    def __init__(self, teleop_id, socket_ip, socket_port, listen_freq=10, teleop_device="sigma", num_robot=1, Ta=8):
+    def __init__(self, teleop_id, socket_ip, socket_port, listen_freq=10, num_robot=1):
         # Initialize basic parameters
-        self._setup_basic_params(teleop_id, listen_freq, teleop_device, Ta)
+        self._setup_basic_params(teleop_id, listen_freq)
         
         # Initialize MessageHandler as a component
         self.message_handler = MessageHandler()
@@ -42,16 +42,14 @@ class TeleopNode:
         # Initialize teleop devices
         self._initialize_devices(num_robot)
 
-    def _setup_basic_params(self, teleop_id, listen_freq, teleop_device, Ta):
+    def _setup_basic_params(self, teleop_id, listen_freq):
         """Setup basic teleop parameters."""
-        self.Ta = Ta
         self.teleop_id = teleop_id
         self.stop_event = None
         self.listen_freq = listen_freq
         self.running = True
         self.teleop_state = "idle"  # busy / idle
-        self.teleop_device = teleop_device  # keyboard/sigma
-        self.keyboard_listener = KeyboardListener(teleop_device)
+        self.keyboard_listener = KeyboardListener()
         self.rewind_completed = False
         self.last_query = time.time() - 1
 
@@ -63,10 +61,9 @@ class TeleopNode:
 
     def _initialize_devices(self, num_robot):
         """Initialize teleop input devices."""
-        if self.teleop_device == "sigma":
-            self.sigma = Sigma7(num_robot=num_robot)
-            pygame.init()
-            self.controller = Controller(0)
+        self.sigma = Sigma7(num_robot=num_robot)
+        pygame.init()
+        self.controller = Controller(0)
 
     def _setup_message_routes(self):
         """Define message routing table based on original handle_message logic"""
@@ -92,7 +89,6 @@ class TeleopNode:
 
     def _handle_sigma_message(self, message: str):
         """Handle SIGMA messages with device assertion and sub-routing"""
-        assert self.teleop_device == "sigma"
         
         sigma_handlers = {
             "DETACH": self.handle_sigma_detach,
@@ -283,30 +279,26 @@ class TeleopNode:
                 print("Stop sending command.")
                 break
 
-            if self.teleop_device == "keyboard" and self.keyboard_listener.current_cmd:
-                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:{self.keyboard_listener.current_cmd}")  #cmd send from here
-
-            elif self.teleop_device == "sigma":
-                curr_time = time.time()
-                diff_p, diff_r, width = self.sigma.get_control(rbt_id)
-                diff_r = diff_r.as_quat(scalar_first = True)
-                # Check throttle pedal state (for teleop pausing)
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        pass
-                
-                throttle = self.controller.get_throttle()
-                if throttle >= -0.9:
-                    if last_throttle:
-                        self.sigma.resume(rbt_id)
-                        continue
-                    self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle},{curr_time}")
-                elif throttle < -0.9 and not last_throttle:
-                    self.sigma.detach(rbt_id)
-                    self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle},{curr_time}")
-                
-                elapsed = time.time() - start_time
-                time.sleep(max(0, interval - elapsed))
+            curr_time = time.time()
+            diff_p, diff_r, width = self.sigma.get_control(rbt_id)
+            diff_r = diff_r.as_quat(scalar_first = True)
+            # Check throttle pedal state (for teleop pausing)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pass
+            
+            throttle = self.controller.get_throttle()
+            if throttle >= -0.9:
+                if last_throttle:
+                    self.sigma.resume(rbt_id)
+                    continue
+                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle},{curr_time}")
+            elif throttle < -0.9 and not last_throttle:
+                self.sigma.detach(rbt_id)
+                self.socket.send(f"COMMAND_from_{self.teleop_id}_to_{rbt_id}:sigma:{diff_p.tolist()},{diff_r.tolist()},{width},{throttle},{curr_time}")
+            
+            elapsed = time.time() - start_time
+            time.sleep(max(0, interval - elapsed))
 
         self.keyboard_listener.stop_keyboard_listener()
         time.sleep(0.5) # Leave some time for keyboard listener to stop
@@ -407,17 +399,12 @@ class TeleopNode:
 
 if __name__ == "__main__":
     listen_freq = 200
-    teleop_device = "sigma"
     num_robot = 3
     inform_freq = 2
 
-    assert teleop_device in ["sigma", "keyboard"]
     args = parse_args()
-    args.teleop_id = 0 
-    # for 2 rbts:
-    teleop_node = TeleopNode(args.teleop_id,"192.168.1.3", 12345,listen_freq,teleop_device,num_robot,Ta=8)
-    # for 1 rbt:
-    # teleop_node = TeleopNode(args.teleop_id,"127.0.0.1", 12345,listen_freq,teleop_device,num_robot,Ta=8)
+    # Use your own ip and port
+    teleop_node = TeleopNode(args.teleop_id,"192.168.1.3", 12345,listen_freq,num_robot) 
     try:
         teleop_state_thread = threading.Thread(    #inform teleop state by a freq
             target=teleop_node.inform_teleop_state,

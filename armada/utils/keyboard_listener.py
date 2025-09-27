@@ -1,8 +1,7 @@
 from pynput.keyboard import Listener
 
 class KeyboardListener:
-    def __init__(self, device_type="keyboard"):
-        self.device_type = device_type
+    def __init__(self):
         self.accept = False
         self.cancel = False
         self._continue = False

@@ -154,6 +154,7 @@ class TeleopNode:
         'N' for Need teleop-ctrl
         """
         self.teleop_state = "busy"
+        self.inform_teleop_state()
         templ = "EXECUTE_HUMAN_CHECK_state_of_robot_{}_with_request{}"
         rbt_id, request_type = parse_message_regex(message, templ)
         print(f"===================================New request from robot {rbt_id}.==================================")
@@ -214,6 +215,7 @@ class TeleopNode:
         msg = f"TELEOP_TAKEOVER_RESULT_SUCCESS_from_robot{rbt_id}".encode()
         self.socket.send(msg)
         self.teleop_state = "idle"
+        self.inform_teleop_state()
 
     def handle_failure(self,rbt_id):
         """Handle failure decision from human operator.
@@ -222,7 +224,8 @@ class TeleopNode:
         msg = f"TELEOP_TAKEOVER_RESULT_FAILURE_from_robot{rbt_id}".encode()
         self.socket.send(msg)
         self.teleop_state = "idle"
-
+        self.inform_teleop_state()
+    
     def handle_continue_policy(self,rbt_id):
         """Handle continue policy decision from human operator.
         Instructs robot to continue autonomous policy execution."""
@@ -230,6 +233,7 @@ class TeleopNode:
         msg = f"CONTINUE_POLICY_{rbt_id}".encode()
         self.socket.send(msg)
         self.teleop_state = "idle"
+        self.inform_teleop_state()
 
     def handle_need_teleop(self,rbt_id):
         """Handle teleoperation request from human operator.
@@ -317,6 +321,7 @@ class TeleopNode:
         """Stop teleoperation control session.
         Resets teleop state to idle after session ends."""
         self.teleop_state = "idle"
+        self.inform_teleop_state()
         
     def send_teleop_stop(self,rbt_id):
         """Send stop command to robot with event type.
@@ -335,6 +340,7 @@ class TeleopNode:
         print(f"===================================New EPISODE STARTED==================================")
         """Handle scene alignment request from robot"""
         self.teleop_state = "busy"
+        self.inform_teleop_state()
         templ = "SCENE_ALIGNMENT_REQUEST_{}_{}"
         rbt_id, context_info = parse_message_regex(message, templ)
         
@@ -354,6 +360,7 @@ class TeleopNode:
         completion_msg = f"SCENE_ALIGNMENT_COMPLETED_{rbt_id}".encode()
         self.socket.send(completion_msg)
         self.teleop_state = "idle"
+        self.inform_teleop_state()
         
         # Restart keyboard listener after completing scene alignment
         time.sleep(0.1)
@@ -362,6 +369,7 @@ class TeleopNode:
     def handle_scene_alignment_with_ref_request(self, message):
         """Handle scene alignment with reference request from robot"""
         self.teleop_state = "busy"
+        self.inform_teleop_state()
          
         # Simple format without image data - robot displays images locally
         templ = "SCENE_ALIGNMENT_WITH_REF_REQUEST_{}_{}"
@@ -389,13 +397,16 @@ class TeleopNode:
         time.sleep(0.1)
         self.keyboard_listener.start_keyboard_listener()
 
-    def inform_teleop_state(self, inform_freq):
+    def inform_teleop_state(self):
         """Report teleop state to hub."""
-        while self.running:
-            if time.time() - self.last_query >= 1/inform_freq:
-                self.last_query = time.time()
-                msg = f"INFORM_TELEOP_STATE_{self.teleop_id}_{self.teleop_state}".encode()
-                self.socket.send(msg)
+        # while self.running:
+        #     if time.time() - self.last_query >= 1/inform_freq:
+        #         self.last_query = time.time()
+        #         msg = f"INFORM_TELEOP_STATE_{self.teleop_id}_{self.teleop_state}".encode()
+        #         self.socket.send(msg)
+        if self.running:
+            msg = f"INFORM_TELEOP_STATE_{self.teleop_id}_{self.teleop_state}".encode()
+            self.socket.send(msg)
 
 if __name__ == "__main__":
     listen_freq = 200
@@ -406,12 +417,13 @@ if __name__ == "__main__":
     # Use your own ip and port
     teleop_node = TeleopNode(args.teleop_id,"192.168.1.3", 12345,listen_freq,num_robot) 
     try:
-        teleop_state_thread = threading.Thread(    #inform teleop state by a freq
-            target=teleop_node.inform_teleop_state,
-            args=(inform_freq,),
-            daemon = True
-        )
-        teleop_state_thread.start()
+        # teleop_state_thread = threading.Thread(    #inform teleop state by a freq
+        #     target=teleop_node.inform_teleop_state,
+        #     args=(inform_freq,),
+        #     daemon = True
+        # )
+        # teleop_state_thread.start()
+        teleop_node.inform_teleop_state()
 
         while True:
             if teleop_node.keyboard_listener.quit:

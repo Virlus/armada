@@ -57,14 +57,12 @@ class Sigma7:
             diff_p = diff_p * self.pos_scale
             width = pg / -0.027 * self.width_scale
             diff_r = R.from_euler('xyz', diff_r,degrees=False)
-            # print("------------get_control-------------")
         else:
             diff_p = curr_p - self.init_p[rbt_id]
             diff_r = curr_r - self.init_r[rbt_id]
             diff_p = diff_p * self.pos_scale
             width = pg / -0.027 * self.width_scale
             diff_r = R.from_euler('xyz', diff_r, degrees=False)
-            # print("------------get_control from {}-------------".format(rbt_id))
         return diff_p, diff_r, width
     
     def detach(self,rbt_id=0):
@@ -78,7 +76,6 @@ class Sigma7:
         else:
             self._prev_p[rbt_id] = prev_p
             self._prev_r[rbt_id] = prev_r
-            # print("------------detach from {},init_p = {} ,init_r = {}-------------".format(rbt_id, self._prev_p[rbt_id],self._prev_p[rbt_id]))
 
     def resume(self,rbt_id=0):
         rbt_id = int(rbt_id)
@@ -91,7 +88,6 @@ class Sigma7:
         else:
             self.init_p[rbt_id] = self.init_p[rbt_id] + curr_p - self._prev_p[rbt_id]  # renew init_p by adding bias during detachment, which is curr_p - self._prev_p
             self.init_r[rbt_id] = self.init_r[rbt_id] + curr_r - self._prev_r[rbt_id]
-            # print("------------resume from {},init_p = {} ,init_r = {}-------------".format(rbt_id,self.init_p[rbt_id], self.init_r[rbt_id]))
 
     def reset(self,rbt_id = 0):
         rbt_id = int(rbt_id)
@@ -104,7 +100,6 @@ class Sigma7:
             print("------------reset -------------")
         else:
             self.init_p[rbt_id], self.init_r[rbt_id], _ = self.read_state()
-            # print("------------reset from {},init_p = {} ,init_r = {} -------------".format(rbt_id, self.init_p[rbt_id], self.init_r[rbt_id]))
 
     def transform_from_robot(self, translate, rotation,rbt_id=0):
         rbt_id = int(rbt_id)
@@ -118,7 +113,6 @@ class Sigma7:
         else:
             self.init_p[rbt_id] -= translate / self.pos_scale
             self.init_r[rbt_id] -= rotation.as_euler('xyz', degrees=False)
-            # print("------------transform from {},init_p = {} ,init_r = {}-------------".format(rbt_id, self.init_p[rbt_id], self.init_r[rbt_id]))
     
 if __name__ == "__main__":
     num_robot = 1

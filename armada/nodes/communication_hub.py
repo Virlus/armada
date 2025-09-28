@@ -46,7 +46,6 @@ class CommunicationHub:
             "COMMAND": self.report_teleop_cmd,
             "TELEOP_CTRL_STOP": self.report_teleop_ctrl_stop,
             "REWIND_ROBOT": self.report_rewind_robot,
-            "SCENE_ALIGNMENT_WITH_REF_REQUEST": self.report_scene_alignment_with_ref_request,
             "SCENE_ALIGNMENT_COMPLETED": self.report_scene_alignment_completed,
             "TIMEOUT":self.handle_demo_timeout,
             "QUIT":self.handle_quit 
@@ -59,6 +58,7 @@ class CommunicationHub:
         for msg_type, handler in unlocked_handlers.items():
             self.message_handler.register_handler(msg_type, handler)
         self.message_handler.register_handler("SCENE_ALIGNMENT_REQUEST", self._handle_scene_alignment_request)
+        self.message_handler.register_handler("SCENE_ALIGNMENT_WITH_REF_REQUEST", self._handle_scene_alignment_request)
         self.message_handler.register_pattern_handler(
             lambda msg: msg.startswith("SIGMA"),
             self._handle_sigma_message
@@ -114,7 +114,10 @@ class CommunicationHub:
                         message, addr = self.scene_alignment_q.get()
                         teleop_id = self.idle_teleop_q.pop(0)  
                 if need_send:
-                    self.report_scene_alignment_request(message, addr)
+                    if message.startswith("SCENE_ALIGNMENT_REQUEST"):
+                        self.report_scene_alignment_request(message, teleop_id)
+                    elif message.startswith("SCENE_ALIGNMENT_WITH_REF_REQUEST"):
+                        self.report_scene_alignment_with_ref_request(message, teleop_id)
 
                 time.sleep(0.1)  
             except Exception as e:
@@ -212,7 +215,8 @@ class CommunicationHub:
         templ = "SIGMA_of_{}_DETACH_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
         send_msg = message
-        self.socket.send(self.teleop_dict[teleop_id], send_msg)
+        for _, teleop_addr in self.teleop_dict.items():
+            self.socket.send(teleop_addr, send_msg)
 
     def report_sigma_resume(self, message, addr):
         """Forward sigma resume command from robot to teleop.
@@ -220,7 +224,8 @@ class CommunicationHub:
         templ = "SIGMA_of_{}_RESUME_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
         send_msg = message
-        self.socket.send(self.teleop_dict[teleop_id], send_msg)
+        for _, teleop_addr in self.teleop_dict.items():
+            self.socket.send(teleop_addr, send_msg)
 
     def report_sigma_reset(self, message, addr):
         """Forward sigma reset command from robot to teleop.
@@ -228,7 +233,8 @@ class CommunicationHub:
         templ = "SIGMA_of_{}_RESET_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
         send_msg = message
-        self.socket.send(self.teleop_dict[teleop_id], send_msg)
+        for _, teleop_addr in self.teleop_dict.items():
+            self.socket.send(teleop_addr, send_msg)
 
     def report_sigma_transform(self, message, addr):
         """Forward sigma transform command from robot to teleop.
@@ -236,7 +242,8 @@ class CommunicationHub:
         templ = "SIGMA_TRANSFORM_from_{}_{}_to_{}"
         rbt_id, _, teleop_id = parse_message_regex(message, templ)
         send_msg = message
-        self.socket.send(self.teleop_dict[teleop_id], send_msg)
+        for _, teleop_addr in self.teleop_dict.items():
+            self.socket.send(teleop_addr, send_msg)
 
     def report_rewind_robot(self, message, addr):
         """Forward rewind message to robot"""
@@ -245,17 +252,17 @@ class CommunicationHub:
         send_msg = "REWIND_ROBOT"
         self.socket.send(self.robot_dict[rbt_id], send_msg)
 
-    def report_scene_alignment_request(self, message, addr):
+    def report_scene_alignment_request(self, message, teleop_id):
         templ = "SCENE_ALIGNMENT_REQUEST_{}_{}"
         rbt_id, context_info = parse_message_regex(message, templ)
-        teleop_id = "0"
         send_msg = f"SCENE_ALIGNMENT_REQUEST_{rbt_id}_{context_info}"
         self.socket.send(self.teleop_dict[teleop_id], send_msg)
 
-    def report_scene_alignment_with_ref_request(self, message, addr):  
+    def report_scene_alignment_with_ref_request(self, message, teleop_id):  
         templ = "SCENE_ALIGNMENT_WITH_REF_REQUEST_{}_{}"
-        teleop_id = "0"
-        self.socket.send(self.teleop_dict[teleop_id], message)
+        rbt_id, context_info = parse_message_regex(message, templ)
+        send_msg = f"SCENE_ALIGNMENT_WITH_REF_REQUEST_{rbt_id}_{context_info}"
+        self.socket.send(self.teleop_dict[teleop_id], send_msg)
 
     def report_scene_alignment_completed(self, message, addr):
         templ = "SCENE_ALIGNMENT_COMPLETED_{}"
@@ -292,7 +299,7 @@ class CommunicationHub:
             while True:
                 self.update_request_q_workflow()
                 # print("==============q:",self.idle_teleop_q)
-                time.sleep(0.8)
+                time.sleep(0.1)
         except KeyboardInterrupt:
             self.socket.stop()
             print("Server shutdown")

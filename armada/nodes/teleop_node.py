@@ -244,6 +244,8 @@ class TeleopNode:
         key = input().strip().upper()  # jammed manner,waiting human reset
         if key == 'S':
             print("Rewinding robot before teleoperation...")
+            self.teleop_state = "idle"
+            self.inform_teleop_state()
             rewind_msg = f"REWIND_ROBOT_{rbt_id}".encode()
             self.socket.send(rewind_msg)
             

@@ -20,7 +20,8 @@ from hardware.my_device.logitechG29_wheel import Controller
 def parse_args():
     parser = argparse.ArgumentParser(description='teleop node parameters')
     parser.add_argument('--teleop_id', type=int, required=False, default=0)
-
+    parser.add_argument('--num_robot', type=int, required=True)
+    parser.add_argument('--listen_freq', type=int, required=False, default=200)
     return parser.parse_args()
 
 
@@ -76,6 +77,7 @@ class TeleopNode:
         }
         self.unthreaded_handlers = {
             "TIMEOUT":self.handle_rollout_timeout,
+            "TIME_BENCHMARKING":self.handle_time_benchmarking
         }
         for msg_type, handler in self.threaded_handlers.items():
             self.message_handler.register_handler(msg_type, handler, use_thread=True)
@@ -334,6 +336,12 @@ class TeleopNode:
         rbt_id = parse_message_regex(message, templ)[0]
         print(f"=================Robot_{rbt_id} timeout !!!!==============")
 
+    def handle_time_benchmarking(self, message):
+        """Handle time discrepancy solving request from hub due to different system clock across hosts."""
+        print(f"=================Time discrepancy solving requested !!!!==============")
+        msg = f"TELEOP_TIME_BENCHMARKING_{self.teleop_id}_{time.time()}".encode()
+        self.socket.send(msg)
+
     def handle_scene_alignment_request(self, message):
         """Handle scene alignment request from robot.
         Guides human operator through scene alignment process."""
@@ -402,13 +410,9 @@ class TeleopNode:
             self.socket.send(msg)
 
 if __name__ == "__main__":
-    listen_freq = 200
-    num_robot = 3
-    inform_freq = 2
-
     args = parse_args()
     # Use your own ip and port
-    teleop_node = TeleopNode(args.teleop_id,"192.168.1.3", 12345,listen_freq,num_robot) 
+    teleop_node = TeleopNode(args.teleop_id, "192.168.1.3", 12345, args.listen_freq, args.num_robot) 
     try:
         teleop_node.inform_teleop_state()
 

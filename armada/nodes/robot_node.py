@@ -47,6 +47,7 @@ class RobotNode(RealEnvRunner):
         self.socket = SocketClient(socket_ip, socket_port, message_handler=self.message_handler.handle_message)
         self.socket.start_connection()
         self.lock = threading.Lock()
+        self.num_teleop_node = self.cfg.num_teleop_node
 
     def _initialize_robot_env(self):
         """Override to support multi-robot environment initialization."""
@@ -92,11 +93,13 @@ class RobotNode(RealEnvRunner):
         self.rewind_rot = None
         self.ready_to_stop_flag = True
         self.stop_event = None
+        self.time_benchmarking_array = dict()
 
     def _setup_message_routes(self):
         """Define message routing table for different message types and their handlers.
         Maps incoming messages to appropriate handler methods."""
         handlers = {
+            "TELEOP_TIME_BENCHMARKING": self._handle_time_benchmarking,
             "READY": self._get_ready_takeover,
             "TELEOP_TAKEOVER_RESULT": self._handle_teleop_takeover_result,
             "CONTINUE_POLICY": self._handle_ctn,
@@ -142,6 +145,8 @@ class RobotNode(RealEnvRunner):
     def run_rollout(self):
         """Main rollout loop"""
         self.inform_robot_state()
+        while len(self.time_benchmarking_array) != self.num_teleop_node:
+            time.sleep(0.1)
         try:
             while self.running: 
                 
@@ -398,7 +403,15 @@ class RobotNode(RealEnvRunner):
             self.finish_episode = True
 
         print("False Positive failure! Continue policy rollout.")
-    
+
+    def _handle_time_benchmarking(self, message):
+        """Handle time benchmarking request from teleop.
+        Records the time discrepancy between teleop and robot."""
+        templ = "TELEOP_TIME_BENCHMARKING_{}_{}"
+        teleop_id, teleop_timestamp = parse_message_regex(message, templ)
+        curr_latency = time.time() - float(teleop_timestamp)
+        self.time_benchmarking_array[teleop_id] = curr_latency
+
     def _get_ready_takeover(self, message):
         """Prepare for human takeover.
         Extracts teleop ID and prepares for teleoperation."""
@@ -637,7 +650,7 @@ class RobotNode(RealEnvRunner):
         state_data = self.robot_env.get_robot_state()
 
         # Get teleop controls
-        if self.diff_p_arr is None or self.diff_r_arr is None or time.time() - self.latest_command_time > 0.1: # Closed-loop command filtering
+        if self.diff_p_arr is None or self.diff_r_arr is None or time.time() - self.time_benchmarking_array[self.teleop_id] - self.latest_command_time > 0.1: # Closed-loop command filtering
             time.sleep(1 / self.teleop_ctrl_freq - (time.time() - start_time))
             return
     

@@ -4,17 +4,25 @@ import time
 import threading
 import sys
 import os
+import argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from armada.communication.socket_server import SocketServer
 from armada.utils.message_distillation import parse_message_regex, MessageHandler
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='communication hub parameters')
+    parser.add_argument('--num_robot', type=int, required=True)
+    return parser.parse_args()
+
+
 class CommunicationHub:
     """Central communication hub that manages message routing between robot and teleop nodes.
     Acts as a broker to handle requests, state updates, and command distribution."""
     
-    def __init__(self, socket_ip, socket_port):
+    def __init__(self, socket_ip, socket_port, num_robot):
         self.running = True
         self.initialize_queue()
         self.lock = threading.Lock()
@@ -26,7 +34,8 @@ class CommunicationHub:
         self.socket = SocketServer(socket_ip, socket_port, message_handler=self.message_handler.handle_message)
         self.socket.start_connection()
         self.start_scene_alignment_thread()
-
+        self.num_robot = num_robot
+    
     def _setup_message_routes(self):
         """Define message routing table for different message types and their handlers.
         Routes are organized by message type with appropriate locks and patterns."""
@@ -41,6 +50,7 @@ class CommunicationHub:
 
         # Messages that don't need locks (# with self.lock: commented out in original)
         unlocked_handlers = {
+            "TELEOP_TIME_BENCHMARKING": self.report_time_benchmarking,
             "CONTINUE_POLICY": self.report_continue_policy,
             "TELEOP_CTRL_START": self.report_teleop_ctrl_start,
             "COMMAND": self.report_teleop_cmd,
@@ -150,6 +160,10 @@ class CommunicationHub:
             self.robot_dict[robot_id] = addr
             self.robot_state_dict[robot_id] = robot_state
         self.robot_state_dict[robot_id] = robot_state
+        if len(self.robot_state_dict) == self.num_robot:
+            for teleop_id, teleop_addr in self.teleop_dict.items():
+                send_msg = f"TIME_BENCHMARKING_{teleop_id}"
+                self.socket.send(teleop_addr, send_msg.encode())
 
     def report_human_takeover_result(self, message, addr):
         """Forward human takeover results from teleop to robot.
@@ -158,6 +172,11 @@ class CommunicationHub:
         rbt_id = parse_message_regex(message, templ)[0]
         send_msg = "TELEOP_TAKEOVER_RESULT_SUCCESS" if "SUCCESS" in message else "TELEOP_TAKEOVER_RESULT_FAILURE"
         self.socket.send(self.robot_dict[rbt_id], send_msg)
+
+    def report_time_benchmarking(self, message, addr):
+        """Forward time benchmarking request from teleop to robot."""
+        for _, robot_addr in self.robot_dict.items():
+            self.socket.send(robot_addr, message)
 
     def report_continue_policy(self, message, addr):
         """Forward continue policy command from teleop to robot.
@@ -303,7 +322,7 @@ class CommunicationHub:
 
 
 if __name__ == "__main__":
-    server_freq = 50
-    hub = CommunicationHub("0.0.0.0", 12345)
+    args = parse_args()
+    hub = CommunicationHub("0.0.0.0", 12345, args.num_robot)
     hub.run()
 

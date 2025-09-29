@@ -56,6 +56,8 @@ robot_info:
     "2":
       ip: "192.168.2.100"
 
+num_teleop_node: 2
+
 # Camera configuration
 camera:
   serial: 

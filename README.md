@@ -76,8 +76,8 @@ Please refer to [Multi-robot deployment guide](./armada/README.md) for more info
 ## 📝 TODO
 
 - [x] Release the training code and one-to-multiple shared control codebase.
-- [ ] Release the code for multiple-to-multiple control.
+- [x] Release the code for multiple-to-multiple control.
 
 ## 🙏 Acknowledgement
 
-Our code is build upon [Diffusion Policy](https://github.com/real-stanford/diffusion_policy). Thanks for their open-source effort!
+Our code is built upon [Diffusion Policy](https://github.com/real-stanford/diffusion_policy). Thanks for their open-source effort!

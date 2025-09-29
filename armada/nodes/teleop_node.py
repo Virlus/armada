@@ -397,11 +397,6 @@ class TeleopNode:
 
     def inform_teleop_state(self):
         """Report teleop state to hub."""
-        # while self.running:
-        #     if time.time() - self.last_query >= 1/inform_freq:
-        #         self.last_query = time.time()
-        #         msg = f"INFORM_TELEOP_STATE_{self.teleop_id}_{self.teleop_state}".encode()
-        #         self.socket.send(msg)
         if self.running:
             msg = f"INFORM_TELEOP_STATE_{self.teleop_id}_{self.teleop_state}".encode()
             self.socket.send(msg)
@@ -415,12 +410,6 @@ if __name__ == "__main__":
     # Use your own ip and port
     teleop_node = TeleopNode(args.teleop_id,"192.168.1.3", 12345,listen_freq,num_robot) 
     try:
-        # teleop_state_thread = threading.Thread(    #inform teleop state by a freq
-        #     target=teleop_node.inform_teleop_state,
-        #     args=(inform_freq,),
-        #     daemon = True
-        # )
-        # teleop_state_thread.start()
         teleop_node.inform_teleop_state()
 
         while True:

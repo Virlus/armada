@@ -118,13 +118,13 @@ We select one of the hosts to be the communication hub of the entire multi-robot
 We run the following command on the chosen host:
 
 ```
-python nodes/communication_hub.py
+python nodes/communication_hub.py --num_robot ${number of robots}
 ```
 
 Then, we activate the teleoperation node via the following command, on every host connected to a teleoperation device:
 
 ```
-python nodes/teleop_node.py --teleop_id ${the index of teleoperation node}
+python nodes/teleop_node.py --teleop_id ${the index of teleoperation node} --num_robot ${number of robots}
 ```
 
 After that, we run the robot node on every host using the following command:
@@ -148,6 +148,7 @@ We give a detailed explanations for the key configuration attributes below:
 |   └── robot_name: ${flexiv by default}
 |   └── robot_id: ${customized for every robot node}
 |   └── robot_info_dict: ${must contain the key-value pair for the current robot node. The value should be the local IP address of the robot}
+├── num_teleop_node: ${Number of teleoperation nodes}
 ├── camera:
 |   ├── serial: 
 |   |   ├── ${eye-to-hand camera serial number}

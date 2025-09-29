@@ -170,7 +170,7 @@ class CommunicationHub:
     def handle_demo_timeout(self, message, addr):
         """Forward continue policy command from teleop to robot.
         Instructs robot to continue with autonomous policy execution."""
-        self.socket.send(self.teleop_dict["0"], message)
+        self.socket.send(self.teleop_dict["0"], message) # Just inform the first teleop node and proceed to next episode
     
     def handle_quit(self, message, addr):
         """Forward quit command from teleop to robot.
@@ -296,7 +296,6 @@ class CommunicationHub:
         try:
             while True:
                 self.update_request_q_workflow()
-                # print("==============q:",self.idle_teleop_q)
                 time.sleep(0.1)
         except KeyboardInterrupt:
             self.socket.stop()
@@ -305,7 +304,6 @@ class CommunicationHub:
 
 if __name__ == "__main__":
     server_freq = 50
-    #  for 1 or 2 rbts
     hub = CommunicationHub("0.0.0.0", 12345)
     hub.run()
 

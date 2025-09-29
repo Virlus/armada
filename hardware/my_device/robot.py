@@ -257,7 +257,6 @@ class FlexivGripper:
         print(self.gripper_state.maxWidth)
         self.max_width = 0.085
     def move(self, width):
-        # self.gripper.move(self.max_width * width / 1000, 0.1, 20)
         self.gripper.move(width, 0.1, 10)
     def move_from_sigma(self, width):
         self.gripper.move(self.max_width * width / 1000, 0.1, 5)

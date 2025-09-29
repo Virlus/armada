@@ -32,17 +32,12 @@ class CameraD400(object):
         else:
             self.config.enable_stream(rs.stream.depth, 1280, 720,rs.format.z16,30)
             self.config.enable_stream(rs.stream.color, 1280, 720,rs.format.bgr8,30)
-        # self.config.enable_stream(rs.stream.depth, 640, 480,rs.format.z16,30)
-        # self.config.enable_stream(rs.stream.color, 640, 480,rs.format.bgr8,30)
+        
         self.align_to = rs.stream.color
         self.align = rs.align(self.align_to)
         self.pipeline_profile = self.pipeline.start(self.config)
         self.device = self.pipeline_profile.get_device()
-        advanced_mode = rs.rs400_advanced_mode(self.device)
         self.mtx = self.getIntrinsics()
-        #with open(r"config/d435_high_accuracy.json", 'r') as file:
-        #    json_text = file.read().strip()
-        #advanced_mode.load_json(json_text)
 
         self.hole_filling = rs.hole_filling_filter()
 
@@ -176,27 +171,3 @@ def live_application():
         img = capture.get_data()
         display.blit(pygame.surfarray.make_surface(img),(0, 0))
         pygame.display.update()
-
-
-import torch
-from torchvision.transforms import Compose, Resize
-from torchvision.transforms import InterpolationMode
-from PIL import Image
-
-if __name__ == "__main__":
-    BICUBIC = InterpolationMode.BICUBIC
-    image_processor = Compose([Resize((224, 224), interpolation=BICUBIC)])
-    # live_application()
-    cameras = [CameraD400(s) for s in CAM_SERIAL]
-    for camera in cameras:
-        color_image, depth_image = camera.get_data()
-
-        new_image = image_processor(torch.from_numpy(cv2.cvtColor(color_image.copy(), cv2.COLOR_BGR2RGB)).\
-                                      permute(2,0,1)).permute(1,2,0).detach().cpu().numpy().astype(np.uint8)
-        
-        # Image.fromarray(color_image).save(f'color_{camera}.png')
-        # Image.fromarray(new_image).save(f'test_{camera}.png')
-
-        print(color_image)
-        cv2.imshow('color', color_image)
-        cv2.waitKey(1)

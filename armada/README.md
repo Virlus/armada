@@ -6,7 +6,7 @@ We use a [Unifi Enterprise 8 PoE](https://techspecs.ui.com/unifi/switching/usw-e
 Each host serves as a node for robot control (robot node) and should be connected to the switch via Ethernet.
 Following are the guide for Ethernet connection.
 
-#### Setup connection
+### 🌉 Setup connection
 
 1. Connect the host and the switch with Ethernet cable.
 
@@ -54,7 +54,7 @@ sudo systemctl restart systemd-networkd
 ping 192.168.1.1 (for instance)
 ```
 
-#### Restore default connection
+### 🔄 Restore default connection
 
 1. Reset configuration file by putting back the following:
 ```
@@ -91,7 +91,28 @@ We detail some key parameters as follows:
 |   └── enable_visualization: ${whether to save FLOAT visualizations to output directory}
 ```
 
-## ▶️ Running multi-robot experiments
+## ▶️ Running pretrained policy on a single robot
+
+Single-robot rollout with human-in-the-loop shared control can be performed through the following command:
+
+```
+python run_rollout.py --config-name base_rollout
+```
+
+The corresponding configuration file is located in [`config/base_rollout.yaml`](./config/base_rollout.yaml). 
+We expand on some key hyperparameters below:
+
+```
+.
+├── checkpoint_path: ${pretrained checkpoint path}
+├── train_dataset_path: ${training data path including the expert demonstrations}
+├── save_buffer_path: ${Output data path containing rollout trajectories}
+├── output_dir: ${Output directory for saving scene configurations and FLOAT visualizations}
+├── policy:
+|   ├── num_inference_steps: ${number of denoising steps in DDIM implementation}
+```
+
+## ⏩️ Running multi-robot experiments
 
 We select one of the hosts to be the communication hub of the entire multi-robot system.
 We run the following command on the chosen host:
@@ -100,7 +121,7 @@ We run the following command on the chosen host:
 python nodes/communication_hub.py
 ```
 
-Then, we activate the teleoperation nodes via the following command:
+Then, we activate the teleoperation node via the following command, on every host connected to a teleoperation device:
 
 ```
 python nodes/teleop_node.py --teleop_id ${the index of teleoperation node}
@@ -112,7 +133,7 @@ After that, we run the robot node on every host using the following command:
 python run_rollout.py --config-name multi_robot_rollout
 ```
 
-It is worth noting that you need to override the `robot_info` and `camera` attribute in the [configuration file](./config/multi_robot_rollout.yaml) according to your setup.
+It is worth noting that you need to override the `robot_info` and `camera` attribute in the [`config/multi_robot_rollout.yaml`](./config/multi_robot_rollout.yaml) according to your setup.
 We give a detailed explanations for the key configuration attributes below:
 ```
 .

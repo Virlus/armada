@@ -475,7 +475,7 @@ class RobotNode(RealEnvRunner):
         Sends reference images to teleop for alignment guidance.""" 
         print("Requesting scene alignment with reference images from teleop") 
         # Send simple scene alignment request to teleop (no image data)
-        align_msg = f"SCENE_ALIGNMENT_WITH_REF_REQUEST_{self.robot_id}_rewind"
+        align_msg = f"SCENE_ALIGNMENT_WITH_REF_REQUEST_{self.robot_id}_rewind_{self.teleop_id}"
         self.socket.send(align_msg)
         
         # Start local image display with reference images in robot end

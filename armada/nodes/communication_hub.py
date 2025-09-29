@@ -107,18 +107,16 @@ class CommunicationHub:
         Pairs alignment requests with available teleop nodes and forwards them."""
         while self.running:
             try:
-                need_send = False
                 with self.lock:
-                    if not self.scene_alignment_q.empty() and len(self.idle_teleop_q):
-                        need_send = True
-                        message, addr = self.scene_alignment_q.get()
-                        teleop_id = self.idle_teleop_q.pop(0)  
-                if need_send:
-                    if message.startswith("SCENE_ALIGNMENT_REQUEST"):
-                        self.report_scene_alignment_request(message, teleop_id)
-                    elif message.startswith("SCENE_ALIGNMENT_WITH_REF_REQUEST"):
-                        self.report_scene_alignment_with_ref_request(message, teleop_id)
-
+                    if not self.scene_alignment_q.empty():
+                        message, addr = self.scene_alignment_q.queue[0]
+                        if message.startswith("SCENE_ALIGNMENT_WITH_REF_REQUEST"):
+                            self.scene_alignment_q.get()
+                            self.report_scene_alignment_with_ref_request(message)
+                        elif message.startswith("SCENE_ALIGNMENT_REQUEST"):
+                            if len(self.idle_teleop_q):
+                                self.scene_alignment_q.get()
+                                self.report_scene_alignment_request(message, self.idle_teleop_q.pop(0)) 
                 time.sleep(0.1)  
             except Exception as e:
                 print(f"Error in scene alignment thread: {e}")
@@ -214,8 +212,8 @@ class CommunicationHub:
         Instructs teleop to detach the haptic device from robot control."""
         templ = "SIGMA_of_{}_DETACH_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
-        send_msg = message
-        for _, teleop_addr in self.teleop_dict.items():
+        for teleop_id, teleop_addr in self.teleop_dict.items():
+            send_msg = f"SIGMA_of_{teleop_id}_DETACH_from_{rbt_id}"
             self.socket.send(teleop_addr, send_msg)
 
     def report_sigma_resume(self, message, addr):
@@ -223,8 +221,8 @@ class CommunicationHub:
         Instructs teleop to resume haptic device connection to robot."""
         templ = "SIGMA_of_{}_RESUME_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
-        send_msg = message
-        for _, teleop_addr in self.teleop_dict.items():
+        for teleop_id, teleop_addr in self.teleop_dict.items():
+            send_msg = f"SIGMA_of_{teleop_id}_RESUME_from_{rbt_id}"
             self.socket.send(teleop_addr, send_msg)
 
     def report_sigma_reset(self, message, addr):
@@ -232,17 +230,17 @@ class CommunicationHub:
         Instructs teleop to reset the haptic device to initial state."""
         templ = "SIGMA_of_{}_RESET_from_{}"
         teleop_id, rbt_id = parse_message_regex(message, templ)
-        send_msg = message
-        for _, teleop_addr in self.teleop_dict.items():
+        for teleop_id, teleop_addr in self.teleop_dict.items():
+            send_msg = f"SIGMA_of_{teleop_id}_RESET_from_{rbt_id}"
             self.socket.send(teleop_addr, send_msg)
 
     def report_sigma_transform(self, message, addr):
         """Forward sigma transform command from robot to teleop.
         Sends transformation data to align haptic device with robot state."""
         templ = "SIGMA_TRANSFORM_from_{}_{}_to_{}"
-        rbt_id, _, teleop_id = parse_message_regex(message, templ)
-        send_msg = message
-        for _, teleop_addr in self.teleop_dict.items():
+        rbt_id, transform, teleop_id = parse_message_regex(message, templ)
+        for teleop_id, teleop_addr in self.teleop_dict.items():
+            send_msg = f"SIGMA_TRANSFORM_from_{rbt_id}_{transform}_to_{teleop_id}"
             self.socket.send(teleop_addr, send_msg)
 
     def report_rewind_robot(self, message, addr):
@@ -258,9 +256,9 @@ class CommunicationHub:
         send_msg = f"SCENE_ALIGNMENT_REQUEST_{rbt_id}_{context_info}"
         self.socket.send(self.teleop_dict[teleop_id], send_msg)
 
-    def report_scene_alignment_with_ref_request(self, message, teleop_id):  
-        templ = "SCENE_ALIGNMENT_WITH_REF_REQUEST_{}_{}"
-        rbt_id, context_info = parse_message_regex(message, templ)
+    def report_scene_alignment_with_ref_request(self, message):  
+        templ = "SCENE_ALIGNMENT_WITH_REF_REQUEST_{}_{}_{}"
+        rbt_id, context_info, teleop_id = parse_message_regex(message, templ)
         send_msg = f"SCENE_ALIGNMENT_WITH_REF_REQUEST_{rbt_id}_{context_info}"
         self.socket.send(self.teleop_dict[teleop_id], send_msg)
 

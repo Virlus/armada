@@ -244,8 +244,6 @@ class TeleopNode:
         key = input().strip().upper()  # jammed manner,waiting human reset
         if key == 'S':
             print("Rewinding robot before teleoperation...")
-            self.teleop_state = "idle"
-            self.inform_teleop_state()
             rewind_msg = f"REWIND_ROBOT_{rbt_id}".encode()
             self.socket.send(rewind_msg)
             
@@ -370,8 +368,6 @@ class TeleopNode:
 
     def handle_scene_alignment_with_ref_request(self, message):
         """Handle scene alignment with reference request from robot"""
-        self.teleop_state = "busy"
-        self.inform_teleop_state()
          
         # Simple format without image data - robot displays images locally
         templ = "SCENE_ALIGNMENT_WITH_REF_REQUEST_{}_{}"

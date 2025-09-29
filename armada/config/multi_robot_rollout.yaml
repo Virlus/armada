@@ -6,10 +6,10 @@ _target_: nodes.robot_node.RobotNode
 fps: 10
 
 device_ids: '0'
-checkpoint_path: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/data/checkpoints/multi_robot_exp/0912_19.36.00_train_diffusion_transformer_hybrid_dino_multi_gpu_multi_robot_exp_three_robots_fold_towel_round3/latest.ckpt
-train_dataset_path: /mnt/workspace/DP/multi_robot_exp/0815_expert_fold_towel_three_robots
-save_buffer_path: /mnt/workspace/DP/test/0923_test_codebase_single_robot
-output_dir: /home/yuwenye/projects/human-in-the-loop/diffusion_policy/outputs/visual/0923_test_single_robot
+checkpoint_path: /path/to/checkpoint
+train_dataset_path: /path/to/trained/dataset
+save_buffer_path: /path/to/save/rollout/data
+output_dir: /path/to/output/visualization
 
 Ta: 8
 random_init: True
@@ -43,10 +43,7 @@ training:
 
 # Robot configuration
 robot_info:
-  num_robots: 2
-  # for 1 rbt:
-  # socket_ip: "127.0.0.1"
-  # for 2 rbts:
+  num_robots: 3
   socket_ip: "192.168.1.3"
   socket_port: 12345
   robot_name: flexiv
@@ -56,6 +53,8 @@ robot_info:
       ip: "192.168.2.100"
     "1":
       ip: "192.168.3.100"
+    "2":
+      ip: "192.168.2.100"
 
 # Camera configuration
 camera:

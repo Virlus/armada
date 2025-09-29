@@ -109,8 +109,8 @@ training:
   device: "cuda:0"
   seed: 42
   debug: False
-  resume: True
-  resume_path: outputs/2025.09.11/18.09.01_train_diffusion_transformer_hybrid_dino_multi_gpu_multi_robot_exp_processed_three_robots_fold_towel_round2
+  resume: False
+  resume_path: /path/to/resume/checkpoint
   # optimization
   lr_scheduler: cosine
   # Transformer needs LR warmup
@@ -137,7 +137,7 @@ logging:
   resume: True
   mode: offline
   name: ${now:%Y.%m.%d-%H.%M.%S}_${..name}_${..task_name}
-  tags: ["${...name}", "${...task_name}", "${...exp_name}"]
+  tags: ["${..name}", "${..task_name}", "${..exp_name}"]
   id: null
   group: null
 

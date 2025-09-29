@@ -3,20 +3,20 @@ defaults:
   - task: mytask
 
 device_ids: '0,1,2,3'
-output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+output_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${.name}_${.task_name}
 
-name: train_diffusion_transformer_hybrid_multi_gpu
-_target_: diffusion_policy.workspace.train_diffusion_transformer_hybrid_multi_gpu_workspace.TrainDiffusionTransformerHybridMultiGPUWorkspace
+name: train_diffusion_transformer_real_hybrid_multi_gpu
+_target_: diffusion_policy.workspace.train_diffusion_transformer_real_hybrid_multi_gpu_workspace.TrainDiffusionTransformerRealHybridMultiGPUWorkspace
 
-task_name: ${task.name}
-shape_meta: ${task.shape_meta}
+task_name: ${.task.name}
+shape_meta: ${.task.shape_meta}
 exp_name: "default"
 
 horizon: 16
 n_obs_steps: 2
 n_action_steps: 15
 n_latency_steps: 0
-dataset_obs_steps: ${n_obs_steps}
+dataset_obs_steps: ${.n_obs_steps}
 past_action_visible: False
 keypoint_visible_rate: 1.0
 obs_as_cond: True
@@ -24,7 +24,7 @@ obs_as_cond: True
 policy:
   _target_: diffusion_policy.policy.diffusion_transformer_hybrid_image_policy.DiffusionTransformerHybridImagePolicy
 
-  shape_meta: ${shape_meta}
+  shape_meta: ${..shape_meta}
   
   noise_scheduler:
     _target_: diffusers.schedulers.scheduling_ddim.DDIMScheduler
@@ -39,9 +39,9 @@ policy:
     steps_offset: 0
     prediction_type: epsilon # or sample
 
-  horizon: ${horizon}
-  n_action_steps: ${eval:'${n_action_steps}+${n_latency_steps}'}
-  n_obs_steps: ${n_obs_steps}
+  horizon: ${..horizon}
+  n_action_steps: ${eval:'${..n_action_steps}+${..n_latency_steps}'}
+  n_obs_steps: ${..n_obs_steps}
   num_inference_steps: 100
 
   crop_shape: [224, 224]
@@ -56,7 +56,7 @@ policy:
   p_drop_attn: 0.3
   causal_attn: True
   time_as_cond: True # if false, use BERT like encoder only arch, time as input
-  obs_as_cond: ${obs_as_cond}
+  obs_as_cond: ${..obs_as_cond}
 
   # scheduler.step params
   # predict_epsilon: True
@@ -98,7 +98,7 @@ training:
   seed: 42
   debug: False
   resume: False
-  resume_path: outputs/mytest
+  resume_path: /path/to/resume/checkpoint
   # optimization
   lr_scheduler: cosine
   # Transformer needs LR warmup
@@ -124,8 +124,8 @@ logging:
   project: human-in-the-loop
   resume: True
   mode: online
-  name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
-  tags: ["${name}", "${task_name}", "${exp_name}"]
+  name: ${now:%Y.%m.%d-%H.%M.%S}_${..name}_${..task_name}
+  tags: ["${..name}", "${..task_name}", "${..exp_name}"]
   id: null
   group: null
 
@@ -139,14 +139,14 @@ checkpoint:
   save_last_snapshot: False
 
 multi_run:
-  run_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
-  wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
+  run_dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${..name}_${..task_name}
+  wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${..name}_${..task_name}
 
 hydra:
   job:
-    override_dirname: ${name}
+    override_dirname: ${...name}
   run:
-    dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+    dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${...name}_${...task_name}
   sweep:
-    dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}
+    dir: outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${...name}_${...task_name}
     subdir: ${hydra.job.num}

@@ -1,7 +1,7 @@
-name: debug
+name: test
 
 image_shape: [3, 224, 224]
-dataset_path: /home/yuwenye/project/human-in-the-loop/diffusion_policy/data/multi_robot_exp/0912_final_three_robots_fold_towel_only_human_round3
+dataset_path: /path/to/training/data
 
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
@@ -25,7 +25,7 @@ env_runner:
 
 dataset:
   _target_: diffusion_policy.dataset.mydataset.MyDataset
-  zarr_path: /home/yuwenye/project/human-in-the-loop/diffusion_policy/data/multi_robot_exp/0912_final_three_robots_fold_towel_only_human_round3/replay_buffer.zarr
+  zarr_path: /path/to/training/data/replay_buffer.zarr
   horizon: ${...horizon}
   pad_before: ${eval:'${...n_obs_steps}-1'}
   pad_after: ${eval:'${...n_action_steps}-1'}

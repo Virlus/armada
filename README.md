@@ -1,7 +1,7 @@
 <div align="center">
 <h1>ARMADA: Autonomous Online Failure Detection and Human Shared Control Empower Scalable Real-world Deployment and Adaptation</h1>
 
-<a href="https://virlus.github.io/armada/"><img src="https://img.shields.io/badge/arXiv-2510.02298-b31b1b" alt="arXiv"></a>
+<a href="https://arxiv.org/abs/2510.02298"><img src="https://img.shields.io/badge/arXiv-2510.02298-b31b1b" alt="arXiv"></a>
 <a href="https://virlus.github.io/armada/"><img src="https://img.shields.io/badge/Project_Page-green" alt="Project Page"></a>
 
 **Shanghai Jiao Tong University**; **Shanghai Innovation Institute**; **Noematrix Ltd.**

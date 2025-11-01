@@ -4,6 +4,8 @@
 <a href="https://arxiv.org/abs/2510.02298"><img src="https://img.shields.io/badge/arXiv-2510.02298-b31b1b" alt="arXiv"></a>
 <a href="https://virlus.github.io/armada/"><img src="https://img.shields.io/badge/Project_Page-green" alt="Project Page"></a>
 
+[![CC BY-NC 4.0][cc-by-nc-shield]][cc-by-nc]
+
 **Shanghai Jiao Tong University**; **Shanghai Innovation Institute**; **Noematrix Ltd.**
 
 [Wenye Yu](https://virlus.github.io/), [Jun Lv](https://lyuj1998.github.io/), [Zixi Ying](https://github.com/KiriyamaGK), [Yang Jin](https://github.com/EricJin2002), [Chuan Wen](https://alvinwen428.github.io/), [Cewu Lu](https://www.mvig.org/)
@@ -77,6 +79,31 @@ Please refer to [Multi-robot deployment guide](./armada/README.md) for more info
 
 - [x] Release the training code and one-to-multiple shared control codebase.
 - [x] Release the code for multiple-to-multiple control.
+
+## ✍️ Citation
+
+```bibtex
+@misc{yu2025armadaautonomousonlinefailure,
+      title={ARMADA: Autonomous Online Failure Detection and Human Shared Control Empower Scalable Real-world Deployment and Adaptation}, 
+      author={Wenye Yu and Jun Lv and Zixi Ying and Yang Jin and Chuan Wen and Cewu Lu},
+      year={2025},
+      eprint={2510.02298},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2510.02298}, 
+}
+```
+
+## 🪪 License
+
+This work is licensed under a
+[Creative Commons Attribution-NonCommercial 4.0 International Public License][cc-by-nc].
+
+[![CC BY-NC 4.0][cc-by-nc-image]][cc-by-nc]
+
+[cc-by-nc]: https://creativecommons.org/licenses/by-nc/4.0/
+[cc-by-nc-image]: https://licensebuttons.net/l/by-nc/4.0/88x31.png
+[cc-by-nc-shield]: https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg
 
 ## 🙏 Acknowledgement
 

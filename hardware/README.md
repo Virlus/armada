@@ -21,6 +21,8 @@ However, if your Flexiv robot has a newer version of software package (e.g. `v3.
 pip install flexivrdk
 ```
 
+We also provide the CAD model for the adapter between [Robotiq 2F-85 gripper](https://robotiq.com/products/adaptive-grippers) and [UMI](https://github.com/real-stanford/universal_manipulation_interface) soft gripper in [hardware/my_device/ROBOTIQ.STEP](./my_device/ROBOTIQ.STEP).
+
 ## 🎮 Teleoperation device setup
 
 ### 🕹️ sigma.7 haptic device setup

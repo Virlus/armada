@@ -24,6 +24,8 @@
 - [🤖 Policy Training](#-policy-training)
 - [🌐 Multi-Robot Deployment](#-multi-robot-deployment)
 - [📝 TODO](#-todo)
+- [✍️ Citation](#️-citation)
+- [🪪 License](#-license)
 - [🙏 Acknowledgement](#-acknowledgement)
 
 ## 🔥 Highlights
